@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="duck" x1="120" y1="140" x2="320" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="beak" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="100%" stop-color="#ea580c"/>
+    </linearGradient>
+    <linearGradient id="wave1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <linearGradient id="wave2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#818cf8" stop-opacity="0.6"/>
+    </linearGradient>
+    <linearGradient id="wave3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#818cf8" stop-opacity="0.3"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+
+  <!-- Duck head — stylized profile facing right -->
+  <ellipse cx="195" cy="230" rx="105" ry="110" fill="url(#duck)"/>
+  <!-- Top of head bump -->
+  <ellipse cx="175" cy="165" rx="65" ry="50" fill="url(#duck)"/>
+
+  <!-- Beak — open, speaking -->
+  <!-- Upper beak -->
+  <path d="M270 210 Q340 200 330 230 Q320 240 270 235 Z" fill="url(#beak)"/>
+  <!-- Lower beak — slightly open -->
+  <path d="M270 245 Q330 248 320 265 Q310 275 270 260 Z" fill="url(#beak)"/>
+
+  <!-- Eye -->
+  <circle cx="185" cy="200" r="16" fill="#0f172a"/>
+  <circle cx="190" cy="196" r="5" fill="white"/>
+
+  <!-- Body hint -->
+  <ellipse cx="170" cy="360" rx="120" ry="80" fill="url(#duck)" opacity="0.85"/>
+
+  <!-- Sound waves emanating from beak -->
+  <!-- Wave 1 — closest -->
+  <path d="M345 200 Q380 235 345 275" stroke="url(#wave1)" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <!-- Wave 2 — middle -->
+  <path d="M375 175 Q425 237 375 300" stroke="url(#wave2)" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <!-- Wave 3 — farthest -->
+  <path d="M405 150 Q470 240 405 325" stroke="url(#wave3)" stroke-width="10" stroke-linecap="round" fill="none"/>
+
+  <!-- Small privacy shield icon bottom-right -->
+  <g transform="translate(385, 385) scale(0.55)">
+    <path d="M60 10 L110 30 L110 80 Q110 140 60 160 Q10 140 10 80 L10 30 Z"
+          fill="#22c55e" opacity="0.9"/>
+    <path d="M45 85 L58 100 L82 65" stroke="white" stroke-width="10"
+          stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  </g>
+</svg>

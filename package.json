@@ -1,0 +1,10 @@
+{
+  "name": "openquack",
+  "version": "0.1.0",
+  "description": "Privacy-first voice-to-text using local AI models",
+  "bin": {
+    "openquack": "./bin/openquack"
+  },
+  "keywords": ["voice", "speech-to-text", "whisper", "local", "privacy", "openquack"],
+  "license": "MIT"
+}
