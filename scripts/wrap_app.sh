@@ -28,10 +28,21 @@ swift build -c release --product "$BIN_NAME" >/dev/null
 BIN_PATH="$(swift build -c release --show-bin-path)/$BIN_NAME"
 [[ -x "$BIN_PATH" ]] || { echo "error: built binary not found at $BIN_PATH" >&2; exit 1; }
 
+# Regenerate the procedural app icon if missing or stale relative to its source.
+ICON_OUT="$ROOT/build/AppIcon.icns"
+ICON_SRC="$ROOT/scripts/make_icon.swift"
+if [[ ! -f "$ICON_OUT" ]] || [[ "$ICON_SRC" -nt "$ICON_OUT" ]]; then
+    echo "→ Generating AppIcon.icns..."
+    swift "$ICON_SRC"
+fi
+
 echo "→ Assembling $BUNDLE (v$VERSION)..."
 rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp "$BIN_PATH" "$BUNDLE/Contents/MacOS/openquack-app"
+if [[ -f "$ICON_OUT" ]]; then
+    cp "$ICON_OUT" "$BUNDLE/Contents/Resources/AppIcon.icns"
+fi
 
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -42,6 +53,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key>                  <string>OpenQuack</string>
     <key>CFBundleDisplayName</key>           <string>OpenQuack</string>
     <key>CFBundleExecutable</key>            <string>openquack-app</string>
+    <key>CFBundleIconFile</key>              <string>AppIcon</string>
     <key>CFBundleVersion</key>               <string>$VERSION</string>
     <key>CFBundleShortVersionString</key>    <string>$VERSION</string>
     <key>CFBundlePackageType</key>           <string>APPL</string>
