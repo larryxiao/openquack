@@ -9,6 +9,7 @@ struct MenuBarContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            updateBanner
             header
             Divider()
             statusSection
@@ -18,6 +19,33 @@ struct MenuBarContent: View {
         }
         .padding(14)
         .frame(width: 320)
+    }
+
+    @ViewBuilder
+    private var updateBanner: some View {
+        if let update = state.availableUpdate {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Update available — v\(update.version)")
+                        .font(.caption.weight(.semibold))
+                    Text("Click to download from GitHub Releases.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                Button("Get") {
+                    NSWorkspace.shared.open(update.dmgURL ?? update.pageURL)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(10)
+            .background(Color.accentColor.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
     }
 
     // MARK: - sections

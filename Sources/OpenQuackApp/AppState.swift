@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import OpenQuackKit
 
 public final class AppState: ObservableObject {
     public enum Phase: Equatable {
@@ -22,6 +23,8 @@ public final class AppState: ObservableObject {
     @Published public var lastPasted: Bool = false
     @Published public var accessibilityTrusted: Bool = false
     @Published public var modelLabel: String = "whisperkit medium · en"
+    @Published public var availableUpdate: UpdateChecker.ReleaseInfo? = nil
+    @Published public var lastUpdateCheckError: String? = nil
 
     public init() {}
 }

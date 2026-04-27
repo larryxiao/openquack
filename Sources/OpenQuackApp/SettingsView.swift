@@ -193,7 +193,7 @@ private struct ShortcutPane: View {
 
 private struct AboutPane: View {
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             Text("🦆").font(.system(size: 56))
             Text("OpenQuack").font(.title2.weight(.semibold))
             Text("v\(OpenQuackKit.version)")
@@ -214,12 +214,23 @@ private struct AboutPane: View {
 
             Spacer()
 
-            // Replay onboarding — only useful for development. Disabled here
-            // because the new onboarding needs an AppState reference; replay
-            // moves to AppDelegate via a "Replay onboarding" menu (forthcoming).
-            // For now: `defaults delete org.openquack.OpenQuack hasCompletedOnboarding`
-            // and relaunch.
-            EmptyView()
+            HStack(spacing: 12) {
+                Button("Check for updates") {
+                    if let delegate = NSApp.delegate as? AppDelegate {
+                        delegate.checkForUpdatesManually()
+                    }
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+
+                Button("Replay onboarding") {
+                    if let delegate = NSApp.delegate as? AppDelegate {
+                        delegate.replayOnboarding()
+                    }
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+            }
 
             Text("MIT").font(.caption2).foregroundStyle(.tertiary)
         }

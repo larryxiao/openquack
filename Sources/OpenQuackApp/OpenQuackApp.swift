@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotkey = HotkeyManager()
     private var transcriber: WhisperKitEngine?
     private var overlay: RecordingOverlay?
+    private let updater = UpdateChecker()
 
     /// Persist the last recording so the user can verify capture quality
     /// independent of model output. `open ~/Library/Application Support/OpenQuack/last-recording.wav`.
@@ -91,6 +92,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             OnboardingWindowController.showIfFirstLaunch(appState: appState) { [weak self] in
                 Task { await self?.warmTranscriber() }
             }
+        }
+
+        // Light, opportunistic update poll. Once per launch, no faster than
+        // once per 24h; quietly skips on network failure.
+        Task { await pollForUpdate() }
+    }
+
+    /// Forces the onboarding flow to re-appear. Called from Settings → About.
+    @MainActor
+    @objc func replayOnboarding() {
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        OnboardingWindowController.show(appState: appState) { [weak self] in
+            Task { await self?.warmTranscriber() }
+        }
+    }
+
+    /// Manual update check, called from Settings → About → "Check for updates".
+    @MainActor
+    @objc func checkForUpdatesManually() {
+        Task { await pollForUpdate(force: true) }
+    }
+
+    private func pollForUpdate(force: Bool = false) async {
+        if !force, let last = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date,
+           Date().timeIntervalSince(last) < 24 * 60 * 60 {
+            return
+        }
+        do {
+            let release = try await updater.checkForUpdate(currentVersion: OpenQuackKit.version)
+            await MainActor.run {
+                appState.availableUpdate = release
+                appState.lastUpdateCheckError = nil
+            }
+            UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
+        } catch UpdateChecker.Error.noReleases {
+            // No releases yet — not an error worth surfacing during the v0
+            // alpha (the repo may not exist or have any releases).
+            await MainActor.run { appState.lastUpdateCheckError = nil }
+        } catch {
+            await MainActor.run { appState.lastUpdateCheckError = "\(error)" }
         }
     }
 
