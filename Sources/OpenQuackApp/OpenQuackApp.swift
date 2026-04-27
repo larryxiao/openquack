@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var elapsedTimer: Timer?
     private var permissionPollTimer: Timer?
 
+    @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         installStatusItem()
@@ -164,6 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    @MainActor
     @objc func togglePopover(_ sender: AnyObject?) {
         guard let button = statusItem.button else { return }
         if popover.isShown {
