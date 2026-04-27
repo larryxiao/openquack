@@ -67,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
 
     private var elapsedTimer: Timer?
+    private var permissionPollTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -79,6 +80,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Drive the overlay's level meter.
         recorder.levelHandler = { [weak self] level in
             self?.appState.currentLevel = level
+        }
+
+        // Refresh permission state on launch and every 5 s while running so
+        // the popover banner reflects reality even if the user grants AX
+        // through System Settings without coming back to the app first.
+        refreshPermissions()
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshPermissions() }
         }
 
         let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
@@ -161,9 +170,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.performClose(sender)
             stopMonitoringClicksOutside()
         } else {
+            // Refresh now so the AX banner reflects the latest state immediately
+            // when the popover opens.
+            refreshPermissions()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
             monitorClicksOutside()
+        }
+    }
+
+    @MainActor
+    private func refreshPermissions() {
+        let trusted = PasteService.isAccessibilityTrusted()
+        if appState.accessibilityTrusted != trusted {
+            appState.accessibilityTrusted = trusted
         }
     }
 

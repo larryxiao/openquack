@@ -10,6 +10,7 @@ struct MenuBarContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             updateBanner
+            accessibilityBanner
             header
             Divider()
             statusSection
@@ -19,6 +20,35 @@ struct MenuBarContent: View {
         }
         .padding(14)
         .frame(width: 320)
+    }
+
+    @ViewBuilder
+    private var accessibilityBanner: some View {
+        if !state.accessibilityTrusted {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-paste needs Accessibility")
+                        .font(.caption.weight(.semibold))
+                    Text("Without it, transcripts go to the clipboard and you press ⌘V manually.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+                Button("Grant") {
+                    _ = PasteService.isAccessibilityTrusted(prompt: true)
+                    PasteService.openAccessibilitySettings()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(10)
+            .background(Color.orange.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
     }
 
     @ViewBuilder
@@ -121,14 +151,6 @@ struct MenuBarContent: View {
                 Button("Listen") { NSWorkspace.shared.open(url) }
                     .buttonStyle(.borderless).font(.caption)
                     .help("Open the last recording — useful for diagnosing audio vs model issues.")
-            }
-            if !state.accessibilityTrusted {
-                Button("Grant Paste…") {
-                    _ = PasteService.isAccessibilityTrusted(prompt: true)
-                    PasteService.openAccessibilitySettings()
-                }
-                .buttonStyle(.borderless).font(.caption)
-                .help("Grant Accessibility permission so OpenQuack can paste at cursor automatically.")
             }
             Spacer()
             Button("Settings…") { SettingsWindowController.show() }
