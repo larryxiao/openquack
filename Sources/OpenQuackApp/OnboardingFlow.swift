@@ -81,6 +81,16 @@ final class OnboardingState: ObservableObject {
         }
     }
 
+    func back() {
+        if let prev = OnboardingStep(rawValue: step.rawValue - 1) {
+            step = prev
+        }
+    }
+
+    var canGoBack: Bool {
+        step.rawValue > 0
+    }
+
     /// Quietly advance past the current step if the relevant permission is
     /// already granted. Brief delay so the user sees the "Already granted"
     /// state before the step disappears — magical, not jarring.
@@ -166,14 +176,13 @@ struct OnboardingView: View {
             stepIndicator
             modelChip
             Spacer()
-            if state.step != .done {
-                Button("Skip") {
-                    state.complete()
-                    onClose()
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
+            Button("Back") {
+                state.back()
             }
+            .buttonStyle(.bordered)
+            .disabled(!state.canGoBack)
+            .keyboardShortcut(.leftArrow, modifiers: [])
+
             Button(continueLabel) {
                 if state.step == .done {
                     state.complete()
