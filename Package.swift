@@ -21,7 +21,7 @@ let package = Package(
             targets: ["OpenQuackCLI"]
         ),
         .executable(
-            name: "openquack-app",
+            name: "openquack",
             targets: ["OpenQuackApp"]
         ),
     ],

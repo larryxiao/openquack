@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the openquack-app SwiftPM executable and wrap it in a minimal
+# Build the openquack SwiftPM executable and wrap it in a minimal
 # OpenQuack.app bundle under build/. Output is unsigned — fine for local
 # `open`; signing/notarisation lives in M3 (SPEC TBD).
 #
@@ -19,7 +19,7 @@ if [[ "$(xcode-select -p)" == *CommandLineTools* ]] && [[ -d /Applications/Xcode
 fi
 
 BUNDLE="$ROOT/build/OpenQuack.app"
-BIN_NAME="openquack-app"
+BIN_NAME="openquack"
 VERSION="$(grep -E 'public static let version' Sources/OpenQuackKit/OpenQuackKit.swift | sed -E 's/.*"([^"]+)".*/\1/')"
 
 echo "→ Building release..."
@@ -39,7 +39,7 @@ fi
 echo "→ Assembling $BUNDLE (v$VERSION)..."
 rm -rf "$BUNDLE"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
-cp "$BIN_PATH" "$BUNDLE/Contents/MacOS/openquack-app"
+cp "$BIN_PATH" "$BUNDLE/Contents/MacOS/openquack"
 if [[ -f "$ICON_OUT" ]]; then
     cp "$ICON_OUT" "$BUNDLE/Contents/Resources/AppIcon.icns"
 fi
@@ -52,7 +52,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key>            <string>org.openquack.OpenQuack</string>
     <key>CFBundleName</key>                  <string>OpenQuack</string>
     <key>CFBundleDisplayName</key>           <string>OpenQuack</string>
-    <key>CFBundleExecutable</key>            <string>openquack-app</string>
+    <key>CFBundleExecutable</key>            <string>openquack</string>
     <key>CFBundleIconFile</key>              <string>AppIcon</string>
     <key>CFBundleVersion</key>               <string>$VERSION</string>
     <key>CFBundleShortVersionString</key>    <string>$VERSION</string>
