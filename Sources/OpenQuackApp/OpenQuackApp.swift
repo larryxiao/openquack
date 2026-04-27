@@ -192,18 +192,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let result = try await engine.transcribe(audioFile: url, language: defaultLanguage)
 
+                // Smart formatting on raw Whisper output (capitalisation,
+                // end-punctuation, fillers). Toggle: Settings → General.
+                let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
+                let polished = polishEnabled
+                    ? TextPolisher.polish(result.text)
+                    : result.text
+
                 // SPEC-005: paste at cursor by default; pasteboard-only fallback.
                 let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
                 let pasted: Bool
                 if autoPasteEnabled {
-                    pasted = PasteService.paste(result.text)
+                    pasted = PasteService.paste(polished)
                 } else {
-                    PasteService.copyToClipboard(result.text)
+                    PasteService.copyToClipboard(polished)
                     pasted = false
                 }
 
                 await MainActor.run {
-                    appState.lastTranscript = result.text
+                    appState.lastTranscript = polished
                     appState.lastAudioSeconds = result.audioSeconds
                     appState.lastWallSeconds = result.wallSeconds
                     appState.lastRecordingURL = url

@@ -37,6 +37,7 @@ struct SettingsView: View {
 
 private struct GeneralPane: View {
     @AppStorage("autoPaste") private var autoPaste: Bool = true
+    @AppStorage("polishText") private var polishText: Bool = true
     @AppStorage("language") private var language: String = "en"
     @AppStorage("playSounds") private var playSounds: Bool = true
 
@@ -45,6 +46,8 @@ private struct GeneralPane: View {
             Section {
                 Toggle("Paste at cursor automatically", isOn: $autoPaste)
                     .help("After transcription, simulate ⌘V to paste into the focused app. Requires Accessibility permission.")
+                Toggle("Smart formatting", isOn: $polishText)
+                    .help("Capitalise sentences, add end-punctuation, strip filler words (um, uh) before paste. Off = raw Whisper output.")
                 Toggle("Play sounds on start / stop", isOn: $playSounds)
                     .help("Subtle system sounds when a recording begins and ends.")
             } header: {
