@@ -22,9 +22,9 @@ Bench framework + first characterisation. Establishes ground truth before produc
 | 🟢 | Lightning engine (Python subprocess) | SPEC-002 | bench-only baseline |
 | 🟢 | Metrics: WER / CER / RTF / RSS / cold-start | SPEC-002 | `OpenQuackKit/Metrics/` |
 | 🟢 | Corpus: 177 clips (TTS / multilingual / LibriSpeech / noise-aug) | — | `bench/corpus/` |
-| 🟡 | Bench rerun on enriched corpus → BENCHMARKS.md | — | running |
+| 🟢 | Bench rerun on enriched corpus → BENCHMARKS.md | — | M4/16GB matrix landed |
 | 🟢 | `openquack-cli` (single-file transcribe) | SPEC-002 | quick experiments |
-| 🟢 | Vision + roadmap + AGENTS.md | — | this commit |
+| 🟢 | Vision + roadmap + AGENTS.md + spec scaffold | — | foundation in place |
 
 ---
 
@@ -37,7 +37,7 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 | 🟢 | App shell — SwiftPM target, menu bar, About panel | SPEC-010 | S |
 | 🟢 | Audio capture — AVAudioEngine → 16 kHz mono WAV | SPEC-001 | S |
 | 🟢 | Global hotkey (⌃⇧Space toggle, KeyboardShortcuts pkg) | SPEC-003 | S |
-| 🟢 | Record → WhisperKit `small` → transcript in popover + clipboard | SPEC-002 | S |
+| 🟢 | Record → WhisperKit `medium` (en) → transcript in popover + clipboard | SPEC-002 | S |
 | 🔵 | Floating recording overlay (waveform / level meter) | SPEC-004 | M |
 | 🔵 | CGEvent ⌘V auto-paste at cursor (dictation fallback) | SPEC-005 | S |
 | 🔵 | Agent dispatch abstraction + `PassthroughAgent` | SPEC-006 | M |
