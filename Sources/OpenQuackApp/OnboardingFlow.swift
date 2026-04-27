@@ -81,6 +81,22 @@ final class OnboardingState: ObservableObject {
         }
     }
 
+    /// Quietly advance past the current step if the relevant permission is
+    /// already granted. Brief delay so the user sees the "Already granted"
+    /// state before the step disappears — magical, not jarring.
+    func autoAdvanceIfAlreadyGranted() async {
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+        guard !Task.isCancelled else { return }
+        switch step {
+        case .microphone where micStatus == .authorized:
+            advance()
+        case .accessibility where accessibilityTrusted:
+            advance()
+        default:
+            break
+        }
+    }
+
     func complete() {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
     }
@@ -290,15 +306,31 @@ private struct MicrophoneStep: View {
 
     var body: some View {
         VStack(spacing: Theme.s16) {
-            StepGlyph(symbol: "mic")
+            StepGlyph(symbol: state.micStatus == .authorized ? "checkmark" : "mic")
             Text("Microphone").font(.oqTitleSerif)
-            Text("OpenQuack needs to listen to your microphone to transcribe what you say. Audio stays on your Mac — we don't send it anywhere.")
+            Text(bodyCopy)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 380)
             Spacer().frame(height: Theme.s8)
             statusBlock
             Spacer()
+        }
+        .task {
+            await state.autoAdvanceIfAlreadyGranted()
+        }
+    }
+
+    private var bodyCopy: String {
+        switch state.micStatus {
+        case .authorized:
+            return "Microphone access is already enabled. No action needed — moving on."
+        case .denied, .restricted:
+            return "Microphone access was denied. Open System Settings to enable it, or skip — you won't be able to dictate without it."
+        case .notDetermined:
+            return "OpenQuack needs to listen to your microphone to transcribe what you say. Audio stays on your Mac — we don't send it anywhere."
+        @unknown default:
+            return ""
         }
     }
 
@@ -338,9 +370,9 @@ private struct AccessibilityStep: View {
 
     var body: some View {
         VStack(spacing: Theme.s16) {
-            StepGlyph(symbol: "command")
+            StepGlyph(symbol: state.accessibilityTrusted ? "checkmark" : "command")
             Text("Auto-paste").font(.oqTitleSerif)
-            Text("To paste your transcript at the cursor, OpenQuack simulates ⌘V. macOS calls this Accessibility access — without it the text still goes to your clipboard, you just press ⌘V manually.")
+            Text(bodyCopy)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 400)
@@ -363,6 +395,16 @@ private struct AccessibilityStep: View {
             }
             Spacer()
         }
+        .task {
+            await state.autoAdvanceIfAlreadyGranted()
+        }
+    }
+
+    private var bodyCopy: String {
+        if state.accessibilityTrusted {
+            return "Accessibility access is already granted. No action needed — moving on."
+        }
+        return "To paste your transcript at the cursor, OpenQuack simulates ⌘V. macOS calls this Accessibility access — without it the text still goes to your clipboard, you just press ⌘V manually."
     }
 }
 
