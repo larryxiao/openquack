@@ -308,7 +308,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopElapsedTimer()
         guard let url = recorder.stop() else { return }
         Task {
-            await MainActor.run { appState.phase = .transcribing }
+            await MainActor.run {
+                appState.phase = .transcribing
+                appState.transcriptionProgress = 0
+            }
 
             guard let engine = transcriber else {
                 await MainActor.run {
@@ -317,6 +320,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? FileManager.default.removeItem(at: url)
                 return
             }
+
+            // Observe WhisperKit's Progress object so the overlay can show a
+            // real progress bar instead of an indeterminate spinner. Token
+            // alive only for the duration of this transcribe call.
+            let observer = engine.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
+                let fraction = progress.fractionCompleted
+                DispatchQueue.main.async {
+                    self?.appState.transcriptionProgress = fraction
+                }
+            }
+            defer { observer.invalidate() }
 
             do {
                 let result = try await engine.transcribe(

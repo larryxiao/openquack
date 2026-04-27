@@ -17,6 +17,11 @@ public final class WhisperKitEngine: TranscriptionEngine {
     public let modelID: String
     private let pipe: WhisperKit
 
+    /// Foundation Progress object the pipe maintains across a transcribe call.
+    /// KVO-observable on `\.fractionCompleted` — useful for a live progress bar.
+    /// Reset by WhisperKit at the start of each transcribe.
+    public var progress: Progress { pipe.progress }
+
     public init(model: String, downloadBase: URL? = nil) async throws {
         self.modelID = model
 

@@ -110,7 +110,7 @@ struct OverlayPill: View {
             indicator
             VStack(alignment: .leading, spacing: 2) {
                 Text(headline).font(.oqHeadline)
-                Text(subline).font(.system(size: 12)).foregroundStyle(.secondary)
+                sublineView
             }
             Spacer(minLength: 0)
         }
@@ -127,7 +127,9 @@ struct OverlayPill: View {
         case .recording:
             VoiceLevel(level: state.currentLevel)
         case .transcribing:
-            ProgressView().controlSize(.small)
+            Image(systemName: "waveform.circle")
+                .font(.body)
+                .foregroundStyle(Theme.amber)
         case .ready:
             Image(systemName: state.lastPasted ? "checkmark.circle.fill" : "doc.on.clipboard")
                 .font(.body)
@@ -135,6 +137,25 @@ struct OverlayPill: View {
         default:
             Image(systemName: "mic")
                 .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var sublineView: some View {
+        switch state.phase {
+        case .transcribing:
+            VStack(alignment: .leading, spacing: 3) {
+                ProgressView(value: state.transcriptionProgress)
+                    .progressViewStyle(.linear)
+                    .tint(Theme.amber)
+                Text(transcribingSubline)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        default:
+            Text(plainSubline)
+                .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
     }
@@ -148,13 +169,19 @@ struct OverlayPill: View {
         }
     }
 
-    private var subline: String {
+    private var transcribingSubline: String {
+        let pct = Int((state.transcriptionProgress * 100).rounded())
+        // Clamp at 99% until we actually hit done (the observed Progress
+        // sometimes lags one tick behind completion).
+        let clamped = pct >= 100 ? 99 : pct
+        return "\(clamped)% · \(state.modelLabel)"
+    }
+
+    private var plainSubline: String {
         switch state.phase {
         case .recording:
             let secs = String(format: "%.1f", state.elapsedSeconds)
             return "\(secs)s · ⌃⇧Space to stop"
-        case .transcribing:
-            return state.modelLabel
         case .ready:
             return state.lastTranscript.map { String($0.prefix(48)) } ?? ""
         default:
