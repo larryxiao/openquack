@@ -158,6 +158,14 @@ private struct AboutPane: View {
             .padding(.top, 4)
 
             Spacer()
+
+            Button("Replay onboarding") {
+                UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+                OnboardingWindowController.show()
+            }
+            .buttonStyle(.borderless)
+            .font(.caption)
+
             Text("Apache 2.0").font(.caption2).foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

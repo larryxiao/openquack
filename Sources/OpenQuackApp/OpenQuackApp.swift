@@ -57,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
+
+        // First launch → walk the user through permissions + hotkey.
+        // Subsequent launches go straight to the menu bar.
+        OnboardingWindowController.showIfFirstLaunch()
+
         Task { await warmTranscriber() }
     }
 
