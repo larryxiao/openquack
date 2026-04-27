@@ -16,6 +16,11 @@ import OpenQuackKit
 // permission steps; by the time the user reaches `install`, it's typically
 // already complete. AppDelegate defers its warmTranscriber call until
 // onboarding closes so there's no concurrent re-download.
+//
+// Design system: see Theme.swift. Onboarding is a "reception" surface, so
+// it uses CreamSurface as the background and the serif titles. Step icons
+// are restrained regular-weight glyphs in cream-raised circles — one motif
+// across all steps reads more designed than a parade of `.circle.fill`s.
 
 enum OnboardingStep: Int, CaseIterable {
     case welcome
@@ -45,9 +50,6 @@ final class OnboardingState: ObservableObject {
         self.appState = appState
         refreshPermissions()
 
-        // Mirror the most recent transcript into the demo textbox so the user
-        // sees their dictation appear even if the focused field is something
-        // else when paste lands.
         appState.$lastTranscript
             .compactMap { $0 }
             .receive(on: DispatchQueue.main)
@@ -110,21 +112,24 @@ struct OnboardingView: View {
     let onClose: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            stepBody
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 40)
-                .padding(.vertical, 32)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.18), value: state.step)
+        ZStack {
+            CreamSurface().ignoresSafeArea()
 
-            Divider()
-            footer
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
+            VStack(spacing: 0) {
+                stepBody
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, Theme.s32)
+                    .padding(.vertical, Theme.s24)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.18), value: state.step)
+
+                Divider().opacity(0.4)
+                footer
+                    .padding(.horizontal, Theme.s24)
+                    .padding(.vertical, Theme.s16)
+            }
         }
         .frame(width: 580, height: 560)
-        .background(WindowBackground())
     }
 
     @ViewBuilder
@@ -141,9 +146,9 @@ struct OnboardingView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.s12) {
             stepIndicator
-            modelChip  // global download status visible across every step
+            modelChip
             Spacer()
             if state.step != .done {
                 Button("Skip") {
@@ -183,31 +188,43 @@ struct OnboardingView: View {
     }
 
     private var stepIndicator: some View {
-        HStack(spacing: 6) {
-            ForEach(OnboardingStep.allCases, id: \.rawValue) { s in
-                Circle()
-                    .fill(s.rawValue <= state.step.rawValue
-                          ? Color.primary.opacity(0.85)
-                          : Color.secondary.opacity(0.25))
-                    .frame(width: 6, height: 6)
-            }
-        }
+        SectionHeader("Step \(state.step.rawValue + 1) of \(OnboardingStep.allCases.count)")
     }
 
     @ViewBuilder
     private var modelChip: some View {
         if !state.modelDownloaded && state.modelError == nil {
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.s4) {
                 ProgressView().controlSize(.mini)
                 Text("Whisper \(Int(state.modelProgress * 100))%")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         } else if state.modelDownloaded {
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            HStack(spacing: Theme.s4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Theme.moss)
                 Text("Whisper ready").font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+}
+
+// MARK: - shared step chrome
+
+/// Restrained step icon: a regular-weight SF Symbol in a soft cream-raised
+/// circle. One motif across every step.
+private struct StepGlyph: View {
+    let symbol: String
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Theme.creamRaised)
+                .frame(width: 96, height: 96)
+            Image(systemName: symbol)
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(Theme.ink.opacity(0.85))
         }
     }
 }
@@ -216,47 +233,55 @@ struct OnboardingView: View {
 
 private struct WelcomeStep: View {
     var body: some View {
-        VStack(spacing: 14) {
-            Text("🦆").font(.system(size: 92))
-            Text("Welcome to OpenQuack").font(.title.weight(.semibold))
+        VStack(spacing: Theme.s16) {
+            Text("🦆").font(.system(size: 32))
+            Text("Welcome to OpenQuack")
+                .font(.oqHeroSerif)
             Text("Speak. Have your Mac do it. Privately.")
-                .font(.title3).foregroundStyle(.secondary)
+                .font(.oqTaglineSerif)
+                .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 12) {
-                pillRow(
-                    icon: "lock.shield.fill",
+            VStack(spacing: Theme.s8) {
+                privacyRow(
+                    icon: "lock.shield",
                     title: "Local-only by design",
                     body: "Audio never leaves your Mac. No cloud, no signup, no telemetry."
                 )
-                pillRow(
-                    icon: "scalemass.fill",
+                privacyRow(
+                    icon: "scalemass",
                     title: "Slim",
                     body: "A 3 MB menu-bar app. The Whisper model is the only thing we download."
                 )
-                pillRow(
+                privacyRow(
                     icon: "shield.checkered",
                     title: "Open source, MIT",
                     body: "Read every line. The same code runs your dictation."
                 )
             }
-            .padding(.top, 14)
-            .frame(maxWidth: 440)
+            .padding(.top, Theme.s12)
+            .frame(maxWidth: 460)
 
             Spacer()
         }
     }
 
-    private func pillRow(icon: String, title: String, body: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+    private func privacyRow(icon: String, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: Theme.s12) {
             Image(systemName: icon)
                 .font(.title3)
-                .foregroundStyle(.tint)
+                .foregroundStyle(Theme.ink.opacity(0.85))
                 .frame(width: 26, alignment: .center)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.callout.weight(.medium))
-                Text(body).font(.callout).foregroundStyle(.secondary)
+                Text(body)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .oqCardOnCream(padding: Theme.s12)
     }
 }
 
@@ -264,15 +289,14 @@ private struct MicrophoneStep: View {
     @ObservedObject var state: OnboardingState
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "mic.circle.fill")
-                .font(.system(size: 72)).foregroundStyle(.tint)
-            Text("Microphone").font(.title.weight(.semibold))
+        VStack(spacing: Theme.s16) {
+            StepGlyph(symbol: "mic")
+            Text("Microphone").font(.oqTitleSerif)
             Text("OpenQuack needs to listen to your microphone to transcribe what you say. Audio stays on your Mac — we don't send it anywhere.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 380)
-            Spacer().frame(height: 16)
+            Spacer().frame(height: Theme.s8)
             statusBlock
             Spacer()
         }
@@ -284,11 +308,11 @@ private struct MicrophoneStep: View {
         case .authorized:
             Label("Granted", systemImage: "checkmark.circle.fill")
                 .font(.body.weight(.medium))
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.moss)
         case .denied, .restricted:
-            VStack(spacing: 8) {
+            VStack(spacing: Theme.s8) {
                 Label("Denied — change in System Settings", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.amber)
                 Button("Open System Settings") {
                     NSWorkspace.shared.open(URL(string:
                         "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
@@ -313,22 +337,21 @@ private struct AccessibilityStep: View {
     @ObservedObject var state: OnboardingState
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "command.circle.fill")
-                .font(.system(size: 72)).foregroundStyle(.tint)
-            Text("Auto-paste").font(.title.weight(.semibold))
+        VStack(spacing: Theme.s16) {
+            StepGlyph(symbol: "command")
+            Text("Auto-paste").font(.oqTitleSerif)
             Text("To paste your transcript at the cursor, OpenQuack simulates ⌘V. macOS calls this Accessibility access — without it the text still goes to your clipboard, you just press ⌘V manually.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 400)
-            Spacer().frame(height: 16)
+            Spacer().frame(height: Theme.s8)
 
             if state.accessibilityTrusted {
                 Label("Granted", systemImage: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Theme.moss)
             } else {
-                VStack(spacing: 6) {
+                VStack(spacing: Theme.s4) {
                     Button("Grant Accessibility access") {
                         _ = PasteService.isAccessibilityTrusted(prompt: true)
                         PasteService.openAccessibilitySettings()
@@ -345,15 +368,14 @@ private struct AccessibilityStep: View {
 
 private struct HotkeyStep: View {
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "keyboard.fill")
-                .font(.system(size: 72)).foregroundStyle(.tint)
-            Text("Pick your hotkey").font(.title.weight(.semibold))
+        VStack(spacing: Theme.s16) {
+            StepGlyph(symbol: "keyboard")
+            Text("Pick your hotkey").font(.oqTitleSerif)
             Text("Press it once to start dictating, again to stop. The default ⌃⇧Space works almost everywhere.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 380)
-            Spacer().frame(height: 16)
+            Spacer().frame(height: Theme.s8)
             KeyboardShortcuts.Recorder("Toggle dictation:", name: .toggleRecording)
             Spacer()
         }
@@ -364,14 +386,12 @@ private struct InstallStep: View {
     @ObservedObject var state: OnboardingState
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: state.modelDownloaded ? "checkmark.circle.fill" : "arrow.down.circle.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(state.modelDownloaded ? Color.green : Color.accentColor)
+        VStack(spacing: Theme.s16) {
+            StepGlyph(symbol: state.modelDownloaded ? "checkmark" : "arrow.down.circle")
                 .animation(.easeInOut(duration: 0.25), value: state.modelDownloaded)
 
             Text(state.modelDownloaded ? "Whisper installed" : "Installing Whisper")
-                .font(.title.weight(.semibold))
+                .font(.oqTitleSerif)
 
             Text(detailText)
                 .multilineTextAlignment(.center)
@@ -379,15 +399,15 @@ private struct InstallStep: View {
                 .frame(maxWidth: 420)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Spacer().frame(height: 16)
+            Spacer().frame(height: Theme.s8)
 
             if let err = state.modelError {
                 Label(err, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.amber)
                     .frame(maxWidth: 380)
                     .multilineTextAlignment(.center)
             } else if !state.modelDownloaded {
-                VStack(spacing: 10) {
+                VStack(spacing: Theme.s8) {
                     ProgressView(value: state.modelProgress)
                         .frame(maxWidth: 320)
                     Text("\(Int(state.modelProgress * 100))%")
@@ -413,50 +433,36 @@ private struct DemoStep: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: "waveform.badge.mic")
-                    .font(.system(size: 44)).foregroundStyle(.tint)
+        VStack(alignment: .leading, spacing: Theme.s12) {
+            HStack(spacing: Theme.s12) {
+                StepGlyph(symbol: "waveform.badge.mic")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Try it").font(.title.weight(.semibold))
+                    Text("Try it").font(.oqTitleSerif)
                     Text("Press your hotkey, say a sentence, press again. Or hold it (push-to-talk).")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
 
-            Text("YOUR TRANSCRIPT")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.tertiary)
-                .tracking(0.5)
-                .padding(.top, 8)
+            SectionHeader("Your transcript")
+                .padding(.top, Theme.s8)
 
-            ZStack(alignment: .topLeading) {
-                if state.demoTranscript.isEmpty {
-                    Text("Your spoken text will appear here.")
-                        .foregroundStyle(.tertiary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $state.demoTranscript)
-                    .font(.body)
-                    .focused($focused)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .frame(minHeight: 140, maxHeight: 200)
-                    .background(Color.secondary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
+            PlaceholderTextEditor(
+                text: $state.demoTranscript,
+                prompt: "Your spoken text will appear here.",
+                minHeight: 140,
+                idealHeight: 180
+            )
+            .focused($focused)
 
-            HStack(spacing: 12) {
+            HStack(spacing: Theme.s8) {
                 Image(systemName: "info.circle")
                     .foregroundStyle(.secondary)
                 Text("Looking for the recording overlay? Top-centre of your screen.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(.top, 4)
+            .padding(.top, Theme.s4)
 
             Spacer()
         }
@@ -467,16 +473,15 @@ private struct DemoStep: View {
 
 private struct DoneStep: View {
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 72)).foregroundStyle(.green)
-            Text("You're all set").font(.title.weight(.semibold))
+        VStack(spacing: Theme.s16) {
+            StepGlyph(symbol: "checkmark")
+            Text("You're all set").font(.oqTitleSerif)
             Text("Press your hotkey anywhere to start dictating. Click the duck in your menu bar for Settings.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 400)
-            Spacer().frame(height: 12)
-            VStack(alignment: .leading, spacing: 10) {
+            Spacer().frame(height: Theme.s8)
+            VStack(alignment: .leading, spacing: Theme.s8) {
                 tipRow(symbol: "command",
                        text: "Smart formatting, custom dictionary, push-to-talk, and VAD live in Settings.")
                 tipRow(symbol: "lock.shield",
@@ -488,24 +493,11 @@ private struct DoneStep: View {
     }
 
     private func tipRow(symbol: String, text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: Theme.s8) {
             Image(systemName: symbol).foregroundStyle(.secondary).frame(width: 18)
             Text(text).foregroundStyle(.secondary)
         }
     }
-}
-
-// MARK: - window background
-
-private struct WindowBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = .underWindowBackground
-        v.blendingMode = .behindWindow
-        v.state = .active
-        return v
-    }
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 // MARK: - window controller
@@ -516,9 +508,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let state: OnboardingState
     private let onComplete: () -> Void
 
-    /// Show on first launch only. AppDelegate provides its `appState` (so the
-    /// demo step can observe transcripts) and an `onComplete` callback used to
-    /// kick off WhisperKit warming once the user finishes.
     static func showIfFirstLaunch(appState: AppState, onComplete: @escaping () -> Void) {
         let done = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if !done { show(appState: appState, onComplete: onComplete) }
