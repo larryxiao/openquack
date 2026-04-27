@@ -43,10 +43,14 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 | 🔵 | Agent session protocol + `PassthroughAgent` + conversation panel | SPEC-006 | M |
 | 🔵 | `ClaudeCodeAgent` — long-lived subprocess, streaming events | SPEC-006 | M |
 | 🔵 | Approval prompt UX (overlay morph + buttons) | SPEC-006 | S |
-| ⚪ | Onboarding flow (Welcome → Permissions → Hotkey → First test) | — | M |
+| 🟢 | Onboarding flow (Welcome → Mic → Paste → Hotkey → Done) | — | M |
 | 🟢 | Settings scene MVP (General / Models / Shortcut / About) | — | M |
 | 🔵 | Settings — Privacy + Agent panes (lands with SPEC-006 impl) | SPEC-006 | S |
-| ⚪ | App icon + `Assets.xcassets` | — | S |
+| 🟢 | Smart text post-processing (capitalise, punct, fillers) | — | S |
+| 🟢 | Live level meter + push-to-talk | SPEC-001 ext | S |
+| 🟢 | VAD auto-stop + sounds + custom dictionary | — | S |
+| 🟢 | App icon (procedural cream-gradient duck) | — | S |
+| 🟢 | DMG + Homebrew cask + README polish | — | S |
 
 **M2 done when:** fresh user installs, completes onboarding, presses hotkey, says *"open a PR for this branch"* in a Claude-Code-configured repo, and a PR appears.
 
@@ -58,12 +62,11 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 |---|---|---|---|
 | ⚪ | `OllamaAgent` (local HTTP) | SPEC-006 ext | S |
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
-| ⚪ | Custom dictionary (custom-words bias) | new SPEC | S |
 | ⚪ | "App Branch" context awareness (foreground app → prompt) | new SPEC | M |
 | ⚪ | Streaming partial transcripts | new SPEC | L |
 | ⚪ | Code signing + notarisation | — | S |
-| ⚪ | DMG + Homebrew cask | — | S |
 | ⚪ | Sparkle auto-update | — | S |
+| ⚪ | Demo gif + landing page (GitHub Pages) | — | S |
 
 ---
 
