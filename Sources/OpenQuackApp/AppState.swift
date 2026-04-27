@@ -18,6 +18,8 @@ public final class AppState: ObservableObject {
     @Published public var lastAudioSeconds: Double?
     @Published public var lastWallSeconds: Double?
     @Published public var lastRecordingURL: URL?
+    @Published public var lastPasted: Bool = false
+    @Published public var accessibilityTrusted: Bool = false
     @Published public var modelLabel: String = "whisperkit medium · en"
 
     public init() {}

@@ -1,6 +1,6 @@
 # SPEC-005 — Paste at cursor
 
-**Status:** draft (M2)
+**Status:** ratified — shipped 2026-04-27 (`Sources/OpenQuackKit/Output/PasteService.swift`)
 **Owner:** `OpenQuackKit/Output/`
 **Last updated:** 2026-04-26
 

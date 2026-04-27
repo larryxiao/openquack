@@ -86,19 +86,21 @@ struct MenuBarContent: View {
     private var footer: some View {
         HStack(spacing: 12) {
             if state.lastTranscript != nil {
-                Button("Copy") {
-                    let pb = NSPasteboard.general
-                    pb.clearContents()
-                    pb.setString(state.lastTranscript ?? "", forType: .string)
-                }
-                .buttonStyle(.borderless).font(.caption)
+                Button("Copy") { PasteService.copyToClipboard(state.lastTranscript ?? "") }
+                    .buttonStyle(.borderless).font(.caption)
             }
             if let url = state.lastRecordingURL, FileManager.default.fileExists(atPath: url.path) {
-                Button("Listen") {
-                    NSWorkspace.shared.open(url)
+                Button("Listen") { NSWorkspace.shared.open(url) }
+                    .buttonStyle(.borderless).font(.caption)
+                    .help("Open the last recording — useful for diagnosing audio vs model issues.")
+            }
+            if !state.accessibilityTrusted {
+                Button("Grant Paste…") {
+                    _ = PasteService.isAccessibilityTrusted(prompt: true)
+                    PasteService.openAccessibilitySettings()
                 }
                 .buttonStyle(.borderless).font(.caption)
-                .help("Open the last recording in the default audio player — useful for diagnosing whether bad transcripts are the model or the audio.")
+                .help("Grant Accessibility permission so OpenQuack can paste at cursor automatically.")
             }
             Spacer()
             Button("About") { aboutPanel() }
@@ -128,7 +130,8 @@ struct MenuBarContent: View {
         case .starting:                 return "Starting…"
         case .recording:                return "Recording"
         case .transcribing:             return "Transcribing…"
-        case .ready:                    return "Ready — transcript copied to clipboard"
+        case .ready:
+            return state.lastPasted ? "Pasted at cursor" : "Copied to clipboard (⌘V to paste)"
         case .error(let msg):           return "Error"
         }
     }
@@ -136,8 +139,13 @@ struct MenuBarContent: View {
     private var hint: String {
         switch state.phase {
         case .warming:
-            return "Loading the Whisper model — first launch downloads ~150 MB. This only happens once."
-        case .idle, .ready:
+            return "Loading the Whisper model. The first launch downloads ~700 MB; subsequent launches are 5–10 s."
+        case .idle:
+            return "Press ⌃⇧Space to dictate. Press again to stop."
+        case .ready:
+            if !state.accessibilityTrusted && !state.lastPasted {
+                return "Grant Accessibility to enable auto-paste, or press ⌘V to paste manually."
+            }
             return "Press ⌃⇧Space to dictate. Press again to stop."
         case .starting:
             return "Mic is engaging…"

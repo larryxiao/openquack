@@ -184,15 +184,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             do {
                 let result = try await engine.transcribe(audioFile: url, language: defaultLanguage)
+
+                // SPEC-005: paste at cursor by default; pasteboard-only fallback.
+                let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
+                let pasted: Bool
+                if autoPasteEnabled {
+                    pasted = PasteService.paste(result.text)
+                } else {
+                    PasteService.copyToClipboard(result.text)
+                    pasted = false
+                }
+
                 await MainActor.run {
                     appState.lastTranscript = result.text
                     appState.lastAudioSeconds = result.audioSeconds
                     appState.lastWallSeconds = result.wallSeconds
                     appState.lastRecordingURL = url
+                    appState.lastPasted = pasted
+                    appState.accessibilityTrusted = PasteService.isAccessibilityTrusted()
                     appState.phase = .ready
                 }
-                // Pasteboard so the user can ⌘V even before SPEC-005 ships auto-paste.
-                copyToPasteboard(result.text)
             } catch {
                 await MainActor.run {
                     appState.phase = .error("Transcription failed: \(error)")
@@ -231,9 +242,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         elapsedTimer = nil
     }
 
-    private func copyToPasteboard(_ text: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
-    }
 }

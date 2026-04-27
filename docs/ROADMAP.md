@@ -39,7 +39,7 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 | 🟢 | Global hotkey (⌃⇧Space toggle, KeyboardShortcuts pkg) | SPEC-003 | S |
 | 🟢 | Record → WhisperKit `medium` (en) → transcript in popover + clipboard | SPEC-002 | S |
 | 🔵 | Floating recording overlay (waveform / level meter) | SPEC-004 | M |
-| 🔵 | CGEvent ⌘V auto-paste at cursor (dictation fallback) | SPEC-005 | S |
+| 🟢 | CGEvent ⌘V auto-paste at cursor (Accessibility prompt + clipboard fallback) | SPEC-005 | S |
 | 🔵 | Agent dispatch abstraction + `PassthroughAgent` | SPEC-006 | M |
 | 🔵 | `ClaudeCodeAgent` — subprocess to local `claude` CLI | SPEC-006 | M |
 | ⚪ | Onboarding flow (Welcome → Permissions → Hotkey → First test) | — | M |
