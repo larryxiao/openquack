@@ -14,6 +14,7 @@ public final class AppState: ObservableObject {
 
     @Published public var phase: Phase = .warming(modelLabel: "medium")
     @Published public var elapsedSeconds: Double = 0
+    @Published public var currentLevel: Float = 0  // 0…1 RMS, for the level meter
     @Published public var lastTranscript: String?
     @Published public var lastAudioSeconds: Double?
     @Published public var lastWallSeconds: Double?

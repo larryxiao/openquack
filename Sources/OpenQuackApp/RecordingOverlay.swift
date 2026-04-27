@@ -132,7 +132,7 @@ struct OverlayPill: View {
     private var indicator: some View {
         switch state.phase {
         case .recording:
-            PulsingDot(color: .red)
+            VoiceLevel(level: state.currentLevel)
         case .transcribing:
             ProgressView().controlSize(.small)
         default:
@@ -171,5 +171,29 @@ private struct PulsingDot: View {
             .opacity(pulse ? 1.0 : 0.6)
             .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: pulse)
             .onAppear { pulse = true }
+    }
+}
+
+/// 5-bar equaliser-style level meter. Bars centred around tallest in the middle,
+/// height scales with the live level. Cheap and reads as "voice activity".
+private struct VoiceLevel: View {
+    let level: Float
+    private let multipliers: [CGFloat] = [0.45, 0.75, 1.0, 0.75, 0.45]
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<5, id: \.self) { i in
+                Capsule()
+                    .fill(Color.red.opacity(0.85))
+                    .frame(width: 3, height: barHeight(i))
+                    .animation(.easeOut(duration: 0.08), value: level)
+            }
+        }
+        .frame(width: 24, height: 22)
+    }
+
+    private func barHeight(_ i: Int) -> CGFloat {
+        let scaled = max(2, CGFloat(level) * 22 * multipliers[i])
+        return min(22, scaled)
     }
 }

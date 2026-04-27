@@ -118,15 +118,29 @@ private struct ModelsPane: View {
 // MARK: - Shortcut
 
 private struct ShortcutPane: View {
+    @AppStorage("hotkeyMode") private var hotkeyMode: String = "toggle"
+
     var body: some View {
         Form {
             Section {
-                KeyboardShortcuts.Recorder("Toggle dictation:", name: .toggleRecording)
-                Text("Press the shortcut to start recording. Press again to stop and transcribe. Default: ⌃⇧Space.")
+                KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
+                Text("Default: ⌃⇧Space.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
                 Text("Global hotkey")
+            }
+
+            Section {
+                Picker("Behaviour", selection: $hotkeyMode) {
+                    Text("Toggle (press to start, press to stop)").tag("toggle")
+                    Text("Push-to-talk (hold to record)").tag("pushToTalk")
+                }
+                Text("Push-to-talk is best for short utterances — release the key and OpenQuack starts transcribing immediately.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Mode")
             }
         }
         .formStyle(.grouped)

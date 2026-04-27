@@ -44,6 +44,10 @@ public final class AudioRecorder {
     private var _startTime: Date?
     private var _isRecording = false
 
+    /// Called on the main queue with each buffer's RMS level (0…1, gently
+    /// scaled for UI). Set this before calling `start` to drive a level meter.
+    public var levelHandler: ((Float) -> Void)?
+
     public init() {}
 
     public var isRecording: Bool {
@@ -130,6 +134,8 @@ public final class AudioRecorder {
             throw RecorderError.fileWriteFailed("\(error)")
         }
 
+        let levelHandler = self.levelHandler
+
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
             do {
                 try file.write(from: buffer)
@@ -137,6 +143,12 @@ public final class AudioRecorder {
                 FileHandle.standardError.write(
                     "[AudioRecorder] write error: \(error)\n".data(using: .utf8) ?? Data()
                 )
+            }
+
+            // Emit a UI-friendly level if anyone is subscribed.
+            if let levelHandler {
+                let level = Self.uiLevel(from: buffer)
+                DispatchQueue.main.async { levelHandler(level) }
             }
         }
 
@@ -177,5 +189,23 @@ public final class AudioRecorder {
     public func cancel() {
         guard let url = stop() else { return }
         try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Compute a 0…1 UI level from a PCM buffer. RMS in float32 is typically
+    /// 0…0.3 for normal voice; we apply a gentle log-ish curve so the meter
+    /// feels responsive at low volumes without being pinned at high ones.
+    private static func uiLevel(from buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData?[0],
+              buffer.frameLength > 0 else { return 0 }
+        let count = Int(buffer.frameLength)
+        var sumSq: Float = 0
+        for i in stride(from: 0, to: count, by: 4) {  // every 4th sample is plenty for a meter
+            let s = channelData[i]
+            sumSq += s * s
+        }
+        let rms = sqrt(sumSq / Float(count / 4 + 1))
+        // Boost low-volume response; clamp to 0...1.
+        let boosted = min(1.0, rms * 6.0)
+        return boosted
     }
 }
