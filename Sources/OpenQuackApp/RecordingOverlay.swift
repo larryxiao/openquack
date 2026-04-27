@@ -47,7 +47,7 @@ final class RecordingOverlay {
 
         let pill = OverlayPill(state: state)
         let host = NSHostingView(rootView: pill)
-        host.frame = NSRect(x: 0, y: 0, width: 280, height: 56)
+        host.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
 
         let panel = NSPanel(
             contentRect: host.frame,
@@ -108,6 +108,7 @@ struct OverlayPill: View {
     var body: some View {
         HStack(spacing: Theme.s12) {
             indicator
+                .frame(minWidth: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(headline).font(.oqHeadline)
                 sublineView
@@ -116,7 +117,7 @@ struct OverlayPill: View {
         }
         .padding(.horizontal, Theme.s16)
         .padding(.vertical, Theme.s12)
-        .frame(width: 280, height: 56)
+        .frame(width: 320, height: 60)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: Theme.rFloating, style: .continuous))
     }
@@ -125,7 +126,7 @@ struct OverlayPill: View {
     private var indicator: some View {
         switch state.phase {
         case .recording:
-            VoiceLevel(level: state.currentLevel)
+            VoiceLevel(history: state.levelHistory)
         case .transcribing:
             Image(systemName: "waveform.circle")
                 .font(.body)
@@ -190,28 +191,40 @@ struct OverlayPill: View {
     }
 }
 
-/// 5-bar equaliser-style level meter. Outer bars at 0.6×, centre at 1.0× —
-/// reads as friendly "voice activity" rather than alarm chrome. Coral fill
-/// (Theme.coral) instead of saturated red.
+/// Sliding-window waveform-style level meter. Each bar represents a slice
+/// of recent audio (newest on the right), so the meter actually reads as
+/// "voice activity over time" rather than all bars pulsing in lockstep.
+/// Coral fill at full strength on the latest bar, fading slightly toward
+/// the older edge for a sense of motion.
 private struct VoiceLevel: View {
-    let level: Float
-    private let multipliers: [CGFloat] = [0.45, 0.75, 1.0, 0.75, 0.45]
-    private let opacities: [Double]    = [0.6, 0.85, 1.0, 0.85, 0.6]
+    let history: [Float]
+
+    private let barWidth: CGFloat = 3.5
+    private let barSpacing: CGFloat = 2.5
+    private let maxBarHeight: CGFloat = 30
 
     var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<5, id: \.self) { i in
+        HStack(alignment: .center, spacing: barSpacing) {
+            ForEach(Array(history.enumerated()), id: \.offset) { idx, level in
                 Capsule()
-                    .fill(Theme.coral.opacity(opacities[i]))
-                    .frame(width: 3, height: barHeight(i))
-                    .animation(.easeOut(duration: 0.08), value: level)
+                    .fill(Theme.coral.opacity(opacity(at: idx)))
+                    .frame(width: barWidth, height: barHeight(level))
+                    .animation(.easeOut(duration: 0.10), value: level)
             }
         }
-        .frame(width: 24, height: 22)
+        .frame(height: maxBarHeight)
     }
 
-    private func barHeight(_ i: Int) -> CGFloat {
-        let scaled = max(2, CGFloat(level) * 22 * multipliers[i])
-        return min(22, scaled)
+    private func barHeight(_ level: Float) -> CGFloat {
+        let scaled = CGFloat(level) * maxBarHeight
+        return max(3, min(maxBarHeight, scaled))
+    }
+
+    /// Fade older bars (left) slightly so the rightmost (newest) reads as the
+    /// "live" edge of the waveform.
+    private func opacity(at index: Int) -> Double {
+        let total = max(1, history.count - 1)
+        let position = Double(index) / Double(total)  // 0 = oldest, 1 = newest
+        return 0.55 + 0.45 * position  // older bars at 0.55, newest at 1.0
     }
 }

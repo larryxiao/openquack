@@ -78,9 +78,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
 
-        // Drive the overlay's level meter.
+        // Drive the overlay's level meter — pushes into a sliding window
+        // so each bar represents a slice of recent audio rather than all
+        // bars reacting to the same instantaneous RMS.
         recorder.levelHandler = { [weak self] level in
-            self?.appState.currentLevel = level
+            Task { @MainActor in
+                self?.appState.pushLevel(level)
+            }
         }
 
         // Refresh permission state on launch and every 5 s while running so
@@ -292,6 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
+                    appState.resetLevels()
                     lastVoiceAt = nil
                     startElapsedTimer()
                     playSound("Tink")
