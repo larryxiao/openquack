@@ -78,6 +78,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
 
+        // Defensive: switching activation policy back to .accessory can hide
+        // the menu-bar status item on macOS 15. Re-assert visibility on every
+        // policy flip so the duck stays put after onboarding / Settings close.
+        ActivationPolicy.afterChange = { [weak self] in
+            self?.statusItem.isVisible = true
+        }
+
         // Drive the overlay's level meter — pushes into a sliding window
         // so each bar represents a slice of recent audio rather than all
         // bars reacting to the same instantaneous RMS.
@@ -111,6 +118,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Light, opportunistic update poll. Once per launch, no faster than
         // once per 24h; quietly skips on network failure.
         Task { await pollForUpdate() }
+    }
+
+    /// macOS calls this when the user double-clicks the .app while it's
+    /// already running. We're a menu-bar app with no main window, so the
+    /// default behaviour is "nothing visible happens" — which makes users
+    /// think the app is broken. Pop the menu so they can see we're alive.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let popover = self.popover, !popover.isShown else { return }
+            self.togglePopover(nil)
+        }
+        return true
     }
 
     /// Forces the onboarding flow to re-appear. Called from Settings → About.

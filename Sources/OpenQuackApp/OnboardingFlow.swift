@@ -667,11 +667,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
 /// Centralised activation policy: .regular when any titled window is visible,
 /// .accessory when only the menu-bar status item + transient panels remain.
+@MainActor
 enum ActivationPolicy {
+    /// Hook invoked after the policy switches. AppDelegate uses this to
+    /// re-assert `statusItem.isVisible = true` — switching .regular →
+    /// .accessory on macOS 15 can hide the status item.
+    static var afterChange: (() -> Void)?
+
     static func refresh() {
         let hasTitledWindow = NSApp.windows.contains { window in
             window.isVisible && window.styleMask.contains(.titled)
         }
         NSApp.setActivationPolicy(hasTitledWindow ? .regular : .accessory)
+        afterChange?()
     }
 }
