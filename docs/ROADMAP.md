@@ -43,7 +43,8 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 | 🔵 | Agent dispatch abstraction + `PassthroughAgent` | SPEC-006 | M |
 | 🔵 | `ClaudeCodeAgent` — subprocess to local `claude` CLI | SPEC-006 | M |
 | ⚪ | Onboarding flow (Welcome → Permissions → Hotkey → First test) | — | M |
-| ⚪ | Settings scene (General / Models / Shortcut / Privacy / Agent / About) | — | M |
+| 🟢 | Settings scene MVP (General / Models / Shortcut / About) | — | M |
+| 🔵 | Settings — Privacy + Agent panes (lands with SPEC-006 impl) | SPEC-006 | S |
 | ⚪ | App icon + `Assets.xcassets` | — | S |
 
 **M2 done when:** fresh user installs, completes onboarding, presses hotkey, says *"open a PR for this branch"* in a Claude-Code-configured repo, and a PR appears.

@@ -103,8 +103,9 @@ struct MenuBarContent: View {
                 .help("Grant Accessibility permission so OpenQuack can paste at cursor automatically.")
             }
             Spacer()
-            Button("About") { aboutPanel() }
+            Button("Settings…") { SettingsWindowController.show() }
                 .buttonStyle(.borderless).font(.caption)
+                .keyboardShortcut(",", modifiers: .command)
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.borderless).font(.caption)
                 .keyboardShortcut("q", modifiers: .command)

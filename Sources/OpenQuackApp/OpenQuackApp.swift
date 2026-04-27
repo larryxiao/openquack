@@ -24,9 +24,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var monitor: Any?
     private var cancellables = Set<AnyCancellable>()
 
-    // Defaults; will be overridable from Settings (forthcoming spec).
-    private let defaultModel = "medium"          // Bench: 2.6% WER LibriSpeech, 6.3% noisy on M4/16GB
-    private let defaultLanguage: String? = "en"  // Auto-detect on short clips is unreliable; opt in via Settings later
+    // Defaults read from UserDefaults (Settings writes them via @AppStorage).
+    private var defaultModel: String {
+        UserDefaults.standard.string(forKey: "model") ?? "medium"
+    }
+    private var defaultLanguage: String? {
+        let raw = UserDefaults.standard.string(forKey: "language") ?? "en"
+        return raw.isEmpty ? nil : raw  // empty string = auto-detect
+    }
 
     private let appState = AppState()
     private let recorder = AudioRecorder()
