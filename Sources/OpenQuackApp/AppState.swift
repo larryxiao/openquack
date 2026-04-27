@@ -12,12 +12,13 @@ public final class AppState: ObservableObject {
         case error(String)
     }
 
-    @Published public var phase: Phase = .warming(modelLabel: "small")
+    @Published public var phase: Phase = .warming(modelLabel: "medium")
     @Published public var elapsedSeconds: Double = 0
     @Published public var lastTranscript: String?
     @Published public var lastAudioSeconds: Double?
     @Published public var lastWallSeconds: Double?
-    @Published public var modelLabel: String = "whisperkit small"
+    @Published public var lastRecordingURL: URL?
+    @Published public var modelLabel: String = "whisperkit medium · en"
 
     public init() {}
 }

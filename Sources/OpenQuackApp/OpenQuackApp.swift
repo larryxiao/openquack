@@ -24,10 +24,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var monitor: Any?
     private var cancellables = Set<AnyCancellable>()
 
+    // Defaults; will be overridable from Settings (forthcoming spec).
+    private let defaultModel = "medium"          // Bench: 2.6% WER LibriSpeech, 6.3% noisy on M4/16GB
+    private let defaultLanguage: String? = "en"  // Auto-detect on short clips is unreliable; opt in via Settings later
+
     private let appState = AppState()
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyManager()
     private var transcriber: WhisperKitEngine?
+
+    /// Persist the last recording so the user can verify capture quality
+    /// independent of model output. `open ~/Library/Application Support/OpenQuack/last-recording.wav`.
+    private lazy var lastRecordingURL: URL = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("OpenQuack", isDirectory: true)
+        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        return support.appendingPathComponent("last-recording.wav")
+    }()
 
     private var elapsedTimer: Timer?
 
@@ -141,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await MainActor.run { appState.phase = .starting }
 
             do {
-                _ = try recorder.start()
+                _ = try recorder.start(outputURL: lastRecordingURL)
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
@@ -170,11 +183,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             do {
-                let result = try await engine.transcribe(audioFile: url, language: nil)
+                let result = try await engine.transcribe(audioFile: url, language: defaultLanguage)
                 await MainActor.run {
                     appState.lastTranscript = result.text
                     appState.lastAudioSeconds = result.audioSeconds
                     appState.lastWallSeconds = result.wallSeconds
+                    appState.lastRecordingURL = url
                     appState.phase = .ready
                 }
                 // Pasteboard so the user can ⌘V even before SPEC-005 ships auto-paste.
@@ -184,18 +198,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.phase = .error("Transcription failed: \(error)")
                 }
             }
-            try? FileManager.default.removeItem(at: url)
+            // Recording is kept for inspection — we let the next start() overwrite it.
         }
     }
 
     private func warmTranscriber() async {
-        await MainActor.run { appState.phase = .warming(modelLabel: "small") }
+        await MainActor.run { appState.phase = .warming(modelLabel: defaultModel) }
         do {
-            let engine = try await WhisperKitEngine(model: "small")
+            let engine = try await WhisperKitEngine(model: defaultModel)
             self.transcriber = engine
             await MainActor.run {
                 appState.phase = .idle
-                appState.modelLabel = "whisperkit small"
+                appState.modelLabel = "whisperkit \(defaultModel) · \(defaultLanguage ?? "auto")"
             }
         } catch {
             await MainActor.run {

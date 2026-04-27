@@ -64,16 +64,29 @@ public final class AudioRecorder {
         }
     }
 
-    /// Start capture; returns the temp WAV URL the recording is being written to.
-    public func start() throws -> URL {
+    /// Start capture. If `outputURL` is omitted, writes to a fresh temp file.
+    /// Pass an explicit URL (e.g. `~/Library/Application Support/.../last-recording.wav`)
+    /// to keep the WAV around for inspection between runs.
+    public func start(outputURL: URL? = nil) throws -> URL {
         lock.lock(); defer { lock.unlock() }
 
         if _isRecording, let url = _outputURL {
             return url
         }
 
-        let url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("openquack-\(UUID().uuidString).wav")
+        let url: URL
+        if let supplied = outputURL {
+            url = supplied
+            // Remove any prior recording at this path so we start fresh.
+            try? FileManager.default.removeItem(at: supplied)
+            try FileManager.default.createDirectory(
+                at: supplied.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+        } else {
+            url = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("openquack-\(UUID().uuidString).wav")
+        }
 
         // 16 kHz mono PCM Int16 — what Whisper wants, and the smallest portable WAV.
         let settings: [String: Any] = [

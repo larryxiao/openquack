@@ -93,6 +93,13 @@ struct MenuBarContent: View {
                 }
                 .buttonStyle(.borderless).font(.caption)
             }
+            if let url = state.lastRecordingURL, FileManager.default.fileExists(atPath: url.path) {
+                Button("Listen") {
+                    NSWorkspace.shared.open(url)
+                }
+                .buttonStyle(.borderless).font(.caption)
+                .help("Open the last recording in the default audio player — useful for diagnosing whether bad transcripts are the model or the audio.")
+            }
             Spacer()
             Button("About") { aboutPanel() }
                 .buttonStyle(.borderless).font(.caption)
