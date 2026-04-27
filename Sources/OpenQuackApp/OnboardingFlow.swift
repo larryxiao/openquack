@@ -5,15 +5,25 @@ import Combine
 import KeyboardShortcuts
 import OpenQuackKit
 
-// First-launch onboarding flow. Five steps, one polled state model, dismisses
-// itself once the user finishes (or hits Skip). Persisted via UserDefaults
-// so subsequent launches go straight to the menu bar.
+// First-launch onboarding flow. Reflowed to lead with the privacy pitch, run
+// the model download in the background so the user isn't staring at a static
+// progress bar, and end with a live dictation demo that proves it all works.
+//
+// Sequence:
+//   welcome → microphone → accessibility → hotkey → install → demo → done
+//
+// The model download starts as soon as the window opens, in parallel with the
+// permission steps; by the time the user reaches `install`, it's typically
+// already complete. AppDelegate defers its warmTranscriber call until
+// onboarding closes so there's no concurrent re-download.
 
 enum OnboardingStep: Int, CaseIterable {
     case welcome
     case microphone
     case accessibility
     case hotkey
+    case install
+    case demo
     case done
 }
 
@@ -22,20 +32,43 @@ final class OnboardingState: ObservableObject {
     @Published var step: OnboardingStep = .welcome
     @Published var micStatus: AVAuthorizationStatus = .notDetermined
     @Published var accessibilityTrusted: Bool = false
+    @Published var modelProgress: Double = 0      // 0…1, real WhisperKit progress
+    @Published var modelDownloaded: Bool = false
+    @Published var modelError: String? = nil
+    @Published var demoTranscript: String = ""
 
-    private var timer: Timer?
+    private let appState: AppState
+    private var cancellables = Set<AnyCancellable>()
+    private var permissionTimer: Timer?
 
-    init() {
-        refresh()
-        // Poll because AVAuthorizationStatus and AXIsProcessTrusted don't push notifications.
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refresh() }
+    init(appState: AppState) {
+        self.appState = appState
+        refreshPermissions()
+
+        // Mirror the most recent transcript into the demo textbox so the user
+        // sees their dictation appear even if the focused field is something
+        // else when paste lands.
+        appState.$lastTranscript
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] transcript in
+                guard let self else { return }
+                if case .demo = self.step {
+                    self.demoTranscript = transcript
+                }
+            }
+            .store(in: &cancellables)
+
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshPermissions() }
         }
+
+        startModelDownload()
     }
 
-    deinit { timer?.invalidate() }
+    deinit { permissionTimer?.invalidate() }
 
-    func refresh() {
+    func refreshPermissions() {
         micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         accessibilityTrusted = AXIsProcessTrusted()
     }
@@ -48,6 +81,25 @@ final class OnboardingState: ObservableObject {
 
     func complete() {
         UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+    }
+
+    private func startModelDownload() {
+        let model = UserDefaults.standard.string(forKey: "model") ?? "medium"
+        Task { [weak self] in
+            do {
+                try await WhisperKitEngine.ensureDownloaded(model: model) { fraction in
+                    Task { @MainActor in self?.modelProgress = fraction }
+                }
+                await MainActor.run {
+                    self?.modelProgress = 1.0
+                    self?.modelDownloaded = true
+                }
+            } catch {
+                await MainActor.run {
+                    self?.modelError = "Download failed: \(error.localizedDescription)"
+                }
+            }
+        }
     }
 }
 
@@ -64,13 +116,14 @@ struct OnboardingView: View {
                 .padding(.horizontal, 40)
                 .padding(.vertical, 32)
                 .transition(.opacity)
+                .animation(.easeInOut(duration: 0.18), value: state.step)
 
             Divider()
             footer
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
         }
-        .frame(width: 540, height: 500)
+        .frame(width: 580, height: 560)
         .background(WindowBackground())
     }
 
@@ -81,6 +134,8 @@ struct OnboardingView: View {
         case .microphone:     MicrophoneStep(state: state)
         case .accessibility:  AccessibilityStep(state: state)
         case .hotkey:         HotkeyStep()
+        case .install:        InstallStep(state: state)
+        case .demo:           DemoStep(state: state)
         case .done:           DoneStep()
         }
     }
@@ -88,6 +143,7 @@ struct OnboardingView: View {
     private var footer: some View {
         HStack(spacing: 12) {
             stepIndicator
+            modelChip  // global download status visible across every step
             Spacer()
             if state.step != .done {
                 Button("Skip") {
@@ -97,7 +153,7 @@ struct OnboardingView: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
             }
-            Button(state.step == .done ? "Done" : "Continue") {
+            Button(continueLabel) {
                 if state.step == .done {
                     state.complete()
                     onClose()
@@ -107,6 +163,22 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
+            .disabled(continueDisabled)
+        }
+    }
+
+    private var continueLabel: String {
+        switch state.step {
+        case .install where !state.modelDownloaded: return "Waiting…"
+        case .done:                                  return "Done"
+        default:                                     return "Continue"
+        }
+    }
+
+    private var continueDisabled: Bool {
+        switch state.step {
+        case .install: return !state.modelDownloaded && state.modelError == nil
+        default:       return false
         }
     }
 
@@ -121,6 +193,23 @@ struct OnboardingView: View {
             }
         }
     }
+
+    @ViewBuilder
+    private var modelChip: some View {
+        if !state.modelDownloaded && state.modelError == nil {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Whisper \(Int(state.modelProgress * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        } else if state.modelDownloaded {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Whisper ready").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
 }
 
 // MARK: - steps
@@ -128,16 +217,45 @@ struct OnboardingView: View {
 private struct WelcomeStep: View {
     var body: some View {
         VStack(spacing: 14) {
-            Text("🦆").font(.system(size: 96))
+            Text("🦆").font(.system(size: 92))
             Text("Welcome to OpenQuack").font(.title.weight(.semibold))
-            Text("Speak. Have an agent do it. Privately.")
+            Text("Speak. Have your Mac do it. Privately.")
                 .font(.title3).foregroundStyle(.secondary)
-            Spacer().frame(height: 16)
-            Text("OpenQuack runs Whisper locally on your Mac. Your voice never leaves the machine. We'll grant two permissions next, pick a hotkey, and you'll be dictating in under a minute.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: 380)
+
+            VStack(alignment: .leading, spacing: 12) {
+                pillRow(
+                    icon: "lock.shield.fill",
+                    title: "Local-only by design",
+                    body: "Audio never leaves your Mac. No cloud, no signup, no telemetry."
+                )
+                pillRow(
+                    icon: "scalemass.fill",
+                    title: "Slim",
+                    body: "A 3 MB menu-bar app. The Whisper model is the only thing we download."
+                )
+                pillRow(
+                    icon: "shield.checkered",
+                    title: "Open source, Apache 2.0",
+                    body: "Read every line. The same code runs your dictation."
+                )
+            }
+            .padding(.top, 14)
+            .frame(maxWidth: 440)
+
             Spacer()
+        }
+    }
+
+    private func pillRow(icon: String, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 26, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(.medium))
+                Text(body).font(.callout).foregroundStyle(.secondary)
+            }
         }
     }
 }
@@ -181,7 +299,7 @@ private struct MicrophoneStep: View {
             Button("Grant microphone access") {
                 Task {
                     _ = await AVCaptureDevice.requestAccess(for: .audio)
-                    state.refresh()
+                    state.refreshPermissions()
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -242,24 +360,129 @@ private struct HotkeyStep: View {
     }
 }
 
+private struct InstallStep: View {
+    @ObservedObject var state: OnboardingState
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: state.modelDownloaded ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                .font(.system(size: 72))
+                .foregroundStyle(state.modelDownloaded ? Color.green : Color.accentColor)
+                .animation(.easeInOut(duration: 0.25), value: state.modelDownloaded)
+
+            Text(state.modelDownloaded ? "Whisper installed" : "Installing Whisper")
+                .font(.title.weight(.semibold))
+
+            Text(detailText)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 420)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer().frame(height: 16)
+
+            if let err = state.modelError {
+                Label(err, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: 380)
+                    .multilineTextAlignment(.center)
+            } else if !state.modelDownloaded {
+                VStack(spacing: 10) {
+                    ProgressView(value: state.modelProgress)
+                        .frame(maxWidth: 320)
+                    Text("\(Int(state.modelProgress * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    private var detailText: String {
+        if state.modelDownloaded {
+            return "About 700 MB on disk. After this, you can run fully offline — OpenQuack will never make another network call."
+        }
+        return "Downloading the medium WhisperKit model (~700 MB). This is the only network call OpenQuack makes, and only on first launch."
+    }
+}
+
+private struct DemoStep: View {
+    @ObservedObject var state: OnboardingState
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "waveform.badge.mic")
+                    .font(.system(size: 44)).foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Try it").font(.title.weight(.semibold))
+                    Text("Press your hotkey, say a sentence, press again. Or hold it (push-to-talk).")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            Text("YOUR TRANSCRIPT")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .tracking(0.5)
+                .padding(.top, 8)
+
+            ZStack(alignment: .topLeading) {
+                if state.demoTranscript.isEmpty {
+                    Text("Your spoken text will appear here.")
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $state.demoTranscript)
+                    .font(.body)
+                    .focused($focused)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .frame(minHeight: 140, maxHeight: 200)
+                    .background(Color.secondary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+
+            HStack(spacing: 12) {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(.secondary)
+                Text("Looking for the recording overlay? Top-centre of your screen.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { focused = true }
+    }
+}
+
 private struct DoneStep: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 72)).foregroundStyle(.green)
             Text("You're all set").font(.title.weight(.semibold))
-            Text("Try it now: press your hotkey, say something, press it again. The transcript will paste at your cursor.")
+            Text("Press your hotkey anywhere to start dictating. Click the duck in your menu bar for Settings.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 400)
             Spacer().frame(height: 12)
             VStack(alignment: .leading, spacing: 10) {
                 tipRow(symbol: "command",
-                       text: "Click the duck in your menu bar to view the last transcript or open Settings.")
+                       text: "Smart formatting, custom dictionary, push-to-talk, and VAD live in Settings.")
                 tipRow(symbol: "lock.shield",
-                       text: "Audio never leaves your Mac. The default backend does no network IO.")
+                       text: "Audio never leaves your Mac. The default agent does no network IO.")
             }
-            .frame(maxWidth: 400)
+            .frame(maxWidth: 420)
             Spacer()
         }
     }
@@ -290,57 +513,58 @@ private struct WindowBackground: NSViewRepresentable {
 @MainActor
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private static var shared: OnboardingWindowController?
-    private let state = OnboardingState()
+    let state: OnboardingState
+    private let onComplete: () -> Void
 
-    /// Show the onboarding window only if the user hasn't completed it before.
-    /// Hooked from AppDelegate.applicationDidFinishLaunching.
-    static func showIfFirstLaunch() {
+    /// Show on first launch only. AppDelegate provides its `appState` (so the
+    /// demo step can observe transcripts) and an `onComplete` callback used to
+    /// kick off WhisperKit warming once the user finishes.
+    static func showIfFirstLaunch(appState: AppState, onComplete: @escaping () -> Void) {
         let done = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        if !done { show() }
+        if !done { show(appState: appState, onComplete: onComplete) }
     }
 
-    static func show() {
+    static func show(appState: AppState, onComplete: @escaping () -> Void) {
         if let existing = shared {
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let controller = OnboardingWindowController()
+        let controller = OnboardingWindowController(appState: appState, onComplete: onComplete)
         shared = controller
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    init() {
-        // Build view + window first, then super.init.
-        let stateRef = OnboardingState()  // placeholder — replaced via assignment below
-        let host = NSHostingController(rootView: OnboardingView(state: stateRef, onClose: {}))
+    init(appState: AppState, onComplete: @escaping () -> Void) {
+        self.state = OnboardingState(appState: appState)
+        self.onComplete = onComplete
+
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 560),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.contentViewController = host
         window.center()
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
 
-        // Now wire the view to *this* controller's state and a real onClose.
-        let view = OnboardingView(state: self.state) { [weak self] in
+        let view = OnboardingView(state: state) { [weak self] in
             self?.close()
         }
-        host.rootView = view
-        _ = stateRef  // silence unused warning; placeholder discarded
+        window.contentViewController = NSHostingController(rootView: view)
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
     func windowWillClose(_ notification: Notification) {
-        state.complete()  // hitting the close button counts as completing
+        state.complete()
+        let cb = onComplete
         Self.shared = nil
+        cb()
     }
 }

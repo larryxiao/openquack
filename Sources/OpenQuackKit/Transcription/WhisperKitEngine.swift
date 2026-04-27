@@ -57,6 +57,34 @@ public final class WhisperKitEngine: TranscriptionEngine {
             .appendingPathComponent("WhisperKit", isDirectory: true)
     }
 
+    /// Download the model weights into the cache without loading them. Useful
+    /// for an onboarding flow that wants to show a real progress bar before
+    /// the (fast, post-download) load step. Idempotent — if the weights are
+    /// already cached, returns quickly with `onProgress(1.0)`.
+    public static func ensureDownloaded(
+        model: String,
+        downloadBase: URL? = nil,
+        onProgress: @escaping (Double) -> Void
+    ) async throws {
+        let cacheDir = downloadBase ?? defaultDownloadBase()
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+        migrateLegacyDocumentsCache(into: cacheDir)
+
+        do {
+            _ = try await WhisperKit.download(
+                variant: model,
+                downloadBase: cacheDir,
+                progressCallback: { progress in
+                    onProgress(progress.fractionCompleted)
+                }
+            )
+            // Force the final tick so the UI lands at 100%.
+            onProgress(1.0)
+        } catch {
+            throw EngineError.loadFailed("download failed: \(error)")
+        }
+    }
+
     /// If `~/Documents/huggingface/` exists and the new cache doesn't already
     /// have a `huggingface/` subtree, move it. Idempotent and safe to call on
     /// every launch.

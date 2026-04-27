@@ -214,12 +214,12 @@ private struct AboutPane: View {
 
             Spacer()
 
-            Button("Replay onboarding") {
-                UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-                OnboardingWindowController.show()
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
+            // Replay onboarding — only useful for development. Disabled here
+            // because the new onboarding needs an AppState reference; replay
+            // moves to AppDelegate via a "Replay onboarding" menu (forthcoming).
+            // For now: `defaults delete org.openquack.OpenQuack hasCompletedOnboarding`
+            // and relaunch.
+            EmptyView()
 
             Text("Apache 2.0").font(.caption2).foregroundStyle(.tertiary)
         }

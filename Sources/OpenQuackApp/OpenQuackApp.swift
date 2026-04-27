@@ -80,11 +80,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.appState.currentLevel = level
         }
 
-        // First launch → walk the user through permissions + hotkey.
-        // Subsequent launches go straight to the menu bar.
-        OnboardingWindowController.showIfFirstLaunch()
-
-        Task { await warmTranscriber() }
+        let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        if hasOnboarded {
+            // Seasoned user — warm the model in the background.
+            Task { await warmTranscriber() }
+        } else {
+            // First launch. Defer warming to onboarding completion so the
+            // onboarding's progress-bar download isn't fighting a concurrent
+            // WhisperKit init in the background.
+            OnboardingWindowController.showIfFirstLaunch(appState: appState) { [weak self] in
+                Task { await self?.warmTranscriber() }
+            }
+        }
     }
 
     // MARK: - status item + popover
