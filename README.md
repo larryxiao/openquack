@@ -1,65 +1,94 @@
-# OpenQuack
+<div align="center">
 
-> **Speak to your machine. Have an agent do the thing. Privately.**
+# OpenQuack 🦆
 
-OpenQuack is a privacy-first **local AI agent interface, accessed via voice**, for macOS. Hold a hotkey, say what you want, and a configured agent — Claude Code, a local Ollama, or whatever you plug in — does the work. Audio never leaves your machine.
+**Speak. Have an agent do it. Privately.**
 
-```
-hotkey ─→ record ─→ Whisper (Apple Silicon, local)
-                              │
-                              ▼
-                      ┌──────────────┐
-                      │ Agent        │
-                      ├──────────────┤
-                      │ Claude Code  │   →  fix the bug, open a PR, write the test
-                      │ Ollama       │   →  draft the email, summarise the meeting
-                      │ Passthrough  │   →  paste at cursor (dictation parity)
-                      └──────────────┘
-```
+Privacy-first dictation for macOS — and (soon) a voice interface to your local AI agents. Audio never leaves your machine.
 
-> *Other tools type what you said. OpenQuack does what you said.*
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](#install)
+[![WhisperKit](https://img.shields.io/badge/STT-WhisperKit-orange.svg)](https://github.com/argmaxinc/argmax-oss-swift)
+[![Status](https://img.shields.io/badge/v2-alpha-yellow.svg)](docs/ROADMAP.md)
+
+</div>
 
 ---
 
-## Status
+## What it is
 
-- **v0.1** — Python prototype, on `main`, tagged `v0.1.0`. Frozen.
-- **v2** — SwiftUI + agent integration, on `v2`. Bench framework + first hardware characterisation are live (see [BENCHMARKS](docs/BENCHMARKS.md)). App + agent layer are next (see [ROADMAP](docs/ROADMAP.md)).
+OpenQuack is a small menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript pastes at the cursor. Wherever you can type, you can talk.
 
-This README is the front door. The serious docs are:
+It runs Whisper locally (`WhisperKit medium` by default). No cloud, no account, no signup, no telemetry. Your voice stays on your Mac.
 
-| | |
-|---|---|
-| [`docs/VISION.md`](docs/VISION.md) | What OpenQuack is, what it isn't, the privacy contract |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Milestones M1–M4 with PR-sized atomic tasks |
-| [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) | Per-host accuracy / latency / memory matrix |
-| [`docs/SPECS/`](docs/SPECS/) | Component specs (one PR cites one spec) |
-| [`AGENTS.md`](AGENTS.md) | How AI agents (and humans) contribute |
+The bigger plan is for OpenQuack to be a **voice interface to local AI agents** — speak to your Mac, have Claude Code (or your local Ollama, or your own agent) act on it. The dictation experience is shipping first; agent integration follows once the foundation is solid. See [`docs/VISION.md`](docs/VISION.md) for the full pitch and [`docs/ROADMAP.md`](docs/ROADMAP.md) for the milestone schedule.
 
-## Privacy contract (TL;DR)
+> *Other tools type what you said. OpenQuack does what you said.*
+
+## What's in v0
+
+- **One-key dictation** — global hotkey (default ⌃⇧Space), toggle or push-to-talk.
+- **Local Whisper** — WhisperKit `medium` for English (configurable to `tiny`…`large-v3`); 0.22× RTF on M4 / 16 GB.
+- **Auto-paste** at the cursor in any app (clipboard fallback).
+- **Smart formatting** — capitalisation, end-punctuation, filler-word cleanup.
+- **Custom dictionary** — bias the model toward proper nouns and jargon.
+- **VAD auto-stop** — finish speaking, OpenQuack finalises automatically.
+- **Floating overlay** with a live level meter while you record.
+- **First-launch onboarding** — permissions, hotkey, done.
+- **Settings** for everything above.
+- **Bench framework** — measure WER / RTF / RSS across engines and models on your hardware (`swift run openquack-bench`).
+- **Open source**, Apache 2.0.
+
+## Privacy
 
 1. Audio never leaves your machine. Capture → Whisper transcription is fully local. Always.
 2. The default agent does no network IO.
-3. Switching to a network-using agent (e.g. Claude Code) requires explicit one-time consent naming the destination.
-4. The recording overlay shows a network indicator any time a network agent is active.
+3. Network-using agents (e.g. Claude Code, when that lands) require explicit per-agent consent and a visible network indicator.
+4. No analytics, no telemetry, no signup.
 
 Full text in [`docs/VISION.md`](docs/VISION.md#privacy-contract).
 
-## Running the bench
+## Install
 
-The fastest way to feel OpenQuack is to run the bench. It downloads / generates a small corpus and characterises every supported (engine, model) combination on your Mac.
+> Homebrew cask is the recommended path once the first release is published. Until then, build from source — it's a one-liner.
+
+### Homebrew (once v0 is released)
 
 ```sh
-# 1. Generate the synthetic corpus (multi-voice TTS + multilingual sentences).
-bash bench/corpus/fetch.sh
+brew install --cask openquack
+```
 
-# 2. Optional: real human speech (~337 MB one-time download from openslr.org).
-N=20 bash bench/corpus/fetch_librispeech.sh
+### From source
 
-# 3. Optional: noise-augmented variants.
-.venv/bin/python bench/corpus/mix_noise.py --source bench/corpus/voices
+Requires **Xcode 16+** (the Swift Package Manager from CommandLineTools alone won't compile some macro-using deps):
 
-# 4. Run the bench.
+```sh
+git clone https://github.com/OpenQuack/openquack.git
+cd openquack
+git checkout v2
+bash scripts/wrap_app.sh
+open build/OpenQuack.app
+```
+
+The first launch downloads the WhisperKit `medium` model (~700 MB) and walks you through a 5-step setup.
+
+## Quick experiments without the app
+
+A small CLI for ad-hoc transcription:
+
+```sh
+swift run openquack-cli some-audio.wav
+swift run openquack-cli some-audio.wav --engine lightning --model distil-large-v3
+swift run openquack-cli some-audio.wav --json
+```
+
+A bench that measures WER / RTF / RSS across engines × models on your Mac:
+
+```sh
+bash bench/corpus/fetch.sh                 # synthetic + multilingual TTS
+N=20 bash bench/corpus/fetch_librispeech.sh  # real human speech (~337 MB)
+.venv/bin/python bench/corpus/mix_noise.py   # noise-augmented variants
+
 swift run openquack-bench \
   --engines whisperkit,lightning \
   --models tiny,small,medium,distil-large-v3 \
@@ -69,33 +98,44 @@ swift run openquack-bench \
 
 Output lands in `bench/out/<host-tag>/`. Submit your numbers via PR — see [`bench/CONTRIBUTING.md`](bench/CONTRIBUTING.md).
 
-## Quick experiment with one file
+## Roadmap
 
-```sh
-# Default: whisperkit small
-swift run openquack-cli path/to/audio.wav
+| Milestone | What | Status |
+|---|---|---|
+| **M1** | Bench framework + characterisation | ✅ |
+| **M2** | Voice → Action MVP (this release path) | 🟡 in progress |
+| **M3** | Local agents (Ollama, MLX-LM), code signing, auto-update | ⚪ |
+| **M4** | System-audio capture, multilingual UI, cross-platform | ⚪ |
 
-# Pick engine + model
-swift run openquack-cli path/to/audio.wav --engine lightning --model distil-large-v3
-
-# JSON output for piping
-swift run openquack-cli path/to/audio.wav --json
-```
-
-## Built on
-
-- [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) — Apple Silicon Metal speech-to-text.
-- [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) — global hotkey registration.
-- [`mlx-swift-lm`](https://github.com/ml-explore/mlx-swift-lm) (planned) — for in-process local LLM agents.
-- [`swift-argument-parser`](https://github.com/apple/swift-argument-parser) — CLI plumbing.
-
-Reference projects: [voxt](https://github.com/hehehai/voxt) (technical pattern).
+The detailed task list with PR-sized atomic items lives in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Contribute
 
-OpenQuack is built to be **AI-native open source** — the roadmap is structured for coding agents to claim atomic tasks, cite a spec, and ship PRs at scale. Humans are equally welcome and have to follow the same conventions.
+OpenQuack is built to be **AI-native open source** — every PR cites a SPEC, atomic tasks are picked from the roadmap, the workflow is friendly to coding agents at scale. Humans equally welcome on the same path.
 
-Start with [`AGENTS.md`](AGENTS.md), then pick a 🔵 task in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Start with [`AGENTS.md`](AGENTS.md), pick a 🔵 task in [`docs/ROADMAP.md`](docs/ROADMAP.md), open a draft PR.
+
+## Tech
+
+- **WhisperKit** ([argmaxinc/argmax-oss-swift](https://github.com/argmaxinc/argmax-oss-swift)) — Apple Silicon Metal STT
+- **KeyboardShortcuts** ([sindresorhus/KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts)) — global hotkey registration
+- **swift-argument-parser** — CLI plumbing
+- (planned) **mlx-swift-lm** — in-process local LLMs for the agent layer
+- (planned) **Sparkle** — auto-update
+
+References: [voxt](https://github.com/hehehai/voxt) (technical).
+
+## Honest numbers
+
+Benchmarked on Apple M4 / 16 GB across 177 clips (multi-voice TTS, multilingual native speech, real LibriSpeech samples, noise-augmented variants):
+
+| Bucket | Best engine + model | WER | RTF |
+|---|---|---:|---:|
+| Real human speech | whisperkit `medium` | **2.6 %** | 0.22× |
+| Multi-accent English | whisperkit `medium` | **1.3 %** | 0.31× |
+| Noise-augmented | whisperkit `medium` | **6.3 %** | 0.31× |
+
+Full matrix and methodology in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 ## License
 
