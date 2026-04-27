@@ -6,7 +6,7 @@
 
 Privacy-first dictation for macOS — and (soon) a voice interface to your local AI agents. Audio never leaves your machine.
 
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](#install)
 [![WhisperKit](https://img.shields.io/badge/STT-WhisperKit-orange.svg)](https://github.com/argmaxinc/argmax-oss-swift)
 [![Status](https://img.shields.io/badge/v2-alpha-yellow.svg)](docs/ROADMAP.md)
@@ -37,7 +37,7 @@ The bigger plan is for OpenQuack to be a **voice interface to local AI agents** 
 - **First-launch onboarding** — permissions, hotkey, done.
 - **Settings** for everything above.
 - **Bench framework** — measure WER / RTF / RSS across engines and models on your hardware (`swift run openquack-bench`).
-- **Open source**, Apache 2.0.
+- **Open source**, MIT.
 
 ## Privacy
 
@@ -139,4 +139,4 @@ Full matrix and methodology in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

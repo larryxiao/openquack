@@ -235,7 +235,7 @@ private struct WelcomeStep: View {
                 )
                 pillRow(
                     icon: "shield.checkered",
-                    title: "Open source, Apache 2.0",
+                    title: "Open source, MIT",
                     body: "Read every line. The same code runs your dictation."
                 )
             }

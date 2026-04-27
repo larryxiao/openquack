@@ -56,7 +56,20 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 
 ---
 
-## M3 — Local agents + polish
+## M2.5 — LLM transcript polish _(next-priority chunk after v0 launch)_
+
+User-flagged priority on 2026-04-27. Stronger transcript cleanup via a
+small local LLM, off by default but a one-toggle opt-in. Lays the LLM
+infra that SPEC-006 (agent dispatch) builds on.
+
+| | Task | Spec | Effort |
+|---|---|---|---|
+| 🔵 | `TextPolishEngine` protocol + `OllamaPolishEngine` (HTTP) | SPEC-007 | S |
+| 🔵 | `MLXLMPolishEngine` (in-process via mlx-swift-lm) | SPEC-007 | M |
+| 🔵 | Settings → Polish pane (engine picker, model picker) | SPEC-007 | S |
+| 🔵 | Bench polish WER delta + latency on `openquack-bench` | SPEC-007 | S |
+
+## M3 — Agents + polish
 
 | | Task | Spec | Effort |
 |---|---|---|---|

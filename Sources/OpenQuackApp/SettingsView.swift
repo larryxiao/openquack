@@ -221,7 +221,7 @@ private struct AboutPane: View {
             // and relaunch.
             EmptyView()
 
-            Text("Apache 2.0").font(.caption2).foregroundStyle(.tertiary)
+            Text("MIT").font(.caption2).foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
