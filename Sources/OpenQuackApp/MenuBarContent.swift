@@ -169,34 +169,35 @@ struct MenuBarContent: View {
 
     private var statusText: String {
         switch state.phase {
-        case .warming(let m):           return "Warming \(m)…"
-        case .idle:                     return "Idle — \(state.modelLabel)"
+        case .warming(let m):           return "Loading Whisper \(m)…"
+        case .idle:                     return "Ready · \(state.modelLabel)"
         case .starting:                 return "Starting…"
         case .recording:                return "Recording"
         case .transcribing:             return "Transcribing…"
         case .ready:
-            return state.lastPasted ? "Pasted at cursor" : "Copied to clipboard (⌘V to paste)"
+            return state.lastPasted ? "Pasted at cursor" : "On clipboard — press ⌘V to paste"
         case .error:                    return "Error"
         }
     }
 
     private var hint: String {
+        let hk = HotkeyDisplay.current
         switch state.phase {
         case .warming:
-            return "Loading the Whisper model. The first launch downloads ~700 MB; subsequent launches are 5–10 s."
+            return "First launch downloads about 700 MB. After that, every launch is offline and takes 5–10 s."
         case .idle:
-            return "Press ⌃⇧Space to dictate. Press again to stop."
+            return "Press \(hk) to dictate. Press again to stop."
         case .ready:
             if !state.accessibilityTrusted && !state.lastPasted {
-                return "Grant Accessibility (banner above) to enable auto-paste."
+                return "Grant Accessibility above to paste at cursor automatically."
             }
-            return "Press ⌃⇧Space to dictate. Press again to stop."
+            return "Press \(hk) to dictate. Press again to stop."
         case .starting:
-            return "Mic is engaging…"
+            return "Starting up the mic…"
         case .recording:
-            return "Press ⌃⇧Space again to stop and transcribe."
+            return "Press \(hk) again to stop and transcribe."
         case .transcribing:
-            return "Whisper is processing your audio."
+            return "Working on your audio — this stays on your Mac."
         case .error(let msg):
             return msg
         }

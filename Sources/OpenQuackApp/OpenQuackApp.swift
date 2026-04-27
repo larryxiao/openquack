@@ -387,7 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.transcriber = engine
             await MainActor.run {
                 appState.phase = .idle
-                appState.modelLabel = "whisperkit \(defaultModel) · \(defaultLanguage ?? "auto")"
+                appState.modelLabel = "Whisper \(defaultModel)"
             }
         } catch {
             await MainActor.run {

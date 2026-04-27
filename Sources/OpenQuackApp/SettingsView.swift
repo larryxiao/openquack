@@ -53,7 +53,7 @@ private struct GeneralPane: View {
                     Text("medium — best balance, default (~1.5 GB)").tag("medium")
                     Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
                 }
-                Text("Model changes apply on next launch. Cold-start is ~10–60 s the first time a model is downloaded; subsequent launches are 5–10 s.")
+                Text("Model changes take effect on next launch. The first time you choose a model, it downloads in the background — typically 10 – 60 s. Subsequent launches load from disk in 5 – 10 s.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -62,11 +62,11 @@ private struct GeneralPane: View {
 
             Section {
                 Toggle("Paste at cursor automatically", isOn: $autoPaste)
-                    .help("After transcription, simulate ⌘V to paste into the focused app. Requires Accessibility permission.")
+                    .help("After transcription, OpenQuack simulates ⌘V to paste into whatever app you're in. Requires Accessibility access. If off, the transcript still goes to your clipboard and you press ⌘V yourself.")
                 Toggle("Smart formatting", isOn: $polishText)
-                    .help("Capitalise sentences, add end-punctuation, strip filler words (um, uh) before paste. Off = raw Whisper output.")
-                Toggle("Play sounds on start / stop", isOn: $playSounds)
-                    .help("Subtle system sounds when a recording begins and ends.")
+                    .help("Capitalise sentences, add a period at the end, strip filler words (um, uh) before paste. Off = paste exactly what Whisper heard.")
+                Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
+                    .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {
                 SectionHeader("Behaviour")
             }
@@ -85,7 +85,7 @@ private struct GeneralPane: View {
                     Text("Italian (it)").tag("it")
                     Text("Portuguese (pt)").tag("pt")
                 }
-                Text("Auto-detect on short clips is unreliable — see docs/BENCHMARKS.md. Set this to your primary language for best results.")
+                Text("Auto-detect can be unreliable on short utterances. Set this to your primary language for the most consistent results.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -94,7 +94,7 @@ private struct GeneralPane: View {
 
             Section {
                 Toggle("Auto-stop after silence", isOn: $vadAutoStop)
-                    .help("Detect when you've finished speaking and transcribe automatically. Toggle-mode only.")
+                    .help("When you stop speaking, OpenQuack finishes the recording automatically. Only applies in toggle mode — push-to-talk is already user-controlled.")
                 if vadAutoStop {
                     HStack {
                         Text("Silence threshold")
@@ -117,7 +117,7 @@ private struct GeneralPane: View {
                     minHeight: 90,
                     idealHeight: 110
                 )
-                Text("One word or phrase per line. Whisper uses these as a hint to favour proper nouns, jargon, and names.")
+                Text("One word or phrase per line. Whisper uses these as a hint when deciding between similar-sounding words — useful for proper nouns, jargon, and names.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -138,7 +138,7 @@ private struct ShortcutPane: View {
         Form {
             Section {
                 KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
-                Text("Default: ⌃⇧Space.")
+                Text("Press once to start dictating, again to stop. ⌃⇧Space is the default and works in most apps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

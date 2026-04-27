@@ -11,6 +11,19 @@ public extension KeyboardShortcuts.Name {
     )
 }
 
+/// Convenience helpers for surfacing the user's current hotkey in copy.
+public enum HotkeyDisplay {
+    /// Returns the user's bound shortcut as a glyph string ("⌃⇧Space"), or
+    /// "your hotkey" if they've cleared it.
+    public static var current: String {
+        guard let shortcut = KeyboardShortcuts.getShortcut(for: .toggleRecording) else {
+            return "your hotkey"
+        }
+        let str = "\(shortcut)"
+        return str.isEmpty ? "your hotkey" : str
+    }
+}
+
 public enum HotkeyMode: String, Sendable, CaseIterable {
     /// Press to start; press again to stop.
     case toggle

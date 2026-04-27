@@ -182,7 +182,7 @@ struct OverlayPill: View {
         switch state.phase {
         case .recording:
             let secs = String(format: "%.1f", state.elapsedSeconds)
-            return "\(secs)s · ⌃⇧Space to stop"
+            return "\(secs)s · \(HotkeyDisplay.current) to stop"
         case .ready:
             return state.lastTranscript.map { String($0.prefix(48)) } ?? ""
         default:
