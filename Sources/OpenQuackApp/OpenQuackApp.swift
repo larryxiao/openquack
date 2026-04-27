@@ -32,6 +32,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let raw = UserDefaults.standard.string(forKey: "language") ?? "en"
         return raw.isEmpty ? nil : raw  // empty string = auto-detect
     }
+    private var customWords: String? {
+        UserDefaults.standard.string(forKey: "customWords")
+    }
+    private var soundsEnabled: Bool {
+        UserDefaults.standard.object(forKey: "playSounds") as? Bool ?? true
+    }
+    private var vadEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "vadAutoStop")
+    }
+    private var vadSilenceSeconds: Double {
+        let raw = UserDefaults.standard.double(forKey: "vadSilenceSeconds")
+        return raw > 0 ? raw : 1.5
+    }
+
+    private var lastVoiceAt: Date?
+    private static let voiceThreshold: Float = 0.06
+    private static let vadMinDuration: Double = 0.8
 
     private let appState = AppState()
     private let recorder = AudioRecorder()
@@ -205,7 +222,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
+                    lastVoiceAt = nil
                     startElapsedTimer()
+                    playSound("Tink")
                 }
             } catch {
                 await MainActor.run {
@@ -230,7 +249,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             do {
-                let result = try await engine.transcribe(audioFile: url, language: defaultLanguage)
+                let result = try await engine.transcribe(
+                    audioFile: url,
+                    language: defaultLanguage,
+                    customWords: customWords
+                )
 
                 // Smart formatting on raw Whisper output (capitalisation,
                 // end-punctuation, fillers). Toggle: Settings → General.
@@ -257,6 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.lastPasted = pasted
                     appState.accessibilityTrusted = PasteService.isAccessibilityTrusted()
                     appState.phase = .ready
+                    playSound("Pop")
                 }
             } catch {
                 await MainActor.run {
@@ -287,8 +311,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         elapsedTimer?.invalidate()
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.appState.elapsedSeconds = self.recorder.elapsedSeconds
+            let elapsed = self.recorder.elapsedSeconds
+            self.appState.elapsedSeconds = elapsed
+
+            // VAD auto-stop (toggle mode only — push-to-talk is user-controlled).
+            guard self.hotkeyMode == .toggle, self.vadEnabled,
+                  case .recording = self.appState.phase
+            else { return }
+
+            if self.appState.currentLevel > Self.voiceThreshold {
+                self.lastVoiceAt = Date()
+            }
+            if let lastVoice = self.lastVoiceAt,
+               elapsed >= Self.vadMinDuration,
+               Date().timeIntervalSince(lastVoice) >= self.vadSilenceSeconds {
+                self.stopAndTranscribe()
+            }
         }
+    }
+
+    private func playSound(_ name: String) {
+        guard soundsEnabled else { return }
+        NSSound(named: name)?.play()
     }
 
     private func stopElapsedTimer() {

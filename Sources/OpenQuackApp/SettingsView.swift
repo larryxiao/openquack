@@ -40,6 +40,9 @@ private struct GeneralPane: View {
     @AppStorage("polishText") private var polishText: Bool = true
     @AppStorage("language") private var language: String = "en"
     @AppStorage("playSounds") private var playSounds: Bool = true
+    @AppStorage("vadAutoStop") private var vadAutoStop: Bool = false
+    @AppStorage("vadSilenceSeconds") private var vadSilenceSeconds: Double = 1.5
+    @AppStorage("customWords") private var customWords: String = ""
 
     var body: some View {
         Form {
@@ -73,6 +76,44 @@ private struct GeneralPane: View {
                     .foregroundStyle(.secondary)
             } header: {
                 Text("Language")
+            }
+
+            Section {
+                Toggle("Auto-stop after silence", isOn: $vadAutoStop)
+                    .help("Detect when you've finished speaking and transcribe automatically. Toggle-mode only.")
+                if vadAutoStop {
+                    HStack {
+                        Text("Silence threshold")
+                        Slider(value: $vadSilenceSeconds, in: 0.8...4.0, step: 0.1)
+                        Text(String(format: "%.1f s", vadSilenceSeconds))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
+                    }
+                }
+            } header: {
+                Text("Voice activity")
+            }
+
+            Section {
+                ZStack(alignment: .topLeading) {
+                    if customWords.isEmpty {
+                        Text("e.g.\nOpenQuack\nWhisperKit\nClaude Code")
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 6)
+                            .allowsHitTesting(false)
+                    }
+                    TextEditor(text: $customWords)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 80, idealHeight: 100)
+                        .scrollContentBackground(.hidden)
+                }
+                Text("One word or phrase per line. Whisper uses these as a hint to favour proper nouns, jargon, and names.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Custom dictionary")
             }
         }
         .formStyle(.grouped)

@@ -33,11 +33,35 @@ public final class WhisperKitEngine: TranscriptionEngine {
     }
 
     public func transcribe(audioFile url: URL, language: String?) async throws -> EngineTranscription {
+        return try await transcribe(audioFile: url, language: language, customWords: nil)
+    }
+
+    /// Extended transcribe that accepts a comma- or newline-separated list of
+    /// custom words / phrases. They're tokenised and used as Whisper's prompt
+    /// tokens, biasing the decoder toward proper nouns, jargon, etc.
+    public func transcribe(
+        audioFile url: URL,
+        language: String?,
+        customWords: String?
+    ) async throws -> EngineTranscription {
         var options = DecodingOptions()
         options.task = .transcribe
         options.language = language
         options.verbose = false
         options.withoutTimestamps = true
+
+        if let words = customWords?.trimmingCharacters(in: .whitespacesAndNewlines), !words.isEmpty {
+            // Newline-separated → comma-joined per Whisper convention.
+            let joined = words
+                .split(whereSeparator: { $0.isNewline })
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .joined(separator: ", ")
+            if !joined.isEmpty, let tokenizer = pipe.tokenizer {
+                // Leading space matches OpenAI Whisper's prompt convention.
+                options.promptTokens = tokenizer.encode(text: " " + joined)
+            }
+        }
 
         let t0 = Date()
         let results: [TranscriptionResult]
