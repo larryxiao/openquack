@@ -17,15 +17,18 @@ public enum RecorderError: Error, CustomStringConvertible {
 
 /// SPEC-001 — Microphone capture.
 ///
-/// Captures input at the device's native format (typically 44.1 / 48 kHz stereo
-/// float32) and writes a 16 kHz mono PCM WAV to a temp file. AVAudioFile
-/// performs the resample / channel-mix on each `write(from:)` call, so we don't
-/// need a manual AVAudioConverter pass.
+/// Captures at the input's native format (e.g. 48 kHz stereo float32) and
+/// writes a 16 kHz mono Int16 PCM WAV. We do the rate-and-channel conversion
+/// explicitly via `AVAudioConverter` per buffer, then write the converted
+/// buffer to `AVAudioFile`. (Earlier impl relied on `AVAudioFile.write(from:)`
+/// to auto-convert from the input format; on macOS 15 that produced a WAV
+/// whose header said 16 kHz but whose samples were the native rate, so
+/// playback was 3× slow. Explicit conversion fixes it.)
 ///
-/// Thread-safety: `start` / `stop` / `cancel` are protected by a lock. The audio
-/// thread's tap callback writes to the file directly via the closure-captured
-/// reference; removing the tap before nilling our reference is what serialises
-/// teardown.
+/// Thread-safety: `start` / `stop` / `cancel` are protected by a lock. The
+/// tap callback runs on the audio thread and uses closure-captured references
+/// to the converter and file; `removeTap` before nilling the references is
+/// what serialises teardown.
 public final class AudioRecorder {
     private let lock = NSLock()
     private var engine: AVAudioEngine?
@@ -88,19 +91,36 @@ public final class AudioRecorder {
                 .appendingPathComponent("openquack-\(UUID().uuidString).wav")
         }
 
-        // 16 kHz mono PCM Int16 — what Whisper wants, and the smallest portable WAV.
-        let settings: [String: Any] = [
-            AVFormatIDKey:           kAudioFormatLinearPCM,
-            AVSampleRateKey:         16_000,
-            AVNumberOfChannelsKey:   1,
-            AVLinearPCMBitDepthKey:  16,
-            AVLinearPCMIsFloatKey:   false,
+        // Target processing format: 16 kHz mono Float32 (what we'll feed to
+        // AVAudioFile). Whisper wants 16 kHz; Float32 is what AVAudioConverter
+        // produces natively; AVAudioFile down-bitdepths to Int16 on disk.
+        guard let processingFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw RecorderError.engineFailed("Failed to create processing format")
+        }
+
+        // On-disk WAV settings — 16 kHz mono Int16, broadly compatible.
+        let fileSettings: [String: Any] = [
+            AVFormatIDKey:             kAudioFormatLinearPCM,
+            AVSampleRateKey:           processingFormat.sampleRate,
+            AVNumberOfChannelsKey:     Int(processingFormat.channelCount),
+            AVLinearPCMBitDepthKey:    16,
+            AVLinearPCMIsFloatKey:     false,
             AVLinearPCMIsBigEndianKey: false,
         ]
 
         let file: AVAudioFile
         do {
-            file = try AVAudioFile(forWriting: url, settings: settings)
+            file = try AVAudioFile(
+                forWriting: url,
+                settings: fileSettings,
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
+            )
         } catch {
             throw RecorderError.fileWriteFailed("\(error)")
         }
@@ -109,12 +129,49 @@ public final class AudioRecorder {
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        // Capture in the input's native format; AVAudioFile's processing format
-        // is what we passed in `settings`, so write(from:) does the resample
-        // and downmix internally.
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
+        guard let converter = AVAudioConverter(from: inputFormat, to: processingFormat) else {
+            throw RecorderError.engineFailed(
+                "Failed to create converter \(inputFormat) → \(processingFormat)"
+            )
+        }
+        // High-quality offline-style resample; for voice this is well within budget.
+        converter.sampleRateConverterQuality = AVAudioQuality.high.rawValue
+        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { inputBuffer, _ in
+            let ratio = processingFormat.sampleRate / inputFormat.sampleRate
+            let capacity = AVAudioFrameCount(
+                ceil(Double(inputBuffer.frameLength) * ratio)
+            ) + 1024  // safety margin for filter latency
+            guard let outputBuffer = AVAudioPCMBuffer(
+                pcmFormat: processingFormat,
+                frameCapacity: capacity
+            ) else { return }
+
+            var error: NSError?
+            var consumed = false
+            converter.convert(to: outputBuffer, error: &error) { _, status in
+                if consumed {
+                    status.pointee = .endOfStream
+                    return nil
+                }
+                consumed = true
+                status.pointee = .haveData
+                return inputBuffer
+            }
+
+            if let error {
+                FileHandle.standardError.write(
+                    "[AudioRecorder] convert error: \(error)\n".data(using: .utf8) ?? Data()
+                )
+                return
+            }
+            if outputBuffer.frameLength == 0 {
+                return  // converter held back samples (filter latency); fine.
+            }
+
             do {
-                try file.write(from: buffer)
+                try file.write(from: outputBuffer)
             } catch {
                 FileHandle.standardError.write(
                     "[AudioRecorder] write error: \(error)\n".data(using: .utf8) ?? Data()
