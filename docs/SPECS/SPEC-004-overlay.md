@@ -1,6 +1,6 @@
 # SPEC-004 — Recording overlay
 
-**Status:** draft (M2)
+**Status:** ratified — shipped 2026-04-27 (`Sources/OpenQuackApp/RecordingOverlay.swift`)
 **Owner:** `apps/OpenQuack/Sources/Overlay/` (when the app target lands)
 **Last updated:** 2026-04-26
 

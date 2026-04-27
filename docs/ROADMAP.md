@@ -38,7 +38,7 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 | 🟢 | Audio capture — AVAudioEngine → 16 kHz mono WAV | SPEC-001 | S |
 | 🟢 | Global hotkey (⌃⇧Space toggle, KeyboardShortcuts pkg) | SPEC-003 | S |
 | 🟢 | Record → WhisperKit `medium` (en) → transcript in popover + clipboard | SPEC-002 | S |
-| 🔵 | Floating recording overlay (waveform / level meter) | SPEC-004 | M |
+| 🟢 | Floating recording-state pill (top-centre, click-through) | SPEC-004 | M |
 | 🟢 | CGEvent ⌘V auto-paste at cursor (Accessibility prompt + clipboard fallback) | SPEC-005 | S |
 | 🔵 | Agent dispatch abstraction + `PassthroughAgent` | SPEC-006 | M |
 | 🔵 | `ClaudeCodeAgent` — subprocess to local `claude` CLI | SPEC-006 | M |

@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyManager()
     private var transcriber: WhisperKitEngine?
+    private var overlay: RecordingOverlay?
 
     /// Persist the last recording so the user can verify capture quality
     /// independent of model output. `open ~/Library/Application Support/OpenQuack/last-recording.wav`.
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installPopover()
         installHotkey()
         observePhaseForIcon()
+        overlay = RecordingOverlay(state: appState)
         Task { await warmTranscriber() }
     }
 
