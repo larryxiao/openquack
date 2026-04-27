@@ -1,0 +1,2 @@
+lightning-whisper-mlx>=0.0.10
+soundfile>=0.12.1

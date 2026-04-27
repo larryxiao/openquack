@@ -1,0 +1,1 @@
+Privacy first voice to text on Apple Silicon.

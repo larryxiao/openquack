@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v2]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build, test, smoke-bench
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: Generate quick-smoke corpus
+        run: bash bench/corpus/fetch.sh
+
+      - name: Bench smoke (whisperkit / tiny on short corpus)
+        run: |
+          swift run openquack-bench \
+            --engines whisperkit \
+            --models tiny \
+            --corpus bench/corpus/short \
+            --out /tmp/bench-out
+
+      - name: Upload bench output
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-smoke-${{ github.sha }}
+          path: /tmp/bench-out

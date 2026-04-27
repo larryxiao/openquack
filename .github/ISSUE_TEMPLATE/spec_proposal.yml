@@ -1,0 +1,44 @@
+name: Spec proposal
+description: Propose a new spec under docs/SPECS/ before any implementation PR.
+title: "SPEC-???: <name>"
+labels: ["spec"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: One paragraph — what this lets a user (or another spec) do.
+    validations:
+      required: true
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Bullets. Be specific about what's out.
+    validations:
+      required: true
+
+  - type: textarea
+    id: surface
+    attributes:
+      label: Public surface (sketch)
+      description: Swift signatures, JSON schemas, CLI flags, file layout — whatever applies.
+    validations:
+      required: true
+
+  - type: textarea
+    id: open_questions
+    attributes:
+      label: Open questions
+      description: List the things that must be resolved before implementation lands.
+    validations:
+      required: true
+
+  - type: textarea
+    id: privacy_impact
+    attributes:
+      label: Privacy impact
+      description: Does this change anything about audio handling, network IO, or transcript storage? State explicitly.
+    validations:
+      required: true

@@ -1,8 +1,41 @@
-__pycache__/
-*.pyc
-.venv/
-*.egg-info/
-dist/
+# Swift / Xcode
+.build/
 build/
-.env
+.swiftpm/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+
+# macOS
 .DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Bench output (per-host reports are under bench/out/<host-tag>/)
+bench/out/
+
+# Bench audio corpus (large; download via bench/corpus/fetch.sh)
+bench/corpus/**/*.wav
+bench/corpus/**/*.mp3
+bench/corpus/**/*.flac
+bench/corpus/**/*.m4a
+bench/corpus/**/*.ogg
+
+# Model caches (downloaded by WhisperKit and lightning runner)
+mlx_models/
+.cache/
+**/__pycache__/
+*.pyc
+
+# Python venv (kept locally for bench/engines/lightning_runner.py)
+.venv/
+bench/engines/.venv/

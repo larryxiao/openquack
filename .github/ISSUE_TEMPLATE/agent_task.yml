@@ -1,0 +1,58 @@
+name: Agent task
+description: A scoped task ready for an agent or human contributor to claim.
+title: "[M?] <task title>"
+labels: ["agent-task"]
+body:
+  - type: input
+    id: spec_id
+    attributes:
+      label: Spec ID
+      description: Which SPEC does this task implement (e.g. SPEC-006)? If none exists, file a spec issue first.
+      placeholder: SPEC-XXX
+    validations:
+      required: true
+
+  - type: input
+    id: milestone
+    attributes:
+      label: Milestone
+      description: M1, M2, M3, M4 …
+      placeholder: M2
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope (atomic — one PR)
+      description: What's in scope. Be explicit about what's *not* in scope.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How we know it's done. Bullet list. Each item should be objectively checkable.
+      placeholder: |
+        - [ ] `swift build && swift test` green
+        - [ ] new function `Foo.bar` exists with signature `…`
+        - [ ] WER on bench/corpus/short does not regress
+    validations:
+      required: true
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests required
+      description: Unit / bench delta / manual repro
+    validations:
+      required: true
+
+  - type: input
+    id: effort
+    attributes:
+      label: Effort (S/M/L)
+      placeholder: S
+    validations:
+      required: true

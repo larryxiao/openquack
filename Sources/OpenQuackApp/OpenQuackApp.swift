@@ -1,0 +1,225 @@
+import AppKit
+import SwiftUI
+import Combine
+import OpenQuackKit
+
+// SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
+//
+// Pure AppKit entry. SwiftUI App protocol (Settings/WindowGroup) silently lost
+// the menu-bar item on macOS 15 in our testing; NSApp.run() avoids the issue.
+
+@main
+struct OpenQuackApp {
+    static func main() {
+        let delegate = AppDelegate()
+        let app = NSApplication.shared
+        app.delegate = delegate
+        app.run()
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private var popover: NSPopover!
+    private var monitor: Any?
+    private var cancellables = Set<AnyCancellable>()
+
+    private let appState = AppState()
+    private let recorder = AudioRecorder()
+    private let hotkey = HotkeyManager()
+    private var transcriber: WhisperKitEngine?
+
+    private var elapsedTimer: Timer?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        installStatusItem()
+        installPopover()
+        installHotkey()
+        observePhaseForIcon()
+        Task { await warmTranscriber() }
+    }
+
+    // MARK: - status item + popover
+
+    private func installStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: 32)
+        statusItem.button?.title = "🦆"
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePopover(_:))
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    }
+
+    private func installPopover() {
+        popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentSize = NSSize(width: 320, height: 320)
+        popover.contentViewController = NSHostingController(
+            rootView: MenuBarContent(state: appState)
+        )
+    }
+
+    @objc func togglePopover(_ sender: AnyObject?) {
+        guard let button = statusItem.button else { return }
+        if popover.isShown {
+            popover.performClose(sender)
+            stopMonitoringClicksOutside()
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+            monitorClicksOutside()
+        }
+    }
+
+    private func monitorClicksOutside() {
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.popover.performClose(nil)
+            self?.stopMonitoringClicksOutside()
+        }
+    }
+
+    private func stopMonitoringClicksOutside() {
+        if let m = monitor {
+            NSEvent.removeMonitor(m)
+            monitor = nil
+        }
+    }
+
+    // MARK: - icon ↔ phase
+
+    private func observePhaseForIcon() {
+        appState.$phase
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] phase in self?.updateIcon(for: phase) }
+            .store(in: &cancellables)
+    }
+
+    private func updateIcon(for phase: AppState.Phase) {
+        let glyph: String
+        switch phase {
+        case .warming: glyph = "🟡"
+        case .idle, .ready: glyph = "🦆"
+        case .starting, .recording: glyph = "🔴"
+        case .transcribing: glyph = "⌛"
+        case .error: glyph = "❌"
+        }
+        statusItem.button?.title = glyph
+    }
+
+    // MARK: - hotkey
+
+    private func installHotkey() {
+        hotkey.registerToggle { [weak self] in
+            self?.toggleRecording()
+        }
+    }
+
+    @MainActor
+    private func toggleRecording() {
+        switch appState.phase {
+        case .idle, .ready, .error:
+            startRecording()
+        case .recording:
+            stopAndTranscribe()
+        case .warming, .starting, .transcribing:
+            // Ignore — the user gets a hotkey-tap during a transition; we just drop it.
+            NSSound.beep()
+        }
+    }
+
+    // MARK: - record → transcribe pipeline
+
+    private func startRecording() {
+        Task {
+            guard await AudioRecorder.requestPermission() else {
+                await MainActor.run {
+                    appState.phase = .error("Microphone permission denied. Enable in System Settings → Privacy & Security → Microphone.")
+                }
+                return
+            }
+            await MainActor.run { appState.phase = .starting }
+
+            do {
+                _ = try recorder.start()
+                await MainActor.run {
+                    appState.phase = .recording
+                    appState.elapsedSeconds = 0
+                    startElapsedTimer()
+                }
+            } catch {
+                await MainActor.run {
+                    appState.phase = .error("Recording failed: \(error)")
+                }
+            }
+        }
+    }
+
+    private func stopAndTranscribe() {
+        stopElapsedTimer()
+        guard let url = recorder.stop() else { return }
+        Task {
+            await MainActor.run { appState.phase = .transcribing }
+
+            guard let engine = transcriber else {
+                await MainActor.run {
+                    appState.phase = .error("Whisper model still warming. Try again in a moment.")
+                }
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+
+            do {
+                let result = try await engine.transcribe(audioFile: url, language: nil)
+                await MainActor.run {
+                    appState.lastTranscript = result.text
+                    appState.lastAudioSeconds = result.audioSeconds
+                    appState.lastWallSeconds = result.wallSeconds
+                    appState.phase = .ready
+                }
+                // Pasteboard so the user can ⌘V even before SPEC-005 ships auto-paste.
+                copyToPasteboard(result.text)
+            } catch {
+                await MainActor.run {
+                    appState.phase = .error("Transcription failed: \(error)")
+                }
+            }
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    private func warmTranscriber() async {
+        await MainActor.run { appState.phase = .warming(modelLabel: "small") }
+        do {
+            let engine = try await WhisperKitEngine(model: "small")
+            self.transcriber = engine
+            await MainActor.run {
+                appState.phase = .idle
+                appState.modelLabel = "whisperkit small"
+            }
+        } catch {
+            await MainActor.run {
+                appState.phase = .error("Failed to load Whisper: \(error)")
+            }
+        }
+    }
+
+    private func startElapsedTimer() {
+        elapsedTimer?.invalidate()
+        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.appState.elapsedSeconds = self.recorder.elapsedSeconds
+        }
+    }
+
+    private func stopElapsedTimer() {
+        elapsedTimer?.invalidate()
+        elapsedTimer = nil
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+}
