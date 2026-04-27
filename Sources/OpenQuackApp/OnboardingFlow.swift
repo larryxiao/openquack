@@ -71,8 +71,49 @@ final class OnboardingState: ObservableObject {
     deinit { permissionTimer?.invalidate() }
 
     func refreshPermissions() {
+        let oldMic = micStatus
+        let oldAX = accessibilityTrusted
         micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         accessibilityTrusted = AXIsProcessTrusted()
+
+        // If a permission just flipped to granted while the user is on the
+        // matching step, schedule an auto-advance so they don't have to
+        // manually click Continue (especially relevant for AX, which the
+        // user grants in System Settings — they may not return to OpenQuack).
+        let micJustGranted = oldMic != .authorized && micStatus == .authorized
+        let axJustGranted  = !oldAX && accessibilityTrusted
+        if (step == .microphone && micJustGranted) || (step == .accessibility && axJustGranted) {
+            // Bring our window forward so the user sees the progression.
+            NSApp.activate(ignoringOtherApps: true)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                switch step {
+                case .microphone where micStatus == .authorized:    advance()
+                case .accessibility where accessibilityTrusted:     advance()
+                default:                                             break
+                }
+            }
+        }
+    }
+
+    /// Drive permission grant via Continue. Returns true if Continue should
+    /// NOT also call advance() (because the grant flow is in progress and
+    /// either the OS prompt or System Settings handoff will resolve it).
+    func continueWillTriggerPermissionPrompt() -> Bool {
+        switch step {
+        case .microphone where micStatus == .notDetermined:
+            Task { [weak self] in
+                _ = await AVCaptureDevice.requestAccess(for: .audio)
+                await MainActor.run { self?.refreshPermissions() }
+            }
+            return true
+        case .accessibility where !accessibilityTrusted:
+            _ = PasteService.isAccessibilityTrusted(prompt: true)
+            PasteService.openAccessibilitySettings()
+            return true  // wait for System Settings → polling auto-advances
+        default:
+            return false
+        }
     }
 
     func advance() {
@@ -187,7 +228,12 @@ struct OnboardingView: View {
                 if state.step == .done {
                     state.complete()
                     onClose()
-                } else {
+                    return
+                }
+                // For permission steps, Continue drives the OS grant flow
+                // directly — no separate "Grant access" button.
+                let triggeredPrompt = state.continueWillTriggerPermissionPrompt()
+                if !triggeredPrompt {
                     state.advance()
                 }
             }
@@ -199,9 +245,16 @@ struct OnboardingView: View {
 
     private var continueLabel: String {
         switch state.step {
-        case .install where !state.modelDownloaded: return "Waiting…"
-        case .done:                                  return "Done"
-        default:                                     return "Continue"
+        case .microphone where state.micStatus == .notDetermined:
+            return "Allow microphone"
+        case .accessibility where !state.accessibilityTrusted:
+            return "Open System Settings"
+        case .install where !state.modelDownloaded:
+            return "Waiting…"
+        case .done:
+            return "Done"
+        default:
+            return "Continue"
         }
     }
 
@@ -315,14 +368,14 @@ private struct MicrophoneStep: View {
 
     var body: some View {
         VStack(spacing: Theme.s16) {
-            StepGlyph(symbol: state.micStatus == .authorized ? "checkmark" : "mic")
+            StepGlyph(symbol: glyph)
             Text("Microphone").font(.oqTitleSerif)
             Text(bodyCopy)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: 380)
+                .frame(maxWidth: 400)
             Spacer().frame(height: Theme.s8)
-            statusBlock
+            statusBadge
             Spacer()
         }
         .task {
@@ -330,44 +383,43 @@ private struct MicrophoneStep: View {
         }
     }
 
+    private var glyph: String {
+        switch state.micStatus {
+        case .authorized: return "checkmark"
+        case .denied, .restricted: return "exclamationmark.triangle"
+        default: return "mic"
+        }
+    }
+
     private var bodyCopy: String {
         switch state.micStatus {
         case .authorized:
-            return "Microphone access is already enabled. No action needed — moving on."
+            return "Microphone access is already enabled — moving on."
         case .denied, .restricted:
-            return "Microphone access was denied. Open System Settings to enable it, or skip — you won't be able to dictate without it."
+            return "Microphone access was denied. Open System Settings → Privacy & Security → Microphone to enable it."
         case .notDetermined:
-            return "OpenQuack needs to listen to your microphone to transcribe what you say. Audio stays on your Mac — we don't send it anywhere."
+            return "OpenQuack listens to your microphone to transcribe what you say. Audio stays on your Mac. Click Allow microphone to grant access."
         @unknown default:
             return ""
         }
     }
 
     @ViewBuilder
-    private var statusBlock: some View {
+    private var statusBadge: some View {
         switch state.micStatus {
         case .authorized:
             Label("Granted", systemImage: "checkmark.circle.fill")
                 .font(.body.weight(.medium))
                 .foregroundStyle(Theme.moss)
         case .denied, .restricted:
-            VStack(spacing: Theme.s8) {
-                Label("Denied — change in System Settings", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.amber)
-                Button("Open System Settings") {
-                    NSWorkspace.shared.open(URL(string:
-                        "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
-                    )!)
-                }
+            Button("Open System Settings") {
+                NSWorkspace.shared.open(URL(string:
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+                )!)
             }
+            .buttonStyle(.bordered)
         case .notDetermined:
-            Button("Grant microphone access") {
-                Task {
-                    _ = await AVCaptureDevice.requestAccess(for: .audio)
-                    state.refreshPermissions()
-                }
-            }
-            .buttonStyle(.borderedProminent)
+            EmptyView()  // Continue button drives the prompt
         @unknown default:
             EmptyView()
         }
@@ -384,7 +436,7 @@ private struct AccessibilityStep: View {
             Text(bodyCopy)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: 400)
+                .frame(maxWidth: 420)
             Spacer().frame(height: Theme.s8)
 
             if state.accessibilityTrusted {
@@ -392,15 +444,11 @@ private struct AccessibilityStep: View {
                     .font(.body.weight(.medium))
                     .foregroundStyle(Theme.moss)
             } else {
-                VStack(spacing: Theme.s4) {
-                    Button("Grant Accessibility access") {
-                        _ = PasteService.isAccessibilityTrusted(prompt: true)
-                        PasteService.openAccessibilitySettings()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Text("You can skip this — it's reversible from Settings.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                Text("Click Open System Settings, then turn on OpenQuack. We'll detect the change automatically.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 380)
             }
             Spacer()
         }
@@ -411,9 +459,9 @@ private struct AccessibilityStep: View {
 
     private var bodyCopy: String {
         if state.accessibilityTrusted {
-            return "Accessibility access is already granted. No action needed — moving on."
+            return "Accessibility access is already granted — moving on."
         }
-        return "To paste your transcript at the cursor, OpenQuack simulates ⌘V. macOS calls this Accessibility access — without it the text still goes to your clipboard, you just press ⌘V manually."
+        return "OpenQuack pastes your transcript at the cursor by simulating ⌘V. macOS calls this Accessibility access. You'll grant it once in System Settings — without it, transcripts go to your clipboard and you press ⌘V manually."
     }
 }
 
@@ -422,12 +470,12 @@ private struct HotkeyStep: View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "keyboard")
             Text("Pick your hotkey").font(.oqTitleSerif)
-            Text("Press it once to start dictating, again to stop. The default ⌃⇧Space works almost everywhere.")
+            Text("Press once to start dictating, again to stop. ⌃⇧Space is set as the default — change it below if you'd like.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: 380)
+                .frame(maxWidth: 400)
             Spacer().frame(height: Theme.s8)
-            KeyboardShortcuts.Recorder("Toggle dictation:", name: .toggleRecording)
+            KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
             Spacer()
         }
     }
@@ -473,9 +521,9 @@ private struct InstallStep: View {
 
     private var detailText: String {
         if state.modelDownloaded {
-            return "About 700 MB on disk. After this, you can run fully offline — OpenQuack will never make another network call."
+            return "All set — about 700 MB on disk. From here OpenQuack runs fully offline."
         }
-        return "Downloading the medium WhisperKit model (~700 MB). This is the only network call OpenQuack makes, and only on first launch."
+        return "OpenQuack uses the Whisper speech model (about 700 MB). This is the only network call we make, and only on first launch."
     }
 }
 
@@ -489,7 +537,7 @@ private struct DemoStep: View {
                 StepGlyph(symbol: "waveform.badge.mic")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Try it").font(.oqTitleSerif)
-                    Text("Press your hotkey, say a sentence, press again. Or hold it (push-to-talk).")
+                    Text("Click the box, press your hotkey, and say something.")
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -509,7 +557,7 @@ private struct DemoStep: View {
             HStack(spacing: Theme.s8) {
                 Image(systemName: "info.circle")
                     .foregroundStyle(.secondary)
-                Text("Looking for the recording overlay? Top-centre of your screen.")
+                Text("A small pill at the top of your screen shows recording state.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -527,18 +575,18 @@ private struct DoneStep: View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "checkmark")
             Text("You're all set").font(.oqTitleSerif)
-            Text("Press your hotkey anywhere to start dictating. Click the duck in your menu bar for Settings.")
+            Text("Press your hotkey anywhere to dictate. The duck in your menu bar opens Settings.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: 400)
+                .frame(maxWidth: 420)
             Spacer().frame(height: Theme.s8)
             VStack(alignment: .leading, spacing: Theme.s8) {
-                tipRow(symbol: "command",
-                       text: "Smart formatting, custom dictionary, push-to-talk, and VAD live in Settings.")
+                tipRow(symbol: "slider.horizontal.3",
+                       text: "Push-to-talk, custom dictionary, and auto-stop live in Settings.")
                 tipRow(symbol: "lock.shield",
-                       text: "Audio never leaves your Mac. The default agent does no network IO.")
+                       text: "Audio stays on your Mac. We make no network calls during dictation.")
             }
-            .frame(maxWidth: 420)
+            .frame(maxWidth: 440)
             Spacer()
         }
     }
@@ -570,6 +618,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+        // Switch to .regular so the user gets a Dock icon — System Settings
+        // can hide the onboarding window when granting permissions, and the
+        // Dock icon is the lifeline back. Reverted on close.
+        NSApp.setActivationPolicy(.regular)
         let controller = OnboardingWindowController(appState: appState, onComplete: onComplete)
         shared = controller
         controller.window?.makeKeyAndOrderFront(nil)
@@ -605,6 +657,21 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         state.complete()
         let cb = onComplete
         Self.shared = nil
+        // Revert to .accessory only if no other titled window is left visible.
+        DispatchQueue.main.async {
+            ActivationPolicy.refresh()
+        }
         cb()
+    }
+}
+
+/// Centralised activation policy: .regular when any titled window is visible,
+/// .accessory when only the menu-bar status item + transient panels remain.
+enum ActivationPolicy {
+    static func refresh() {
+        let hasTitledWindow = NSApp.windows.contains { window in
+            window.isVisible && window.styleMask.contains(.titled)
+        }
+        NSApp.setActivationPolicy(hasTitledWindow ? .regular : .accessory)
     }
 }
