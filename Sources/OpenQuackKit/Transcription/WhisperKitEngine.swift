@@ -17,11 +17,27 @@ public final class WhisperKitEngine: TranscriptionEngine {
     public let modelID: String
     private let pipe: WhisperKit
 
-    public init(model: String) async throws {
+    public init(model: String, downloadBase: URL? = nil) async throws {
         self.modelID = model
+
+        // Default model cache: ~/Library/Application Support/OpenQuack/WhisperKit/.
+        // Avoids the "OpenQuack wants to access files in your Documents folder"
+        // TCC prompt that HubApi triggers when its downloadBase is nil — its
+        // built-in default is `~/Documents/huggingface/`.
+        let cacheDir = downloadBase ?? Self.defaultDownloadBase()
+        try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+
+        // One-shot migration: if the user already has WhisperKit weights in
+        // ~/Documents/huggingface/ from before this fix, move them so we
+        // don't re-download. Best-effort — if Documents access has been
+        // revoked, the move silently fails and WhisperKit re-downloads
+        // into the new location.
+        Self.migrateLegacyDocumentsCache(into: cacheDir)
+
         do {
             let config = WhisperKitConfig(
                 model: model,
+                downloadBase: cacheDir,
                 verbose: false,
                 logLevel: .error,
                 load: true
@@ -29,6 +45,40 @@ public final class WhisperKitEngine: TranscriptionEngine {
             self.pipe = try await WhisperKit(config)
         } catch {
             throw EngineError.loadFailed("\(error)")
+        }
+    }
+
+    /// `~/Library/Application Support/OpenQuack/WhisperKit/`. App-private; no
+    /// TCC prompt. Used by the app, the CLI, and the bench so they all share
+    /// a single model cache.
+    public static func defaultDownloadBase() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("OpenQuack", isDirectory: true)
+            .appendingPathComponent("WhisperKit", isDirectory: true)
+    }
+
+    /// If `~/Documents/huggingface/` exists and the new cache doesn't already
+    /// have a `huggingface/` subtree, move it. Idempotent and safe to call on
+    /// every launch.
+    private static func migrateLegacyDocumentsCache(into newBase: URL) {
+        let fm = FileManager.default
+        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let legacy = docs.appendingPathComponent("huggingface", isDirectory: true)
+        let target = newBase.appendingPathComponent("huggingface", isDirectory: true)
+
+        // Need legacy to exist and target to NOT exist (otherwise we'd merge
+        // and risk corrupting in-progress downloads).
+        guard fm.fileExists(atPath: legacy.path) else { return }
+        if fm.fileExists(atPath: target.path) {
+            // Already migrated (or fresh install with new code). Don't touch.
+            return
+        }
+
+        do {
+            try fm.moveItem(at: legacy, to: target)
+        } catch {
+            // Permissions revoked, or other transient error — fine. We'll
+            // re-download into the new location.
         }
     }
 
