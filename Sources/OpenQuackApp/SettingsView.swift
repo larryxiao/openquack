@@ -3,15 +3,16 @@ import AppKit
 import KeyboardShortcuts
 import OpenQuackKit
 
-// MVP Settings scene. SwiftUI TabView in an NSWindow (we don't use SwiftUI's
-// App protocol so we host the view manually — see SettingsWindowController).
+// Settings scene. SwiftUI TabView in an NSWindow (managed by
+// SettingsWindowController). Storage via @AppStorage on UserDefaults.
 //
-// Storage: @AppStorage on UserDefaults. Keys are the source of truth; the
-// AppDelegate reads them on launch and at hotkey events. Some keys (model)
-// require a relaunch to take effect — surfaced inline.
+// Per the design critique, the Models tab collapsed into General — it was
+// a single picker hidden behind a tab. Section headers across every Form
+// use the small-caps SectionHeader from Theme.swift. About is the only
+// "reception" pane and uses CreamSurface + serif titles.
 
 struct SettingsView: View {
-    enum Tab: Hashable { case general, models, shortcut, about }
+    enum Tab: Hashable { case general, shortcut, about }
     @State private var selection: Tab = .general
 
     var body: some View {
@@ -19,9 +20,6 @@ struct SettingsView: View {
             GeneralPane()
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(Tab.general)
-            ModelsPane()
-                .tabItem { Label("Models", systemImage: "waveform") }
-                .tag(Tab.models)
             ShortcutPane()
                 .tabItem { Label("Shortcut", systemImage: "command") }
                 .tag(Tab.shortcut)
@@ -29,23 +27,39 @@ struct SettingsView: View {
                 .tabItem { Label("About", systemImage: "info.circle") }
                 .tag(Tab.about)
         }
-        .frame(width: 520, height: 360)
+        .frame(minWidth: 580, idealWidth: 580, minHeight: 500, idealHeight: 500)
     }
 }
 
 // MARK: - General
 
 private struct GeneralPane: View {
-    @AppStorage("autoPaste") private var autoPaste: Bool = true
-    @AppStorage("polishText") private var polishText: Bool = true
-    @AppStorage("language") private var language: String = "en"
-    @AppStorage("playSounds") private var playSounds: Bool = true
-    @AppStorage("vadAutoStop") private var vadAutoStop: Bool = false
-    @AppStorage("vadSilenceSeconds") private var vadSilenceSeconds: Double = 1.5
-    @AppStorage("customWords") private var customWords: String = ""
+    @AppStorage("autoPaste")           private var autoPaste: Bool = true
+    @AppStorage("polishText")          private var polishText: Bool = true
+    @AppStorage("language")            private var language: String = "en"
+    @AppStorage("playSounds")          private var playSounds: Bool = true
+    @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
+    @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
+    @AppStorage("customWords")         private var customWords: String = ""
+    @AppStorage("model")               private var model: String = "medium"
 
     var body: some View {
         Form {
+            Section {
+                Picker("Whisper model", selection: $model) {
+                    Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
+                    Text("base — fast, modest accuracy (~290 MB)").tag("base")
+                    Text("small — balanced (~480 MB)").tag("small")
+                    Text("medium — best balance, default (~1.5 GB)").tag("medium")
+                    Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
+                }
+                Text("Model changes apply on next launch. Cold-start is ~10–60 s the first time a model is downloaded; subsequent launches are 5–10 s.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Speech-to-text")
+            }
+
             Section {
                 Toggle("Paste at cursor automatically", isOn: $autoPaste)
                     .help("After transcription, simulate ⌘V to paste into the focused app. Requires Accessibility permission.")
@@ -54,7 +68,7 @@ private struct GeneralPane: View {
                 Toggle("Play sounds on start / stop", isOn: $playSounds)
                     .help("Subtle system sounds when a recording begins and ends.")
             } header: {
-                Text("Behaviour")
+                SectionHeader("Behaviour")
             }
 
             Section {
@@ -75,7 +89,7 @@ private struct GeneralPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
-                Text("Language")
+                SectionHeader("Language")
             }
 
             Section {
@@ -92,63 +106,22 @@ private struct GeneralPane: View {
                     }
                 }
             } header: {
-                Text("Voice activity")
+                SectionHeader("Voice activity")
             }
 
             Section {
-                ZStack(alignment: .topLeading) {
-                    if customWords.isEmpty {
-                        Text("e.g.\nOpenQuack\nWhisperKit\nClaude Code")
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                            .allowsHitTesting(false)
-                    }
-                    TextEditor(text: $customWords)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 80, idealHeight: 100)
-                        .scrollContentBackground(.hidden)
-                }
+                PlaceholderTextEditor(
+                    text: $customWords,
+                    prompt: "e.g.\nOpenQuack\nWhisperKit\nClaude Code",
+                    monospaced: true,
+                    minHeight: 90,
+                    idealHeight: 110
+                )
                 Text("One word or phrase per line. Whisper uses these as a hint to favour proper nouns, jargon, and names.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
-                Text("Custom dictionary")
-            }
-        }
-        .formStyle(.grouped)
-        .padding()
-    }
-}
-
-// MARK: - Models
-
-private struct ModelsPane: View {
-    @AppStorage("model") private var model: String = "medium"
-
-    var body: some View {
-        Form {
-            Section {
-                Picker("Whisper model", selection: $model) {
-                    Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
-                    Text("base — fast, modest accuracy (~290 MB)").tag("base")
-                    Text("small — balanced (~480 MB)").tag("small")
-                    Text("medium — best balance, default (~1.5 GB)").tag("medium")
-                    Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
-                }
-                Text("Model changes apply on next launch. Cold-start is ~10–60 s the first time a model is downloaded; subsequent launches are 5–10 s.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Speech-to-text")
-            }
-
-            Section {
-                Text("On Apple M4 / 16 GB: medium hits 2.6% WER on real human speech vs 4.1% for small. See docs/BENCHMARKS.md for the full hardware × model matrix.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Why these defaults")
+                SectionHeader("Custom dictionary")
             }
         }
         .formStyle(.grouped)
@@ -169,19 +142,20 @@ private struct ShortcutPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
-                Text("Global hotkey")
+                SectionHeader("Global hotkey")
             }
 
             Section {
                 Picker("Behaviour", selection: $hotkeyMode) {
-                    Text("Toggle (press to start, press to stop)").tag("toggle")
-                    Text("Push-to-talk (hold to record)").tag("pushToTalk")
+                    Text("Toggle").tag("toggle")
+                    Text("Push-to-talk").tag("pushToTalk")
                 }
-                Text("Push-to-talk is best for short utterances — release the key and OpenQuack starts transcribing immediately.")
+                .pickerStyle(.segmented)
+                Text("Toggle: press to start, press to stop. Push-to-talk: hold to record, release to transcribe — best for short utterances.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
-                Text("Mode")
+                SectionHeader("Mode")
             }
         }
         .formStyle(.grouped)
@@ -193,48 +167,58 @@ private struct ShortcutPane: View {
 
 private struct AboutPane: View {
     var body: some View {
-        VStack(spacing: 10) {
-            Text("🦆").font(.system(size: 56))
-            Text("OpenQuack").font(.title2.weight(.semibold))
-            Text("v\(OpenQuackKit.version)")
-                .font(.callout).foregroundStyle(.secondary)
-            Text("Privacy-first local AI agent interface, accessed via voice.")
+        ZStack {
+            CreamSurface().ignoresSafeArea()
+
+            VStack(spacing: Theme.s12) {
+                Spacer().frame(height: Theme.s16)
+                Text("🦆").font(.system(size: 96))
+                Text("OpenQuack").font(.oqTitleSerif)
+                Text("v\(OpenQuackKit.version)")
+                    .font(.callout).foregroundStyle(.secondary)
+                Text("Privacy-first local AI agent interface, accessed via voice.")
+                    .font(.oqTaglineSerif)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, Theme.s32)
+
+                HStack(spacing: Theme.s16) {
+                    Link("Source",  destination: URL(string: "https://github.com/OpenQuack/openquack")!)
+                    Link("Vision",  destination: URL(string: "https://github.com/OpenQuack/openquack/blob/v2/docs/VISION.md")!)
+                    Link("Bench",   destination: URL(string: "https://github.com/OpenQuack/openquack/blob/v2/docs/BENCHMARKS.md")!)
+                }
                 .font(.callout)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 32)
+                .padding(.top, Theme.s4)
 
-            HStack(spacing: 16) {
-                Link("Source",  destination: URL(string: "https://github.com/OpenQuack/openquack")!)
-                Link("Vision",  destination: URL(string: "https://github.com/OpenQuack/openquack/blob/v2/docs/VISION.md")!)
-                Link("Bench",   destination: URL(string: "https://github.com/OpenQuack/openquack/blob/v2/docs/BENCHMARKS.md")!)
-            }
-            .font(.callout)
-            .padding(.top, 4)
+                Spacer()
 
-            Spacer()
+                Divider().opacity(0.4).padding(.horizontal, Theme.s32)
 
-            HStack(spacing: 12) {
-                Button("Check for updates") {
-                    if let delegate = NSApp.delegate as? AppDelegate {
-                        delegate.checkForUpdatesManually()
+                HStack(spacing: Theme.s12) {
+                    Button("Check for updates") {
+                        if let delegate = NSApp.delegate as? AppDelegate {
+                            delegate.checkForUpdatesManually()
+                        }
                     }
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
+                    .buttonStyle(.bordered)
 
-                Button("Replay onboarding") {
-                    if let delegate = NSApp.delegate as? AppDelegate {
-                        delegate.replayOnboarding()
+                    Button("Replay onboarding") {
+                        if let delegate = NSApp.delegate as? AppDelegate {
+                            delegate.replayOnboarding()
+                        }
                     }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.borderless)
-                .font(.caption)
-            }
+                .padding(.vertical, Theme.s8)
 
-            Text("MIT").font(.caption2).foregroundStyle(.tertiary)
+                Text("MIT")
+                    .font(.caption2.weight(.semibold))
+                    .tracking(1.2)
+                    .textCase(.uppercase)
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, Theme.s8)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 }
