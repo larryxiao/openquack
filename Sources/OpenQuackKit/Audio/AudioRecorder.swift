@@ -17,18 +17,25 @@ public enum RecorderError: Error, CustomStringConvertible {
 
 /// SPEC-001 — Microphone capture.
 ///
-/// Captures at the input's native format (e.g. 48 kHz stereo float32) and
-/// writes a 16 kHz mono Int16 PCM WAV. We do the rate-and-channel conversion
-/// explicitly via `AVAudioConverter` per buffer, then write the converted
-/// buffer to `AVAudioFile`. (Earlier impl relied on `AVAudioFile.write(from:)`
-/// to auto-convert from the input format; on macOS 15 that produced a WAV
-/// whose header said 16 kHz but whose samples were the native rate, so
-/// playback was 3× slow. Explicit conversion fixes it.)
+/// Captures at the input device's native format and writes a WAV at the same
+/// native rate. **No resampling at capture time.** Down-sampling to 16 kHz
+/// happens later — WhisperKit's AudioProcessor handles it internally when
+/// reading the file, and the bench's WAV reader can do the same.
 ///
-/// Thread-safety: `start` / `stop` / `cancel` are protected by a lock. The
-/// tap callback runs on the audio thread and uses closure-captured references
-/// to the converter and file; `removeTap` before nilling the references is
-/// what serialises teardown.
+/// Why no live resample: the obvious paths all have failure modes.
+///   • `AVAudioFile.write(from:)` does *not* sample-rate-convert — passing a
+///     48 kHz buffer to a 16 kHz-declared file silently writes the source
+///     samples and emits a WAV that plays 3× slow.
+///   • `AVAudioConverter` *does* convert, but the streaming pattern with
+///     `.endOfStream` after each buffer flushes the SRC filter and silently
+///     drops every input buffer after the first one.
+///   • `AVAudioMixerNode` works but adds a node + connection juggling.
+/// Native-rate capture sidesteps all of this and is lossless.
+///
+/// Thread-safety: `start` / `stop` / `cancel` are protected by a lock; the
+/// tap closure runs on the audio thread and writes via a closure-captured
+/// file reference. `removeTap` before nilling our reference is what
+/// serialises teardown.
 public final class AudioRecorder {
     private let lock = NSLock()
     private var engine: AVAudioEngine?
@@ -91,28 +98,26 @@ public final class AudioRecorder {
                 .appendingPathComponent("openquack-\(UUID().uuidString).wav")
         }
 
-        // Target processing format: 16 kHz mono Float32 (what we'll feed to
-        // AVAudioFile). Whisper wants 16 kHz; Float32 is what AVAudioConverter
-        // produces natively; AVAudioFile down-bitdepths to Int16 on disk.
-        guard let processingFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 16_000,
-            channels: 1,
-            interleaved: false
-        ) else {
-            throw RecorderError.engineFailed("Failed to create processing format")
-        }
+        let engine = AVAudioEngine()
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        // On-disk WAV settings — 16 kHz mono Int16, broadly compatible.
+        // WAV at the input device's native sample rate and channel count.
+        // Stored as Int16 PCM (compact, broadly compatible). WhisperKit
+        // resamples internally on read; the bench reads through the same path.
         let fileSettings: [String: Any] = [
             AVFormatIDKey:             kAudioFormatLinearPCM,
-            AVSampleRateKey:           processingFormat.sampleRate,
-            AVNumberOfChannelsKey:     Int(processingFormat.channelCount),
+            AVSampleRateKey:           inputFormat.sampleRate,
+            AVNumberOfChannelsKey:     Int(inputFormat.channelCount),
             AVLinearPCMBitDepthKey:    16,
             AVLinearPCMIsFloatKey:     false,
             AVLinearPCMIsBigEndianKey: false,
         ]
 
+        // Match the file's processing format to the tap format (Float32
+        // non-interleaved at the input's native rate). `write(from:)` only has
+        // a bit-depth conversion to do (Float32 → Int16) — same rate, same
+        // channels — which it handles cleanly.
         let file: AVAudioFile
         do {
             file = try AVAudioFile(
@@ -125,53 +130,9 @@ public final class AudioRecorder {
             throw RecorderError.fileWriteFailed("\(error)")
         }
 
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-
-        guard let converter = AVAudioConverter(from: inputFormat, to: processingFormat) else {
-            throw RecorderError.engineFailed(
-                "Failed to create converter \(inputFormat) → \(processingFormat)"
-            )
-        }
-        // High-quality offline-style resample; for voice this is well within budget.
-        converter.sampleRateConverterQuality = AVAudioQuality.high.rawValue
-        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
-
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { inputBuffer, _ in
-            let ratio = processingFormat.sampleRate / inputFormat.sampleRate
-            let capacity = AVAudioFrameCount(
-                ceil(Double(inputBuffer.frameLength) * ratio)
-            ) + 1024  // safety margin for filter latency
-            guard let outputBuffer = AVAudioPCMBuffer(
-                pcmFormat: processingFormat,
-                frameCapacity: capacity
-            ) else { return }
-
-            var error: NSError?
-            var consumed = false
-            converter.convert(to: outputBuffer, error: &error) { _, status in
-                if consumed {
-                    status.pointee = .endOfStream
-                    return nil
-                }
-                consumed = true
-                status.pointee = .haveData
-                return inputBuffer
-            }
-
-            if let error {
-                FileHandle.standardError.write(
-                    "[AudioRecorder] convert error: \(error)\n".data(using: .utf8) ?? Data()
-                )
-                return
-            }
-            if outputBuffer.frameLength == 0 {
-                return  // converter held back samples (filter latency); fine.
-            }
-
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
             do {
-                try file.write(from: outputBuffer)
+                try file.write(from: buffer)
             } catch {
                 FileHandle.standardError.write(
                     "[AudioRecorder] write error: \(error)\n".data(using: .utf8) ?? Data()
