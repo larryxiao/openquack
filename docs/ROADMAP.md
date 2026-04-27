@@ -40,8 +40,9 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 | 🟢 | Record → WhisperKit `medium` (en) → transcript in popover + clipboard | SPEC-002 | S |
 | 🟢 | Floating recording-state pill (top-centre, click-through) | SPEC-004 | M |
 | 🟢 | CGEvent ⌘V auto-paste at cursor (Accessibility prompt + clipboard fallback) | SPEC-005 | S |
-| 🔵 | Agent dispatch abstraction + `PassthroughAgent` | SPEC-006 | M |
-| 🔵 | `ClaudeCodeAgent` — subprocess to local `claude` CLI | SPEC-006 | M |
+| 🔵 | Agent session protocol + `PassthroughAgent` + conversation panel | SPEC-006 | M |
+| 🔵 | `ClaudeCodeAgent` — long-lived subprocess, streaming events | SPEC-006 | M |
+| 🔵 | Approval prompt UX (overlay morph + buttons) | SPEC-006 | S |
 | ⚪ | Onboarding flow (Welcome → Permissions → Hotkey → First test) | — | M |
 | 🟢 | Settings scene MVP (General / Models / Shortcut / About) | — | M |
 | 🔵 | Settings — Privacy + Agent panes (lands with SPEC-006 impl) | SPEC-006 | S |
