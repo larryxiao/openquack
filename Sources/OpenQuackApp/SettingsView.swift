@@ -64,7 +64,7 @@ private struct GeneralPane: View {
                 Toggle("Paste at cursor automatically", isOn: $autoPaste)
                     .help("After transcription, OpenQuack simulates ⌘V to paste into whatever app you're in. Requires Accessibility access. If off, the transcript still goes to your clipboard and you press ⌘V yourself.")
                 Toggle("Smart formatting", isOn: $polishText)
-                    .help("Capitalise sentences, add a period at the end, strip filler words (um, uh) before paste. Off = paste exactly what Whisper heard.")
+                    .help("Capitalise sentences, add a period at the end, strip filler words (um, uh) before paste. A heavier local-LLM polish pass that catches domain terms like 'Claude Code' is on the way. Off = paste exactly what Whisper heard.")
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {
@@ -117,7 +117,7 @@ private struct GeneralPane: View {
                     minHeight: 90,
                     idealHeight: 110
                 )
-                Text("One word or phrase per line. Whisper uses these as a hint when deciding between similar-sounding words — useful for proper nouns, jargon, and names.")
+                Text("One word or phrase per line. Whisper uses these as a hint when deciding between similar-sounding words — useful for proper nouns, jargon, project names, and the agents you talk to (e.g. 'Claude Code').")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -176,7 +176,7 @@ private struct AboutPane: View {
                 Text("OpenQuack").font(.oqTitleSerif)
                 Text("v\(OpenQuackKit.version)")
                     .font(.callout).foregroundStyle(.secondary)
-                Text("Privacy-first local AI agent interface, accessed via voice.")
+                Text("A voice interface to your local AI agents. Privacy by default.")
                     .font(.oqTaglineSerif)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -184,8 +184,8 @@ private struct AboutPane: View {
 
                 HStack(spacing: Theme.s16) {
                     Link("Source",  destination: URL(string: "https://github.com/OpenQuack/openquack")!)
-                    Link("Vision",  destination: URL(string: "https://github.com/OpenQuack/openquack/blob/v2/docs/VISION.md")!)
-                    Link("Bench",   destination: URL(string: "https://github.com/OpenQuack/openquack/blob/v2/docs/BENCHMARKS.md")!)
+                    Link("Vision",  destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/VISION.md")!)
+                    Link("Bench",   destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/BENCHMARKS.md")!)
                 }
                 .font(.callout)
                 .padding(.top, Theme.s4)

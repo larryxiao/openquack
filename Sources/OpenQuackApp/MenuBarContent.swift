@@ -197,7 +197,7 @@ struct MenuBarContent: View {
         case .recording:
             return "Press \(hk) again to stop and transcribe."
         case .transcribing:
-            return "Working on your audio — this stays on your Mac."
+            return "Thinking — your audio stays on your Mac."
         case .error(let msg):
             return msg
         }

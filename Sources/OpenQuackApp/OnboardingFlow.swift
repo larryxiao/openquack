@@ -326,9 +326,9 @@ private struct WelcomeStep: View {
                     body: "Audio never leaves your Mac. No cloud, no signup, no telemetry."
                 )
                 privacyRow(
-                    icon: "scalemass",
-                    title: "Slim",
-                    body: "A 3 MB menu-bar app. The Whisper model is the only thing we download."
+                    icon: "wand.and.stars",
+                    title: "Voice → action, eventually",
+                    body: "Today, dictate anywhere. The plan is to dispatch what you said to local AI agents like Claude Code; that work is up next."
                 )
                 privacyRow(
                     icon: "shield.checkered",
@@ -398,7 +398,7 @@ private struct MicrophoneStep: View {
         case .denied, .restricted:
             return "Microphone access was denied. Open System Settings → Privacy & Security → Microphone to enable it."
         case .notDetermined:
-            return "OpenQuack listens to your microphone to transcribe what you say. Audio stays on your Mac. Click Allow microphone to grant access."
+            return "OpenQuack transcribes locally — audio never leaves your Mac. Click Allow microphone to grant access."
         @unknown default:
             return ""
         }
@@ -521,9 +521,9 @@ private struct InstallStep: View {
 
     private var detailText: String {
         if state.modelDownloaded {
-            return "All set — about 700 MB on disk. From here OpenQuack runs fully offline."
+            return "All set — about 700 MB on disk. Dictation is fully offline from here."
         }
-        return "OpenQuack uses the Whisper speech model (about 700 MB). This is the only network call we make, and only on first launch."
+        return "OpenQuack uses the Whisper speech model (about 700 MB). One-time download — dictation is fully offline once it's on disk."
     }
 }
 
@@ -584,7 +584,9 @@ private struct DoneStep: View {
                 tipRow(symbol: "slider.horizontal.3",
                        text: "Push-to-talk, custom dictionary, and auto-stop live in Settings.")
                 tipRow(symbol: "lock.shield",
-                       text: "Audio stays on your Mac. We make no network calls during dictation.")
+                       text: "Audio stays on your Mac. Dictation makes no network calls.")
+                tipRow(symbol: "sparkles",
+                       text: "Today: dictation. Next: dispatch what you said to local AI agents.")
             }
             .frame(maxWidth: 440)
             Spacer()

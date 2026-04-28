@@ -9,7 +9,7 @@ Privacy-first dictation for macOS — and (soon) a voice interface to your local
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](#install)
 [![WhisperKit](https://img.shields.io/badge/STT-WhisperKit-orange.svg)](https://github.com/argmaxinc/argmax-oss-swift)
-[![Status](https://img.shields.io/badge/v2-alpha-yellow.svg)](docs/ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](docs/ROADMAP.md)
 
 </div>
 
@@ -19,9 +19,9 @@ Privacy-first dictation for macOS — and (soon) a voice interface to your local
 
 OpenQuack is a small menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript pastes at the cursor. Wherever you can type, you can talk.
 
-It runs Whisper locally (`WhisperKit medium` by default). No cloud, no account, no signup, no telemetry. Your voice stays on your Mac.
+Whisper runs locally (`WhisperKit medium` by default). No cloud, no account, no signup, no telemetry — your voice stays on your Mac.
 
-The bigger plan is for OpenQuack to be a **voice interface to local AI agents** — speak to your Mac, have Claude Code (or your local Ollama, or your own agent) act on it. The dictation experience is shipping first; agent integration follows once the foundation is solid. See [`docs/VISION.md`](docs/VISION.md) for the full pitch and [`docs/ROADMAP.md`](docs/ROADMAP.md) for the milestone schedule.
+The bigger plan is for OpenQuack to be a **voice interface to local AI agents**: speak to your Mac, have Claude Code (or your local Ollama / MLX-LM, or your own agent) act on it. Dictation is shipping first because the same transcript pipeline has to be good enough that you'd press send on it without re-reading; agent dispatch builds on that. See [`docs/VISION.md`](docs/VISION.md) for the full pitch and [`docs/ROADMAP.md`](docs/ROADMAP.md) for the milestone schedule.
 
 > *Other tools type what you said. OpenQuack does what you said.*
 
@@ -65,12 +65,11 @@ Requires **Xcode 16+** (the Swift Package Manager from CommandLineTools alone wo
 ```sh
 git clone https://github.com/OpenQuack/openquack.git
 cd openquack
-git checkout v2
 bash scripts/wrap_app.sh
 open build/OpenQuack.app
 ```
 
-The first launch downloads the WhisperKit `medium` model (~700 MB) and walks you through a 5-step setup.
+The first launch downloads the WhisperKit `medium` model (~700 MB) and walks you through a short setup.
 
 ## Quick experiments without the app
 
