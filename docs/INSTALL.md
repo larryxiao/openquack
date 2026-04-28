@@ -1,15 +1,34 @@
 # Install
 
-## Recommended — Homebrew (once v0 is released)
+## Homebrew (recommended)
+
+OpenQuack ships as a Homebrew cask. Until it's accepted into the official
+[`homebrew-cask`](https://github.com/Homebrew/homebrew-cask) — that requires
+an Apple Developer ID + notarised builds, which is on the roadmap — install
+it via this repo as a tap:
 
 ```sh
+brew tap OpenQuack/openquack https://github.com/OpenQuack/openquack
 brew install --cask openquack
 ```
 
-The cask formula at `Casks/openquack.rb` points to the GitHub release artefact.
-Until the first release is tagged, `:no_check` is the placeholder sha256 — the
-formula is shipped now so the install path is documented and reviewable; the
-actual hash drops in once `scripts/make_dmg.sh` produces a release-ready DMG.
+That points at `Casks/openquack.rb` in this repo, which fetches the latest
+DMG attached to a [GitHub release](https://github.com/OpenQuack/openquack/releases).
+
+To upgrade later:
+
+```sh
+brew upgrade --cask openquack
+```
+
+To uninstall:
+
+```sh
+brew uninstall --cask openquack
+```
+
+Once OpenQuack lands in `homebrew-cask`, the tap step goes away and
+`brew install --cask openquack` will work directly.
 
 ## DMG (manual)
 
@@ -17,8 +36,8 @@ Download `OpenQuack-<version>.dmg` from the
 [Releases page](https://github.com/OpenQuack/openquack/releases), open it,
 drag OpenQuack into Applications.
 
-The DMG is **ad-hoc codesigned, not notarised** until we have an Apple
-Developer account. First launch:
+Pre-notarisation DMGs come with an "unidentified developer" prompt on first
+open. Bypass once with:
 
 ```
 right-click OpenQuack.app → Open → Open
@@ -32,22 +51,16 @@ See [`DEVELOPMENT.md`](DEVELOPMENT.md) — covers the full build, signing option
 
 ## Uninstall
 
-If installed via Homebrew:
+`brew uninstall --cask openquack` removes the app. Add `--zap` to also delete
+state OpenQuack writes outside `/Applications`:
 
-```sh
-brew uninstall --cask openquack
-```
-
-The cask's `zap` block also removes:
-- `~/Library/Application Support/OpenQuack/` (last-recording.wav and any
-  state we add later)
-- `~/Library/Preferences/org.openquack.OpenQuack.plist` (Settings)
+- `~/Library/Application Support/OpenQuack/` — speech model cache, last-recording.wav, app state.
+- `~/Library/Preferences/org.openquack.OpenQuack.plist` — Settings.
 - `~/Library/Saved Application State/org.openquack.OpenQuack.savedState`
-- `~/.cache/openquack-bench/` (Lightning bench model cache, if you ran the
-  bench)
+- `~/.cache/openquack-bench/` — only if you ran the benchmark CLI.
 
 If you installed manually, dragging OpenQuack.app to the Trash is enough;
-the above paths are safe to leave or remove by hand.
+the paths above are safe to leave or remove by hand.
 
 ## What gets downloaded on first run
 

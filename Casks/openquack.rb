@@ -1,12 +1,13 @@
 cask "openquack" do
   version "2.0.0-alpha.1"
-  # Placeholder; will be set per-release by scripts/make_dmg.sh and pasted in
-  # before each tag is pushed. Use `:no_check` until v0 is actually published.
+  # Set per-release by scripts/make_dmg.sh — paste the printed value in
+  # before each tag is pushed. `:no_check` is the placeholder while no
+  # release has been tagged yet.
   sha256 :no_check
 
   url "https://github.com/OpenQuack/openquack/releases/download/v#{version}/OpenQuack-#{version}.dmg"
   name "OpenQuack"
-  desc "Privacy-first local AI agent interface, accessed via voice"
+  desc "Voice dictation for macOS that runs entirely on your Mac"
   homepage "https://github.com/OpenQuack/openquack"
 
   livecheck do

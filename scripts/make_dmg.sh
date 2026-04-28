@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Build an unsigned, ad-hoc-codesigned DMG of OpenQuack.app, suitable for
-# distribution via GitHub Releases + Homebrew cask. Notarisation is a
-# separate step that requires an Apple Developer account; until then,
-# users on first open will need to right-click → Open or accept the
-# Gatekeeper prompt once.
+# Build a signed DMG of OpenQuack.app, suitable for GitHub Releases +
+# Homebrew cask distribution. The bundle inside is signed with whatever
+# identity scripts/wrap_app.sh selects (Developer ID for distribution,
+# Apple Development for dev iteration, ad-hoc as fallback). Notarisation
+# is a separate step that requires Developer ID + an active Apple
+# Developer account.
 #
 # Usage: bash scripts/make_dmg.sh
 #        → build/OpenQuack-<version>.dmg
@@ -17,11 +18,11 @@ APP="$ROOT/build/OpenQuack.app"
 DMG="$ROOT/build/OpenQuack-$VERSION.dmg"
 STAGING="$ROOT/build/dmg-staging"
 
-# Build the .app first if it isn't there.
-if [[ ! -d "$APP" ]]; then
-    echo "→ build/OpenQuack.app missing — running wrap_app.sh first..."
-    bash "$ROOT/scripts/wrap_app.sh"
-fi
+# Always rebuild + sign the .app first so the DMG never carries a stale
+# bundle. wrap_app.sh is fast (incremental SwiftPM build) when nothing
+# changed, so this is cheap.
+echo "→ Building & signing OpenQuack.app..."
+bash "$ROOT/scripts/wrap_app.sh"
 
 echo "→ Staging DMG layout..."
 rm -rf "$STAGING" "$DMG"
@@ -51,9 +52,15 @@ echo "✓ $DMG"
 echo "  size:    $SIZE"
 echo "  sha256:  $SHA"
 echo
-echo "Next steps for a real release:"
-echo "  1. gh release create v$VERSION --draft \\"
-echo "       --title 'OpenQuack $VERSION' \\"
-echo "       '$DMG'"
-echo "  2. Update Casks/openquack.rb sha256 to:  $SHA"
-echo "  3. brew install --cask Casks/openquack.rb  (local install test)"
+echo "To cut a release:"
+echo "  1. Update the cask sha:"
+echo "       sed -i '' \"s|sha256 :no_check|sha256 \\\"$SHA\\\"|\" Casks/openquack.rb"
+echo "       (or replace the existing sha256 line if one is already set)"
+echo "  2. Commit the cask + tag:"
+echo "       git add Casks/openquack.rb && git commit -m 'chore: cask sha for v$VERSION'"
+echo "       git tag v$VERSION && git push --tags"
+echo "  3. Publish the GitHub Release with the DMG attached:"
+echo "       gh release create v$VERSION --title 'OpenQuack $VERSION' '$DMG'"
+echo "  4. Verify the install:"
+echo "       brew tap OpenQuack/openquack https://github.com/OpenQuack/openquack"
+echo "       brew install --cask openquack"

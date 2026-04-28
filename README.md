@@ -47,13 +47,16 @@ The full privacy contract is in [`docs/VISION.md`](docs/VISION.md#privacy-contra
 
 ## Install
 
-The recommended path once the first release ships is Homebrew:
+Homebrew (one-liner, works as soon as a release is tagged):
 
 ```sh
+brew tap OpenQuack/openquack https://github.com/OpenQuack/openquack
 brew install --cask openquack
 ```
 
-For now — DMG download, manual install, or building from source — see [`docs/INSTALL.md`](docs/INSTALL.md).
+The plain `brew install --cask openquack` (no tap) drops in once OpenQuack lands in the official Homebrew cask — that needs an Apple Developer ID + notarised build, which is on the roadmap.
+
+DMG download or building from source: [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Roadmap
 
