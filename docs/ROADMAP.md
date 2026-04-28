@@ -59,8 +59,9 @@ Goal: a working "speak → agent acts" loop on macOS, hotkey to action. Ships an
 ## M2.5 — LLM transcript polish _(next-priority chunk after v0 launch)_
 
 User-flagged priority on 2026-04-27. Stronger transcript cleanup via a
-small local LLM, off by default but a one-toggle opt-in. Lays the LLM
-infra that SPEC-006 (agent dispatch) builds on.
+small local LLM, off by default but a one-toggle opt-in. Goal: a transcript
+the user can press send on without re-reading. Lays the LLM infra that
+SPEC-006 (agent dispatch) builds on.
 
 | | Task | Spec | Effort |
 |---|---|---|---|
@@ -68,6 +69,8 @@ infra that SPEC-006 (agent dispatch) builds on.
 | 🔵 | `MLXLMPolishEngine` (in-process via mlx-swift-lm) | SPEC-007 | M |
 | 🔵 | Settings → Polish pane (engine picker, model picker) | SPEC-007 | S |
 | 🔵 | Bench polish WER delta + latency on `openquack-bench` | SPEC-007 | S |
+| 🔵 | Domain-term accuracy bench (e.g. "Claude Code" not "cloud code") | SPEC-007 | S |
+| 🔵 | "Send-confidence" bench: % of utterances clean enough to ship as-is | SPEC-007 | S |
 
 ## M3 — Agents + polish
 
@@ -75,7 +78,7 @@ infra that SPEC-006 (agent dispatch) builds on.
 |---|---|---|---|
 | ⚪ | `OllamaAgent` (local HTTP) | SPEC-006 ext | S |
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
-| ⚪ | "App Branch" context awareness (foreground app → prompt) | new SPEC | M |
+| ⚪ | Active-app context: feed the foreground app + focused input field's surrounding text into Whisper's prompt bias and the polish/agent prompt, so domain terms resolve correctly and the agent has the same context the user does (sequenced after M2.5) | new SPEC | M |
 | ⚪ | Streaming partial transcripts | new SPEC | L |
 | ⚪ | Code signing + notarisation | — | S |
 | ⚪ | Sparkle auto-update | — | S |

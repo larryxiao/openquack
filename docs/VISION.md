@@ -13,6 +13,15 @@ Voice input is the surface. The product is what happens after.
 - Not just dictation — other tools type what you said, OpenQuack does what you said.
 - Not a cloud product. Audio never leaves your machine. Agents *may* call cloud APIs (e.g. Claude through Claude Code), but only because *you* configured them to — and the default agent backend is local-only.
 
+## Quality bar
+
+The transcript has to be **good enough to send without re-reading**. If the user has to scan and fix typos before pressing return on a Claude Code prompt, OpenQuack is a worse keyboard, not a better interface. Two things have to be true:
+
+1. **Whisper transcription is correct on real speech**, including words it doesn't know. "Claude Code" should never come out as "cloud code." This is what Whisper's prompt-token bias and the post-transcription LLM polish step (M2.5) are for: domain terms get resolved, not hoped at.
+2. **The polished transcript reads like a written sentence**, not a raw dictation. Filler words trimmed, capitalisation and punctuation right, false starts cleaned up. Polishing happens locally; the user keeps the option to see the raw version.
+
+Benchmarking this is part of the work — `openquack-bench` already measures WER; M2.5 adds a domain-term accuracy metric and a "send-confidence" delta with vs without polish.
+
 ## How it works
 
 ```
@@ -58,8 +67,8 @@ The pieces have shipped. OpenQuack is the surface that ties them together.
 
 ## Status
 
-- v0.1 — Python prototype on `main`, tagged `v0.1.0`. Frozen.
-- v2 — Swift + agent integration on `v2`. Bench framework + first characterisation are live; see [BENCHMARKS.md](BENCHMARKS.md). App + agent layer are next.
+- v0.1 — Python prototype, frozen at tag `v0.1.0`.
+- v2 — SwiftUI rewrite is now on `main`. Bench framework, dictation MVP (record → Whisper → paste), onboarding, settings, DMG packaging are live; see [BENCHMARKS.md](BENCHMARKS.md). LLM transcript polish (M2.5) and the agent layer (M3) are next.
 
 ## Tagline
 
