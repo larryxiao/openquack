@@ -90,29 +90,142 @@ public final class WhisperKitEngine: TranscriptionEngine {
         }
     }
 
-    /// If `~/Documents/huggingface/` exists and the new cache doesn't already
-    /// have a `huggingface/` subtree, move it. Idempotent and safe to call on
-    /// every launch.
+    /// If `~/Documents/huggingface/models/` exists, move its contents into
+    /// `<newBase>/models/` so HubApi finds the cached weights instead of
+    /// re-downloading. Also folds an orphan `<newBase>/huggingface/` tree
+    /// (left over from an earlier, buggy version of this migration) into
+    /// the canonical `<newBase>/models/` location. Idempotent.
     private static func migrateLegacyDocumentsCache(into newBase: URL) {
         let fm = FileManager.default
-        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let legacy = docs.appendingPathComponent("huggingface", isDirectory: true)
-        let target = newBase.appendingPathComponent("huggingface", isDirectory: true)
+        if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let legacyModels = docs.appendingPathComponent("huggingface", isDirectory: true)
+                .appendingPathComponent("models", isDirectory: true)
+            if fm.fileExists(atPath: legacyModels.path) {
+                let targetModels = newBase.appendingPathComponent("models", isDirectory: true)
+                try? fm.createDirectory(at: targetModels, withIntermediateDirectories: true)
+                mergeContents(of: legacyModels, into: targetModels)
 
-        // Need legacy to exist and target to NOT exist (otherwise we'd merge
-        // and risk corrupting in-progress downloads).
-        guard fm.fileExists(atPath: legacy.path) else { return }
-        if fm.fileExists(atPath: target.path) {
-            // Already migrated (or fresh install with new code). Don't touch.
-            return
+                // Best-effort: prune the now-empty legacy parent.
+                let legacyParent = docs.appendingPathComponent("huggingface", isDirectory: true)
+                if let entries = try? fm.contentsOfDirectory(atPath: legacyParent.path), entries.isEmpty {
+                    try? fm.removeItem(at: legacyParent)
+                }
+            }
         }
 
-        do {
-            try fm.moveItem(at: legacy, to: target)
-        } catch {
-            // Permissions revoked, or other transient error — fine. We'll
-            // re-download into the new location.
+        // Always run, regardless of whether the Documents-folder migration
+        // had anything to do — caches that already migrated may still have
+        // an orphan `<newBase>/huggingface/` tree from the old code path.
+        cleanupOrphanLegacyTree(in: newBase)
+    }
+
+    /// An earlier migration mistakenly placed weights at
+    /// `<newBase>/huggingface/models/...`, where HubApi never looks. If we
+    /// find that orphan tree, fold its contents into the canonical
+    /// `<newBase>/models/` location and delete the orphan.
+    private static func cleanupOrphanLegacyTree(in newBase: URL) {
+        let fm = FileManager.default
+        let orphanParent = newBase.appendingPathComponent("huggingface", isDirectory: true)
+        let orphan = orphanParent.appendingPathComponent("models", isDirectory: true)
+        let canonical = newBase.appendingPathComponent("models", isDirectory: true)
+
+        if fm.fileExists(atPath: orphan.path) {
+            try? fm.createDirectory(at: canonical, withIntermediateDirectories: true)
+            mergeContents(of: orphan, into: canonical)
+            // Drop the now-empty `models/` subdir.
+            if let entries = try? fm.contentsOfDirectory(atPath: orphan.path), entries.isEmpty {
+                try? fm.removeItem(at: orphan)
+            }
         }
+        // And the parent if everything underneath is gone.
+        if let entries = try? fm.contentsOfDirectory(atPath: orphanParent.path), entries.isEmpty {
+            try? fm.removeItem(at: orphanParent)
+        }
+    }
+
+    /// Move every entry in `src` into `dst`. If a destination entry already
+    /// exists, the source copy is deleted (treated as a duplicate). Used to
+    /// reconcile the legacy/orphan model trees with the canonical one.
+    private static func mergeContents(of src: URL, into dst: URL) {
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(atPath: src.path) else { return }
+        for entry in entries {
+            let srcURL = src.appendingPathComponent(entry)
+            let dstURL = dst.appendingPathComponent(entry)
+            if fm.fileExists(atPath: dstURL.path) {
+                // Recurse into directories so a partial overlap doesn't drop
+                // weights the destination is missing.
+                var isDir: ObjCBool = false
+                fm.fileExists(atPath: srcURL.path, isDirectory: &isDir)
+                if isDir.boolValue {
+                    mergeContents(of: srcURL, into: dstURL)
+                    if let leftover = try? fm.contentsOfDirectory(atPath: srcURL.path), leftover.isEmpty {
+                        try? fm.removeItem(at: srcURL)
+                    }
+                } else {
+                    try? fm.removeItem(at: srcURL)
+                }
+            } else {
+                try? fm.moveItem(at: srcURL, to: dstURL)
+            }
+        }
+    }
+
+    /// Delete every cached WhisperKit model variant except `keeping`. Returns
+    /// the number of bytes freed. Safe to call while the kept model is
+    /// actively in use — we only touch sibling directories.
+    @discardableResult
+    public static func cleanupOtherModels(keeping: String, downloadBase: URL? = nil) -> Int64 {
+        let fm = FileManager.default
+        let cacheDir = downloadBase ?? defaultDownloadBase()
+
+        // Reconcile the legacy orphan tree first so a single pass over the
+        // canonical path is enough.
+        cleanupOrphanLegacyTree(in: cacheDir)
+
+        var freed: Int64 = 0
+
+        // CoreML weights — argmaxinc/whisperkit-coreml/openai_whisper-<size>.
+        let weightsRoot = cacheDir
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("argmaxinc", isDirectory: true)
+            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
+        let weightsKeep = "openai_whisper-\(keeping)"
+        if let entries = try? fm.contentsOfDirectory(atPath: weightsRoot.path) {
+            for entry in entries where entry != weightsKeep && !entry.hasPrefix(".") {
+                let url = weightsRoot.appendingPathComponent(entry)
+                freed += directorySize(at: url)
+                try? fm.removeItem(at: url)
+            }
+        }
+
+        // Tokenizer/config — openai/whisper-<size> (a few MB each).
+        let tokenizerRoot = cacheDir
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("openai", isDirectory: true)
+        let tokenizerKeep = "whisper-\(keeping)"
+        if let entries = try? fm.contentsOfDirectory(atPath: tokenizerRoot.path) {
+            for entry in entries where entry != tokenizerKeep && !entry.hasPrefix(".") {
+                let url = tokenizerRoot.appendingPathComponent(entry)
+                freed += directorySize(at: url)
+                try? fm.removeItem(at: url)
+            }
+        }
+        return freed
+    }
+
+    private static func directorySize(at url: URL) -> Int64 {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return 0
+        }
+        var total: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
     }
 
     public func transcribe(audioFile url: URL, language: String?) async throws -> EngineTranscription {
