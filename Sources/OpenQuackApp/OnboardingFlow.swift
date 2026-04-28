@@ -326,9 +326,9 @@ private struct WelcomeStep: View {
                     body: "Audio never leaves your Mac. No cloud, no signup, no telemetry."
                 )
                 privacyRow(
-                    icon: "scalemass",
-                    title: "Slim",
-                    body: "A 3 MB menu-bar app. The Whisper model is the only thing we download."
+                    icon: "bolt.fill",
+                    title: "Fast and accurate",
+                    body: "Transcribed in a fraction of the time you spent speaking, reliable on natural conversation. Backed by benchmarks."
                 )
                 privacyRow(
                     icon: "shield.checkered",

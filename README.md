@@ -24,6 +24,14 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 The duck has bigger plans — a longer write-up of where this is going lives in [`docs/VISION.md`](docs/VISION.md).
 
+## Why
+
+**Local.** Recording and transcription run entirely on your Mac. Audio never leaves the machine — nothing to leak, no telemetry, no signup. Confidential work stays confidential, by construction.
+
+**Fast.** Whisper on Apple Silicon transcribes in roughly a fifth of the time you spent speaking. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB. Faster than typing in most cases. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
+**Open.** MIT-licensed. Every line is auditable; every change happens in public. The version running in your menu bar is the version in this repo.
+
 ## What you get
 
 - **One-key dictation.** Pick a hotkey (default ⌃⇧Space). Toggle or push-to-talk.

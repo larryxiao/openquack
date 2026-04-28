@@ -13,6 +13,14 @@ Voice input is the surface. The product is what happens after.
 - Not just dictation — other tools type what you said, OpenQuack does what you said.
 - Not a cloud product. Audio never leaves your machine. Agents *may* call cloud APIs (e.g. Claude through Claude Code), but only because *you* configured them to — and the default agent backend is local-only.
 
+## Why use it
+
+Three things, in priority order:
+
+1. **Local.** Recording, transcription, polishing — all on your Mac. Audio never leaves the machine. There's nothing to leak: no cloud upload, no telemetry, no signup. Confidential work stays confidential by construction, not by promise. Detailed [privacy contract](#privacy-contract) below.
+2. **Fast.** WhisperKit on Apple Silicon hits roughly 2.6% word-error rate on real human speech at ~0.22× realtime on a baseline M4 / 16 GB. Faster than typing in most cases, accurate on natural conversation. Numbers in [BENCHMARKS.md](BENCHMARKS.md); contributions of bench results from other Macs welcome.
+3. **Open.** MIT-licensed. Every line is auditable; every change happens in public. The version in your menu bar is the version in this repo. No tracking pixels, no analytics, no remote toggle that can change the rules.
+
 ## Quality bar
 
 The transcript has to be **good enough to send without re-reading**. If the user has to scan and fix typos before pressing return on a Claude Code prompt, OpenQuack is a worse keyboard, not a better interface. Two things have to be true:
