@@ -118,7 +118,21 @@ struct OverlayPill: View {
         .padding(.horizontal, Theme.s16)
         .padding(.vertical, Theme.s12)
         .frame(width: 320, height: 60)
-        .background(.ultraThinMaterial)
+        .background {
+            // Thinking-phase progress is rendered as a quiet amber wash
+            // filling left → right behind the material, instead of a
+            // labelled bar with percentages. Reads as ambient motion, not
+            // a counter. Other phases just show the material.
+            ZStack(alignment: .leading) {
+                Rectangle().fill(.ultraThinMaterial)
+                if case .transcribing = state.phase {
+                    Rectangle()
+                        .fill(Theme.amber.opacity(0.22))
+                        .frame(width: 320 * CGFloat(state.transcriptionProgress))
+                        .animation(.easeOut(duration: 0.20), value: state.transcriptionProgress)
+                }
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: Theme.rFloating, style: .continuous))
     }
 
@@ -142,24 +156,10 @@ struct OverlayPill: View {
         }
     }
 
-    @ViewBuilder
     private var sublineView: some View {
-        switch state.phase {
-        case .transcribing:
-            VStack(alignment: .leading, spacing: 3) {
-                ProgressView(value: state.transcriptionProgress)
-                    .progressViewStyle(.linear)
-                    .tint(Theme.amber)
-                    .animation(.easeOut(duration: 0.25), value: state.transcriptionProgress)
-                Text(transcribingSubline)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        default:
-            Text(plainSubline)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-        }
+        Text(plainSubline)
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
     }
 
     private var headline: String {
@@ -171,19 +171,13 @@ struct OverlayPill: View {
         }
     }
 
-    private var transcribingSubline: String {
-        let pct = Int((state.transcriptionProgress * 100).rounded())
-        // Clamp at 99% until we actually hit done (the observed Progress
-        // sometimes lags one tick behind completion).
-        let clamped = pct >= 100 ? 99 : pct
-        return "\(clamped)% · \(state.modelLabel)"
-    }
-
     private var plainSubline: String {
         switch state.phase {
         case .recording:
             let secs = String(format: "%.1f", state.elapsedSeconds)
             return "\(secs)s · \(HotkeyDisplay.current) to stop"
+        case .transcribing:
+            return state.modelLabel
         case .ready:
             return state.lastTranscript.map { String($0.prefix(48)) } ?? ""
         default:
