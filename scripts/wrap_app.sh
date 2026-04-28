@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
 # Build the openquack SwiftPM executable and wrap it in a minimal
-# OpenQuack.app bundle under build/. Output is unsigned — fine for local
-# `open`; signing/notarisation lives in M3 (SPEC TBD).
+# OpenQuack.app bundle under build/.
+#
+# Signing is picked in this order:
+#   1. $OQ_SIGN_IDENTITY (explicit override — usually a Developer ID for dist).
+#   2. Any "Developer ID Application: ..." identity in the keychain
+#      — distribution cert. Hardened runtime + TSA timestamp + entitlements.
+#   3. Any "Apple Development: ..." identity in the keychain (free, comes
+#      with Xcode + an Apple ID; no paid Developer Program needed).
+#      Gives a stable Designated Requirement → TCC keeps the AX/mic grant
+#      across rebuilds. Doesn't satisfy Gatekeeper on other Macs.
+#   4. "OpenQuack Dev" if you've created a self-signed code-signing cert
+#      with that name. (Keychain Access → Certificate Assistant → Create
+#      a Certificate; Self-Signed Root, type Code Signing.) Manual
+#      alternative if (3) isn't available.
+#   5. Ad-hoc — fallback. Works for local `open`, but each rebuild changes
+#      the cdhash so TCC sees a "new" app and re-prompts for permissions.
 #
 # Usage: bash scripts/wrap_app.sh
-#        open build/OpenQuack.app
+#        OQ_SIGN_IDENTITY="Developer ID Application: ..." bash scripts/wrap_app.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -68,9 +82,46 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc sign so macOS lets us launch without Gatekeeper barking on first open.
-codesign --sign - --force --deep --timestamp=none "$BUNDLE" 2>/dev/null || \
-    echo "  (codesign skipped — set up signing in M3)"
+ENTITLEMENTS="$ROOT/scripts/openquack.entitlements"
+
+IDENTITY=""
+IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+pick() {
+    # Pull the quoted identity name matching the prefix from `security find-identity`.
+    grep -oE "\"$1[^\"]*\"" <<<"$IDENTITIES" | head -1 | tr -d '"'
+}
+
+if [[ -n "${OQ_SIGN_IDENTITY:-}" ]]; then
+    IDENTITY="$OQ_SIGN_IDENTITY"
+elif [[ -n "$(pick 'Developer ID Application: ')" ]]; then
+    IDENTITY="$(pick 'Developer ID Application: ')"
+elif [[ -n "$(pick 'Apple Development: ')" ]]; then
+    IDENTITY="$(pick 'Apple Development: ')"
+elif [[ -n "$(pick 'OpenQuack Dev')" ]]; then
+    IDENTITY="OpenQuack Dev"
+fi
+
+if [[ -n "$IDENTITY" ]]; then
+    if [[ "$IDENTITY" == "Developer ID"* ]]; then
+        # Distribution cert: hardened runtime + Apple TSA timestamp (required for notarization).
+        echo "→ Signing for distribution: $IDENTITY"
+        codesign --force --deep --sign "$IDENTITY" \
+            --options runtime --timestamp \
+            --entitlements "$ENTITLEMENTS" \
+            "$BUNDLE"
+    else
+        # Dev cert (Apple Development / self-signed): stable DR for TCC across
+        # rebuilds; no hardened runtime needed (we're not notarizing).
+        echo "→ Signing for dev iteration: $IDENTITY"
+        codesign --force --deep --sign "$IDENTITY" --timestamp=none "$BUNDLE"
+    fi
+    DR_LINE="$(codesign -dr - "$BUNDLE" 2>&1 | sed -n 's/^designated => //p')"
+    [[ -n "$DR_LINE" ]] && echo "  DR: $DR_LINE"
+else
+    echo "→ Ad-hoc signing (TCC grants will reset on every rebuild — see header for stable signing options)..."
+    codesign --sign - --force --deep --timestamp=none "$BUNDLE" 2>/dev/null || \
+        echo "  (codesign skipped)"
+fi
 
 echo "✓ $BUNDLE"
 echo "  Run with: open $BUNDLE"
