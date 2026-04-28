@@ -53,6 +53,16 @@ The duck has bigger plans — a longer write-up of where this is going lives in 
 
 The full privacy contract is in [`docs/VISION.md`](docs/VISION.md#privacy-contract).
 
+## Coming next
+
+A peek at what's queued up. Both build on the dictation foundation that ships today.
+
+**In-context transcription.** OpenQuack will read the surrounding text where you're about to paste — the line above the cursor, the function you're inside, the chat thread you're replying to — and feed it to the speech model as context. Domain terms get disambiguated by what you're actually doing ("cloud code" turns into "Claude Code" when you're in a terminal, not the other way around). Less custom-dictionary tinkering needed.
+
+**Thinking mode.** A second pass after transcription, run through a small local LLM, that turns a raw spoken sentence into a written one you'd actually press send on. Filler trimmed, structure tightened, the right capitalisation on words that matter. Off by default, one-toggle opt-in. Fully local — Ollama or MLX-LM, your pick.
+
+Schedule and SPEC details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
 ## Install
 
 Homebrew (one-liner, works as soon as a release is tagged):

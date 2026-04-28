@@ -53,7 +53,7 @@ private struct GeneralPane: View {
                     Text("medium — best balance, default (~1.5 GB)").tag("medium")
                     Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
                 }
-                Text("Model changes take effect on next launch. The first time you choose a model, it downloads in the background — typically 10 – 60 s. Subsequent launches load from disk in 5 – 10 s.")
+                Text("Takes effect on next launch. New models download in the background.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -170,55 +170,119 @@ private struct AboutPane: View {
         ZStack {
             CreamSurface().ignoresSafeArea()
 
-            VStack(spacing: Theme.s12) {
-                Spacer().frame(height: Theme.s16)
-                Text("🦆").font(.system(size: 96))
-                Text("OpenQuack").font(.oqTitleSerif)
-                Text("v\(OpenQuackKit.version)")
-                    .font(.callout).foregroundStyle(.secondary)
-                Text("Speak, type, paste — locally on your Mac. The duck has bigger plans.")
-                    .font(.oqTaglineSerif)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, Theme.s32)
+            ScrollView {
+                VStack(spacing: 0) {
+                    hero
+                    links.padding(.top, Theme.s16)
+                    actions.padding(.top, Theme.s12)
 
-                HStack(spacing: Theme.s16) {
-                    Link("Source",     destination: URL(string: "https://github.com/OpenQuack/openquack")!)
-                    Link("Vision",     destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/VISION.md")!)
-                    Link("Benchmarks", destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/BENCHMARKS.md")!)
+                    Divider()
+                        .opacity(0.4)
+                        .padding(.horizontal, Theme.s32)
+                        .padding(.vertical, Theme.s24)
+
+                    faq.padding(.horizontal, Theme.s32)
+
+                    Spacer().frame(height: Theme.s24)
+                    footer
                 }
-                .font(.callout)
-                .padding(.top, Theme.s4)
-
-                Spacer()
-
-                Divider().opacity(0.4).padding(.horizontal, Theme.s32)
-
-                HStack(spacing: Theme.s12) {
-                    Button("Check for updates") {
-                        if let delegate = NSApp.delegate as? AppDelegate {
-                            delegate.checkForUpdatesManually()
-                        }
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button("Replay onboarding") {
-                        if let delegate = NSApp.delegate as? AppDelegate {
-                            delegate.replayOnboarding()
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(.vertical, Theme.s8)
-
-                Text("MIT")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(1.2)
-                    .textCase(.uppercase)
-                    .foregroundStyle(.tertiary)
-                    .padding(.bottom, Theme.s8)
+                .frame(maxWidth: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: hero
+
+    private var hero: some View {
+        VStack(spacing: Theme.s8) {
+            Spacer().frame(height: Theme.s24)
+            Text("🦆").font(.system(size: 80))
+            Text("OpenQuack").font(.oqTitleSerif)
+            Text("v\(OpenQuackKit.version)")
+                .font(.callout).foregroundStyle(.secondary)
+            Text("Speak, type, paste — locally on your Mac. The duck has bigger plans.")
+                .font(.oqTaglineSerif)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, Theme.s32)
+                .padding(.top, Theme.s4)
+        }
+    }
+
+    private var links: some View {
+        HStack(spacing: Theme.s16) {
+            Link("Source",     destination: URL(string: "https://github.com/OpenQuack/openquack")!)
+            Link("Vision",     destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/VISION.md")!)
+            Link("Benchmarks", destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/BENCHMARKS.md")!)
+        }
+        .font(.callout)
+    }
+
+    private var actions: some View {
+        HStack(spacing: Theme.s12) {
+            Button("Check for updates") {
+                if let delegate = NSApp.delegate as? AppDelegate {
+                    delegate.checkForUpdatesManually()
+                }
+            }
+            .buttonStyle(.bordered)
+
+            Button("Replay onboarding") {
+                if let delegate = NSApp.delegate as? AppDelegate {
+                    delegate.replayOnboarding()
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    // MARK: faq
+
+    private var faq: some View {
+        VStack(alignment: .leading, spacing: Theme.s16) {
+            SectionHeader("FAQ")
+            faqItem(
+                q: "Why is the first launch slower?",
+                a: "OpenQuack downloads a small speech model on first run (about 700 MB for the default size). After that it lives on disk and dictation runs entirely offline. Loading the model into memory takes a few seconds at the start of each session, then dictations are instant."
+            )
+            faqItem(
+                q: "Why does macOS keep asking for permission after I update?",
+                a: "macOS ties Accessibility and microphone grants to the app's signature. Pre-notarised builds ask again whenever the signature changes. Builds signed with a stable identity keep the grant across upgrades — that lands once Apple Developer ID is set up."
+            )
+            faqItem(
+                q: "Where do the speech-model files live on disk?",
+                a: "~/Library/Application Support/OpenQuack/WhisperKit/. Uninstalling via Homebrew with --zap clears them; manually deleting the folder is safe too."
+            )
+            faqItem(
+                q: "Can I use a different speech model?",
+                a: "Yes — Settings → Speech-to-text. Larger models are more accurate but use more disk and load more slowly. The default (medium) hits a good balance for most speech."
+            )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func faqItem(q: String, a: String) -> some View {
+        VStack(alignment: .leading, spacing: Theme.s4) {
+            Text(q)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(Theme.ink.opacity(0.85))
+            Text(a)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: footer
+
+    private var footer: some View {
+        VStack(spacing: 4) {
+            Divider().opacity(0.4).padding(.horizontal, Theme.s32)
+            Text("Open source · MIT licensed · github.com/OpenQuack")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .padding(.top, Theme.s12)
+                .padding(.bottom, Theme.s16)
         }
     }
 }
