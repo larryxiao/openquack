@@ -191,9 +191,10 @@ public final class AudioRecorder {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// Compute a 0…1 UI level from a PCM buffer. RMS in float32 is typically
-    /// 0…0.3 for normal voice; we apply a gentle log-ish curve so the meter
-    /// feels responsive at low volumes without being pinned at high ones.
+    /// Compute a 0…1 UI level from a PCM buffer. Conversational speech sits
+    /// around RMS 0.02–0.1 in float32. Loudness is roughly logarithmic so
+    /// raw amplitude × constant feels dead — sqrt + a healthy multiplier
+    /// makes a normal speaking voice swing across most of the meter.
     private static func uiLevel(from buffer: AVAudioPCMBuffer) -> Float {
         guard let channelData = buffer.floatChannelData?[0],
               buffer.frameLength > 0 else { return 0 }
@@ -204,8 +205,9 @@ public final class AudioRecorder {
             sumSq += s * s
         }
         let rms = sqrt(sumSq / Float(count / 4 + 1))
-        // Boost low-volume response; clamp to 0...1.
-        let boosted = min(1.0, rms * 6.0)
-        return boosted
+        // sqrt(rms) approximates a perceptual curve; ×3 spreads conversational
+        // voice (RMS ~0.02–0.1) across roughly 0.4–0.95 of the meter.
+        let scaled = sqrt(rms) * 3.0
+        return max(0, min(1.0, scaled))
     }
 }
