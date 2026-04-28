@@ -150,6 +150,7 @@ struct OverlayPill: View {
                 ProgressView(value: state.transcriptionProgress)
                     .progressViewStyle(.linear)
                     .tint(Theme.amber)
+                    .animation(.easeOut(duration: 0.25), value: state.transcriptionProgress)
                 Text(transcribingSubline)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)

@@ -328,10 +328,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Hold the transcribing phase for at least this long. Short utterances
+    /// otherwise transcribe in <300 ms — the progress bar flashes 0→100→done
+    /// faster than the eye can register, which defeats the point of having
+    /// progress UI in the first place.
+    private static let minTranscribeDwell: TimeInterval = 0.6
+
     private func stopAndTranscribe() {
         stopElapsedTimer()
         guard let url = recorder.stop() else { return }
         Task {
+            let phaseStart = Date()
             await MainActor.run {
                 appState.phase = .transcribing
                 appState.transcriptionProgress = 0
@@ -370,6 +377,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? TextPolisher.polish(result.text)
                     : result.text
 
+                // Hold the progress bar at full briefly so the user sees the
+                // transition land instead of jumping straight to "Pasted".
+                await MainActor.run {
+                    appState.transcriptionProgress = 1.0
+                }
+                let elapsed = Date().timeIntervalSince(phaseStart)
+                if elapsed < Self.minTranscribeDwell {
+                    let remaining = Self.minTranscribeDwell - elapsed
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                }
+
                 // SPEC-005: paste at cursor by default; pasteboard-only fallback.
                 let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
                 let pasted: Bool
@@ -407,6 +425,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await MainActor.run {
                 appState.phase = .idle
                 appState.modelLabel = "Whisper \(defaultModel)"
+            }
+            // Active model is loaded — drop sibling variants so the disk
+            // footprint stays at one model. Bench leftovers and the previous
+            // model after a switch both get cleaned up here.
+            let active = defaultModel
+            Task.detached(priority: .background) {
+                _ = WhisperKitEngine.cleanupOtherModels(keeping: active)
             }
         } catch {
             await MainActor.run {
