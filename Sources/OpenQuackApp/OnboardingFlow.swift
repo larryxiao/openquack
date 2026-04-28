@@ -274,7 +274,7 @@ struct OnboardingView: View {
         if !state.modelDownloaded && state.modelError == nil {
             HStack(spacing: Theme.s4) {
                 ProgressView().controlSize(.mini)
-                Text("Whisper \(Int(state.modelProgress * 100))%")
+                Text("Installing \(Int(state.modelProgress * 100))%")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -282,7 +282,7 @@ struct OnboardingView: View {
             HStack(spacing: Theme.s4) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Theme.moss)
-                Text("Whisper ready").font(.caption).foregroundStyle(.secondary)
+                Text("Ready").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -326,9 +326,9 @@ private struct WelcomeStep: View {
                     body: "Audio never leaves your Mac. No cloud, no signup, no telemetry."
                 )
                 privacyRow(
-                    icon: "wand.and.stars",
-                    title: "Voice → action, eventually",
-                    body: "Today, dictate anywhere. The plan is to dispatch what you said to local AI agents like Claude Code; that work is up next."
+                    icon: "scalemass",
+                    title: "Slim",
+                    body: "A 3 MB menu-bar app. The Whisper model is the only thing we download."
                 )
                 privacyRow(
                     icon: "shield.checkered",
@@ -489,7 +489,7 @@ private struct InstallStep: View {
             StepGlyph(symbol: state.modelDownloaded ? "checkmark" : "arrow.down.circle")
                 .animation(.easeInOut(duration: 0.25), value: state.modelDownloaded)
 
-            Text(state.modelDownloaded ? "Whisper installed" : "Installing Whisper")
+            Text(state.modelDownloaded ? "Speech model ready" : "Installing the speech model")
                 .font(.oqTitleSerif)
 
             Text(detailText)
@@ -523,7 +523,7 @@ private struct InstallStep: View {
         if state.modelDownloaded {
             return "All set — about 700 MB on disk. Dictation is fully offline from here."
         }
-        return "OpenQuack uses the Whisper speech model (about 700 MB). One-time download — dictation is fully offline once it's on disk."
+        return "OpenQuack downloads a small speech model (about 700 MB). One-time only — after this, dictation runs offline."
     }
 }
 
@@ -586,7 +586,7 @@ private struct DoneStep: View {
                 tipRow(symbol: "lock.shield",
                        text: "Audio stays on your Mac. Dictation makes no network calls.")
                 tipRow(symbol: "sparkles",
-                       text: "Today: dictation. Next: dispatch what you said to local AI agents.")
+                       text: "🦆 has more tricks up its feathers. Stay tuned.")
             }
             .frame(maxWidth: 440)
             Spacer()

@@ -177,7 +177,7 @@ struct OverlayPill: View {
             let secs = String(format: "%.1f", state.elapsedSeconds)
             return "\(secs)s · \(HotkeyDisplay.current) to stop"
         case .transcribing:
-            return state.modelLabel
+            return "On your Mac"
         case .ready:
             return state.lastTranscript.map { String($0.prefix(48)) } ?? ""
         default:

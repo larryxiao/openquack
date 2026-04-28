@@ -347,7 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             guard let engine = transcriber else {
                 await MainActor.run {
-                    appState.phase = .error("Whisper model still warming. Try again in a moment.")
+                    appState.phase = .error("Still getting ready — try again in a moment.")
                 }
                 try? FileManager.default.removeItem(at: url)
                 return
@@ -434,7 +434,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.transcriber = engine
             await MainActor.run {
                 appState.phase = .idle
-                appState.modelLabel = "Whisper \(defaultModel)"
+                appState.modelLabel = defaultModel
             }
             // Active model is loaded — drop sibling variants so the disk
             // footprint stays at one model. Bench leftovers and the previous

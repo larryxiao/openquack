@@ -26,36 +26,9 @@ right-click OpenQuack.app → Open → Open
 
 Subsequent launches don't need that.
 
-## From source (for developers / agents)
+## From source (for developers)
 
-Requires **Xcode 16+** (full Xcode, not just CommandLineTools — KeyboardShortcuts
-and similar deps use `#Preview` macros that need the Xcode plugin).
-
-```sh
-git clone https://github.com/OpenQuack/openquack.git
-cd openquack
-git checkout v2
-
-# Build + bundle into build/OpenQuack.app
-bash scripts/wrap_app.sh
-
-# Run
-open build/OpenQuack.app
-```
-
-`wrap_app.sh` auto-uses the Xcode toolchain when CommandLineTools is the
-default `xcode-select`. Output lands at `build/OpenQuack.app` and is ad-hoc
-codesigned so Gatekeeper doesn't block local launches.
-
-## Build a DMG yourself
-
-```sh
-bash scripts/make_dmg.sh
-# → build/OpenQuack-<version>.dmg
-```
-
-The script prints the sha256 — paste it into `Casks/openquack.rb` if you're
-preparing a release.
+See [`DEVELOPMENT.md`](DEVELOPMENT.md) — covers the full build, signing options, the CLI, and the benchmark framework.
 
 ## Uninstall
 
@@ -78,12 +51,13 @@ the above paths are safe to leave or remove by hand.
 
 ## What gets downloaded on first run
 
-- WhisperKit's `medium` Core ML package (~700 MB) — cached under
-  `~/Library/Application Support/com.argmaxinc.WhisperKit/` (managed by
-  WhisperKit, not us). Subsequent launches don't re-download.
+- The `medium` speech model (~700 MB) — cached under
+  `~/Library/Application Support/OpenQuack/WhisperKit/`. Subsequent
+  launches don't re-download.
+- A daily check against GitHub Releases for new versions; turn it off by
+  blocking network access if you'd rather not.
 
-Nothing else is downloaded by default; the agent backends (when they ship)
-are explicit opt-ins.
+Nothing else is downloaded by default.
 
 ## Permissions you'll be asked for
 

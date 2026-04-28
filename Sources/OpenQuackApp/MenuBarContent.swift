@@ -84,7 +84,7 @@ struct MenuBarContent: View {
             Text("🦆").font(.system(size: 26))
             VStack(alignment: .leading, spacing: 2) {
                 Text("OpenQuack").font(.oqHeadline)
-                Text("Speak. Have your Mac do it. Privately.")
+                Text("Speak. Watch it type. Privately.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
@@ -169,8 +169,8 @@ struct MenuBarContent: View {
 
     private var statusText: String {
         switch state.phase {
-        case .warming(let m):           return "Loading Whisper \(m)…"
-        case .idle:                     return "Ready · \(state.modelLabel)"
+        case .warming:                  return "Getting ready…"
+        case .idle:                     return "Ready"
         case .starting:                 return "Starting…"
         case .recording:                return "Recording"
         case .transcribing:             return "Thinking…"
