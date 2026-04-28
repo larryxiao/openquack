@@ -173,7 +173,7 @@ struct MenuBarContent: View {
         case .idle:                     return "Ready · \(state.modelLabel)"
         case .starting:                 return "Starting…"
         case .recording:                return "Recording"
-        case .transcribing:             return "Transcribing…"
+        case .transcribing:             return "Thinking…"
         case .ready:
             return state.lastPasted ? "Pasted at cursor" : "On clipboard — press ⌘V to paste"
         case .error:                    return "Error"

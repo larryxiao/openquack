@@ -336,6 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func stopAndTranscribe() {
         stopElapsedTimer()
+        let audioDuration = recorder.elapsedSeconds
         guard let url = recorder.stop() else { return }
         Task {
             let phaseStart = Date()
@@ -352,16 +353,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
 
-            // Observe WhisperKit's Progress object so the overlay can show a
-            // real progress bar instead of an indeterminate spinner. Token
-            // alive only for the duration of this transcribe call.
-            let observer = engine.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] progress, _ in
-                let fraction = progress.fractionCompleted
-                DispatchQueue.main.async {
-                    self?.appState.transcriptionProgress = fraction
+            // Drive the progress bar from a linear ramp tied to audio length
+            // rather than WhisperKit's own Progress object. The KVO progress
+            // reports unevenly — slow start then a snap to 100% at the end —
+            // which felt broken to the user. A smooth ramp from 0 → ~95% over
+            // the expected wall-clock (audio × 0.25, conservative for medium
+            // on M-series) reads as real progress; we snap to 100% on actual
+            // completion below.
+            let estimatedTranscribe = max(0.4, audioDuration * 0.25)
+            let progressTask = Task<Void, Never> { [weak self] in
+                let start = Date()
+                while !Task.isCancelled {
+                    let elapsed = Date().timeIntervalSince(start)
+                    let frac = min(0.95, elapsed / estimatedTranscribe)
+                    await MainActor.run { self?.appState.transcriptionProgress = frac }
+                    if frac >= 0.95 { break }
+                    try? await Task.sleep(nanoseconds: 50_000_000)
                 }
             }
-            defer { observer.invalidate() }
+            defer { progressTask.cancel() }
 
             do {
                 let result = try await engine.transcribe(

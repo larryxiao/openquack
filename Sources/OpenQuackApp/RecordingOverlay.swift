@@ -165,7 +165,7 @@ struct OverlayPill: View {
     private var headline: String {
         switch state.phase {
         case .recording:    return "Recording"
-        case .transcribing: return "Transcribing"
+        case .transcribing: return "Thinking"
         case .ready:        return state.lastPasted ? "Pasted at cursor" : "Copied to clipboard"
         default:            return "OpenQuack"
         }
