@@ -39,7 +39,8 @@ VERSION="$(grep -E 'public static let version' Sources/OpenQuackKit/OpenQuackKit
 echo "→ Building release..."
 swift build -c release --product "$BIN_NAME" >/dev/null
 
-BIN_PATH="$(swift build -c release --show-bin-path)/$BIN_NAME"
+BIN_DIR="$(swift build -c release --show-bin-path)"
+BIN_PATH="$BIN_DIR/$BIN_NAME"
 [[ -x "$BIN_PATH" ]] || { echo "error: built binary not found at $BIN_PATH" >&2; exit 1; }
 
 # Regenerate the procedural app icon if missing or stale relative to its source.
@@ -57,6 +58,20 @@ cp "$BIN_PATH" "$BUNDLE/Contents/MacOS/openquack"
 if [[ -f "$ICON_OUT" ]]; then
     cp "$ICON_OUT" "$BUNDLE/Contents/Resources/AppIcon.icns"
 fi
+
+# Copy SwiftPM-generated resource bundles (e.g.
+# KeyboardShortcuts_KeyboardShortcuts.bundle) into Resources/. Each module
+# that declares `resources:` gets a `<package>_<module>.bundle` next to the
+# build product, and Bundle.module — the auto-generated accessor those
+# modules use to find their resources at runtime — traps with an
+# assertion failure if it can't locate the bundle inside the running .app.
+# Symptom: SIGTRAP at launch on Tahoe (macOS 16) the moment any code path
+# touches a module with resources (e.g. KeyboardShortcuts.Recorder). Earlier
+# macOS versions sometimes accept fallback lookup paths; Tahoe enforces it.
+for bundle in "$BIN_DIR"/*.bundle; do
+    [[ -d "$bundle" ]] || continue
+    cp -R "$bundle" "$BUNDLE/Contents/Resources/"
+done
 
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
