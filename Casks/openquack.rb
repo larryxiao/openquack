@@ -1,5 +1,5 @@
 cask "openquack" do
-  version "2.0.0-alpha.1"
+  version "2.0.0-alpha.2"
   # Set per-release by scripts/make_dmg.sh — paste the printed value in
   # before each tag is pushed. `:no_check` is the placeholder while no
   # release has been tagged yet.

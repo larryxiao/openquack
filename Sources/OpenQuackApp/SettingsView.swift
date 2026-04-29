@@ -200,7 +200,7 @@ private struct AboutPane: View {
             Text("OpenQuack").font(.oqTitleSerif)
             Text("v\(OpenQuackKit.version)")
                 .font(.callout).foregroundStyle(.secondary)
-            Text("Speak, type, paste — locally on your Mac. The duck has bigger plans.")
+            Text("Speak. Send. Privately.")
                 .font(.oqTaglineSerif)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)

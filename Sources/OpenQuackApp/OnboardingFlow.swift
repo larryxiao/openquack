@@ -42,6 +42,12 @@ final class OnboardingState: ObservableObject {
     @Published var modelError: String? = nil
     @Published var demoTranscript: String = ""
 
+    /// Fires the moment the speech model finishes downloading. AppDelegate
+    /// hooks this to warm the WhisperKit transcriber in parallel — without
+    /// it the demo step has a downloaded model on disk but no in-memory
+    /// engine, so the hotkey records audio that nothing can transcribe.
+    var onModelReady: (() -> Void)?
+
     private let appState: AppState
     private var cancellables = Set<AnyCancellable>()
     private var permissionTimer: Timer?
@@ -162,6 +168,7 @@ final class OnboardingState: ObservableObject {
                 await MainActor.run {
                     self?.modelProgress = 1.0
                     self?.modelDownloaded = true
+                    self?.onModelReady?()
                 }
             } catch {
                 await MainActor.run {
@@ -315,7 +322,7 @@ private struct WelcomeStep: View {
             Text("🦆").font(.system(size: 32))
             Text("Welcome to OpenQuack")
                 .font(.oqHeroSerif)
-            Text("Speak. Have your Mac do it. Privately.")
+            Text("Speak. Send. Privately.")
                 .font(.oqTaglineSerif)
                 .foregroundStyle(.secondary)
 
@@ -609,12 +616,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let state: OnboardingState
     private let onComplete: () -> Void
 
-    static func showIfFirstLaunch(appState: AppState, onComplete: @escaping () -> Void) {
+    static func showIfFirstLaunch(
+        appState: AppState,
+        onModelReady: @escaping () -> Void,
+        onComplete: @escaping () -> Void
+    ) {
         let done = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        if !done { show(appState: appState, onComplete: onComplete) }
+        if !done { show(appState: appState, onModelReady: onModelReady, onComplete: onComplete) }
     }
 
-    static func show(appState: AppState, onComplete: @escaping () -> Void) {
+    static func show(
+        appState: AppState,
+        onModelReady: @escaping () -> Void,
+        onComplete: @escaping () -> Void
+    ) {
         if let existing = shared {
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -624,14 +639,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         // can hide the onboarding window when granting permissions, and the
         // Dock icon is the lifeline back. Reverted on close.
         NSApp.setActivationPolicy(.regular)
-        let controller = OnboardingWindowController(appState: appState, onComplete: onComplete)
+        let controller = OnboardingWindowController(
+            appState: appState,
+            onModelReady: onModelReady,
+            onComplete: onComplete
+        )
         shared = controller
         controller.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    init(appState: AppState, onComplete: @escaping () -> Void) {
-        self.state = OnboardingState(appState: appState)
+    init(appState: AppState, onModelReady: @escaping () -> Void, onComplete: @escaping () -> Void) {
+        let state = OnboardingState(appState: appState)
+        state.onModelReady = onModelReady
+        self.state = state
         self.onComplete = onComplete
 
         let window = NSWindow(

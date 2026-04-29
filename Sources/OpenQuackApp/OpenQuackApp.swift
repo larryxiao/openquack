@@ -111,12 +111,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Seasoned user — warm the model in the background.
             Task { await warmTranscriber() }
         } else {
-            // First launch. Defer warming to onboarding completion so the
-            // onboarding's progress-bar download isn't fighting a concurrent
-            // WhisperKit init in the background.
-            OnboardingWindowController.showIfFirstLaunch(appState: appState) { [weak self] in
-                Task { await self?.warmTranscriber() }
-            }
+            // First launch. Warm the transcriber the moment the onboarding's
+            // model download finishes, not when the window closes — the demo
+            // step lives inside that window and needs a live engine to
+            // transcribe what the user dictates. onComplete is the safety net
+            // for users who close the window before the install step.
+            OnboardingWindowController.showIfFirstLaunch(
+                appState: appState,
+                onModelReady: { [weak self] in
+                    Task { await self?.warmTranscriber() }
+                },
+                onComplete: { [weak self] in
+                    Task { await self?.warmTranscriber() }
+                }
+            )
         }
 
         // Light, opportunistic update poll. Once per launch, no faster than
@@ -140,9 +148,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc func replayOnboarding() {
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
-        OnboardingWindowController.show(appState: appState) { [weak self] in
-            Task { await self?.warmTranscriber() }
-        }
+        OnboardingWindowController.show(
+            appState: appState,
+            onModelReady: { [weak self] in
+                Task { await self?.warmTranscriber() }
+            },
+            onComplete: { [weak self] in
+                Task { await self?.warmTranscriber() }
+            }
+        )
     }
 
     /// Manual update check, called from Settings → About → "Check for updates".
@@ -432,6 +446,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func warmTranscriber() async {
+        // Idempotent — the onboarding flow can call this twice (once when the
+        // model download completes, once on window close); a re-init would
+        // pointlessly drop and reload the engine.
+        if self.transcriber != nil { return }
         await MainActor.run { appState.phase = .warming(modelLabel: defaultModel) }
         do {
             let engine = try await WhisperKitEngine(model: defaultModel)
