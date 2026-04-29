@@ -11,6 +11,10 @@ import OpenQuackKit
 @main
 struct OpenQuackApp {
     static func main() {
+        // Must run before anything touches `Bundle.module` in SwiftPM
+        // packages with resources. See BundleModuleFallback.swift.
+        BundleModuleFallback.install()
+
         let delegate = AppDelegate()
         let app = NSApplication.shared
         app.delegate = delegate
