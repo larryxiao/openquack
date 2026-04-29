@@ -59,19 +59,63 @@ if [[ -f "$ICON_OUT" ]]; then
     cp "$ICON_OUT" "$BUNDLE/Contents/Resources/AppIcon.icns"
 fi
 
-# Copy SwiftPM-generated resource bundles (e.g.
-# KeyboardShortcuts_KeyboardShortcuts.bundle) into Resources/. Each module
-# that declares `resources:` gets a `<package>_<module>.bundle` next to the
-# build product, and Bundle.module — the auto-generated accessor those
-# modules use to find their resources at runtime — traps with an
-# assertion failure if it can't locate the bundle inside the running .app.
-# Symptom: SIGTRAP at launch on Tahoe (macOS 16) the moment any code path
-# touches a module with resources (e.g. KeyboardShortcuts.Recorder). Earlier
-# macOS versions sometimes accept fallback lookup paths; Tahoe enforces it.
+# Copy SwiftPM-generated resource bundles into Contents/Resources/. The
+# auto-generated Bundle.module accessor in each package with resources
+# checks two paths:
+#   1. Bundle.main.bundleURL.appendingPathComponent("<name>.bundle")
+#      — for an .app, that's the .app *root*, where codesign refuses
+#      to seal "extra" content alongside Contents/.
+#   2. A hardcoded absolute path to this developer's .build/release/.
+#      Exists on the dev Mac (so the bug stayed hidden here for weeks),
+#      doesn't exist anywhere else.
+# Neither works for a shipped .app on another Mac. We can't satisfy (1)
+# without breaking codesign, and (2) is per-developer.
+#
+# The fix: put the bundles in the standard Contents/Resources/ location
+# (codesign-clean) and patch the dev path literal in the binary further
+# down so the (2) fallback resolves at /Applications/OpenQuack.app/
+# Contents/Resources/<name>.bundle. That fallback is taken *first*
+# whenever the (1) path doesn't exist — which is always, for an .app —
+# so this is what actually makes Bundle.module succeed.
 for bundle in "$BIN_DIR"/*.bundle; do
     [[ -d "$bundle" ]] || continue
     cp -R "$bundle" "$BUNDLE/Contents/Resources/"
 done
+
+# Patch the leaked dev-path literal inside the binary so the Bundle.module
+# (2) fallback above resolves at /Applications/OpenQuack.app/Contents/
+# Resources/<name>.bundle. Same length on both sides — we pad the new
+# prefix with trailing slashes so byte offsets don't shift (Bundle(path:)
+# normalizes consecutive '/'). NB: this means the .app must be installed
+# at /Applications/OpenQuack.app — the brew cask puts it there; users
+# drag-installing elsewhere would still hit the original SwiftPM bug.
+echo "→ Patching Bundle.module dev-path fallback in binary..."
+python3 - "$BUNDLE/Contents/MacOS/openquack" "$BIN_DIR/" "/Applications/OpenQuack.app/Contents/Resources/" <<'PY'
+import re, sys
+binary, old, new = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode()
+pad_len = len(old) - len(new)
+if pad_len < 0:
+    sys.exit(f"error: new prefix ({len(new)}) longer than old ({len(old)}) — cannot patch in place")
+pad = b'/' * pad_len
+
+with open(binary, 'rb') as f:
+    data = f.read()
+
+# `<old_prefix><name>.bundle` — bundle names don't contain '/' or NUL.
+pattern = re.compile(re.escape(old) + rb'([^\x00/]+\.bundle)')
+matches = pattern.findall(data)
+patched = pattern.sub(lambda m: new + m.group(1) + pad, data)
+
+if len(patched) != len(data):
+    sys.exit(f"error: binary size changed ({len(data)} -> {len(patched)})")
+if not matches:
+    sys.exit("error: no Bundle.module dev-path literals found — SwiftPM accessor format may have changed")
+
+with open(binary, 'wb') as f:
+    f.write(patched)
+names = sorted({m.decode() for m in matches})
+print(f"  patched {len(matches)} reference(s) across {len(names)} bundle(s): {', '.join(names)}")
+PY
 
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
