@@ -38,14 +38,13 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 - **Auto-stop after silence.** Finish speaking, OpenQuack wraps up on its own.
 - **Live mic-level overlay** so you can see it's listening.
 - **Quick first-launch setup** — permissions, hotkey, done in a minute.
-- **Tiny.** A 3 MB menu-bar app; the speech model is the only thing you download.
+- **Tiny.** An 8 MB menu-bar app, plus the speech model on first run.
 - **Open source**, MIT.
 
 ## Privacy, in one screen
 
 1. **Nothing leaves your device — audio, text, nothing.** Recording and transcription are fully local. Always.
-2. **No network calls during dictation.**
-3. **No analytics, no telemetry, no signup.**
+2. **No analytics, no telemetry, no signup.**
 
 The full privacy contract is in [`docs/VISION.md`](docs/VISION.md#privacy-contract).
 
@@ -58,6 +57,8 @@ A peek at what's queued up. Both build on the dictation foundation that ships to
 **Thinking mode.** A second pass after transcription, run through a small local LLM, that turns a raw spoken sentence into a written one you'd actually press send on. Filler trimmed, structure tightened, the right capitalisation on words that matter. Off by default, one-toggle opt-in. Fully local — Ollama or MLX-LM, your pick.
 
 Schedule and SPEC details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+The duck has bigger plans. Where this is going: [`docs/VISION.md`](docs/VISION.md).
 
 ## Install
 
@@ -96,10 +97,6 @@ OpenQuack is **AI-native open source** — every PR cites a SPEC, atomic tasks c
 Start with [`AGENTS.md`](AGENTS.md), pick a 🔵 task in [`docs/ROADMAP.md`](docs/ROADMAP.md), open a draft PR.
 
 Under the hood: [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`INSTALL`](docs/INSTALL.md).
-
-## Vision
-
-The duck has bigger plans. Where this is going: [`docs/VISION.md`](docs/VISION.md).
 
 ## License
 
