@@ -20,10 +20,6 @@ OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it agai
 
 Speech recognition happens on your Mac. No cloud, no account, no signup, no telemetry.
 
-> *Other tools type what you said. OpenQuack does what you said.*
-
-The duck has bigger plans — a longer write-up of where this is going lives in [`docs/VISION.md`](docs/VISION.md).
-
 ## Why
 
 **Local.** Recording and transcription run entirely on your Mac. Audio never leaves the machine — nothing to leak, no telemetry, no signup. Confidential work stays confidential, by construction.
@@ -65,16 +61,49 @@ Schedule and SPEC details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Install
 
-Homebrew (one-liner, works as soon as a release is tagged):
+Two paths today. Both manual until the cask lands in the official `homebrew-cask` (waiting on Apple Developer ID + notarisation — on the roadmap).
+
+### Option A · Homebrew
 
 ```sh
 brew tap larryxiao/openquack https://github.com/larryxiao/openquack
 brew install --cask openquack
 ```
 
-The plain `brew install --cask openquack` (no tap) drops in once OpenQuack lands in the official Homebrew cask — that needs an Apple Developer ID + notarised build, which is on the roadmap.
+### Option B · DMG
 
-DMG download or building from source: [`docs/INSTALL.md`](docs/INSTALL.md).
+Download `OpenQuack-<version>.dmg` from the [latest release](https://github.com/larryxiao/openquack/releases), open it, drag **OpenQuack** into **Applications**.
+
+First launch needs a one-time bypass: right-click `OpenQuack.app` → **Open** → **Open**. That's macOS Gatekeeper holding pre-notarised builds at arm's length; subsequent launches work normally.
+
+### After either path
+
+Launch the app, grant **Microphone** (required) and **Accessibility** (optional, for auto-paste at cursor) when macOS asks, then pick a hotkey in **Settings → Shortcut**. Default is ⌃⇧Space.
+
+### Hand it to your AI agent
+
+Works with Claude Code, Codex, opencode, Hermes, and other coding-agent CLIs. Paste this verbatim — the agent will pick whichever path fits your machine and walk you through the permission grants:
+
+```text
+Install OpenQuack on this Mac.
+
+Pick one path:
+
+  Homebrew (preferred if `brew` is available):
+    brew tap larryxiao/openquack https://github.com/larryxiao/openquack
+    brew install --cask openquack
+
+  DMG (manual): open https://github.com/larryxiao/openquack/releases,
+    download the latest OpenQuack-*.dmg, mount it, drag OpenQuack.app
+    into /Applications. First open: right-click → Open → Open to bypass
+    the unidentified-developer prompt.
+
+After either path, launch /Applications/OpenQuack.app, grant Microphone
+(required) and Accessibility (optional, for auto-paste) when macOS
+prompts, then pick a hotkey in Settings → Shortcut. Default is ⌃⇧Space.
+```
+
+Full install paths, uninstall, and "what gets downloaded on first run" in [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Roadmap
 
@@ -106,3 +135,7 @@ For builders, hackers, and anyone running the bench:
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+> The duck has bigger plans — a longer write-up of where this is going lives in [`docs/VISION.md`](docs/VISION.md).
