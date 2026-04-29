@@ -4,7 +4,7 @@
 
 **Speak. Send. Privately.**
 
-Voice dictation for macOS that runs entirely on your Mac. Audio never leaves the machine.
+Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](docs/INSTALL.md)
@@ -22,7 +22,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 ## Why
 
-**Local.** Recording and transcription run entirely on your Mac. Audio never leaves the machine — nothing to leak, no telemetry, no signup. Confidential work stays confidential, by construction.
+**Local.** Everything runs on your device — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction.
 
 **Fast.** Whisper on Apple Silicon transcribes in roughly a fifth of the time you spent speaking. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB. Faster than typing in most cases. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
@@ -43,7 +43,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 ## Privacy, in one screen
 
-1. **Audio never leaves your machine.** Recording and transcription are fully local. Always.
+1. **Nothing leaves your device — audio, text, nothing.** Recording and transcription are fully local. Always.
 2. **No network calls during dictation.**
 3. **No analytics, no telemetry, no signup.**
 
@@ -61,60 +61,42 @@ Schedule and SPEC details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Install
 
-Two paths today. Both manual until the cask lands in the official `homebrew-cask` (waiting on Apple Developer ID + notarisation — on the roadmap).
-
-### Option A · Homebrew
-
 ```sh
 brew tap larryxiao/openquack https://github.com/larryxiao/openquack
 brew install --cask openquack
 ```
 
-### Option B · DMG
+Or [download the DMG](https://github.com/larryxiao/openquack/releases) and drag into Applications. First launch: right-click → **Open** → **Open** (one-time Gatekeeper bypass).
 
-Download `OpenQuack-<version>.dmg` from the [latest release](https://github.com/larryxiao/openquack/releases), open it, drag **OpenQuack** into **Applications**.
+Grant **Microphone** when macOS asks, pick a hotkey in **Settings → Shortcut** (default ⌃⇧Space).
 
-First launch needs a one-time bypass: right-click `OpenQuack.app` → **Open** → **Open**. That's macOS Gatekeeper holding pre-notarised builds at arm's length; subsequent launches work normally.
+### Or tell your AI agent
 
-### After either path
-
-Launch the app, grant **Microphone** (required) and **Accessibility** (optional, for auto-paste at cursor) when macOS asks, then pick a hotkey in **Settings → Shortcut**. Default is ⌃⇧Space.
-
-### Hand it to your AI agent
-
-Works with Claude Code, Codex, opencode, Hermes, and other coding-agent CLIs. Paste this verbatim — the agent will pick whichever path fits your machine and walk you through the permission grants:
+Paste this into Claude Code, Codex, opencode, Hermes, or similar:
 
 ```text
-Install OpenQuack on this Mac.
+Install OpenQuack on this Mac:
 
-Pick one path:
+  brew tap larryxiao/openquack https://github.com/larryxiao/openquack
+  brew install --cask openquack
 
-  Homebrew (preferred if `brew` is available):
-    brew tap larryxiao/openquack https://github.com/larryxiao/openquack
-    brew install --cask openquack
+(Or grab the DMG from https://github.com/larryxiao/openquack/releases
+and drag it into /Applications; first open right-click → Open → Open.)
 
-  DMG (manual): open https://github.com/larryxiao/openquack/releases,
-    download the latest OpenQuack-*.dmg, mount it, drag OpenQuack.app
-    into /Applications. First open: right-click → Open → Open to bypass
-    the unidentified-developer prompt.
-
-After either path, launch /Applications/OpenQuack.app, grant Microphone
-(required) and Accessibility (optional, for auto-paste) when macOS
-prompts, then pick a hotkey in Settings → Shortcut. Default is ⌃⇧Space.
+Then launch /Applications/OpenQuack.app, grant Microphone, and pick a
+hotkey in Settings → Shortcut. Default ⌃⇧Space.
 ```
 
-Full install paths, uninstall, and "what gets downloaded on first run" in [`docs/INSTALL.md`](docs/INSTALL.md).
+More options (uninstall, build-from-source, what's downloaded on first run): [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Roadmap
 
-| Milestone | What | Status |
-|---|---|---|
-| **M1** | Foundations | ✅ |
-| **M2** | Voice → Action MVP | 🟡 in progress |
-| **M3** | Local AI agents, signed builds, auto-update | ⚪ |
-| **M4** | Meeting mode, multilingual UI, cross-platform | ⚪ |
+- **M1** Foundations ✅
+- **M2** Voice → Action MVP 🟡
+- **M3** Local AI agents, signed builds, auto-update
+- **M4** Meeting mode, multilingual UI, cross-platform
 
-Detailed task list in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Full task list in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Contribute
 
