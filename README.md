@@ -2,7 +2,7 @@
 
 # OpenQuack 🦆
 
-**Speak. Watch it type. Privately.**
+**Speak. Send. Privately.**
 
 Voice dictation for macOS that runs entirely on your Mac. Audio never leaves the machine.
 

@@ -84,7 +84,7 @@ struct MenuBarContent: View {
             Text("🦆").font(.system(size: 26))
             VStack(alignment: .leading, spacing: 2) {
                 Text("OpenQuack").font(.oqHeadline)
-                Text("Speak. Watch it type. Privately.")
+                Text("Speak. Send. Privately.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
