@@ -211,9 +211,9 @@ private struct AboutPane: View {
 
     private var links: some View {
         HStack(spacing: Theme.s16) {
-            Link("Source",     destination: URL(string: "https://github.com/OpenQuack/openquack")!)
-            Link("Vision",     destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/VISION.md")!)
-            Link("Benchmarks", destination: URL(string: "https://github.com/OpenQuack/openquack/blob/main/docs/BENCHMARKS.md")!)
+            Link("Source",     destination: URL(string: "https://github.com/larryxiao/openquack")!)
+            Link("Vision",     destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/VISION.md")!)
+            Link("Benchmarks", destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/BENCHMARKS.md")!)
         }
         .font(.callout)
     }
@@ -278,7 +278,7 @@ private struct AboutPane: View {
     private var footer: some View {
         VStack(spacing: 4) {
             Divider().opacity(0.4).padding(.horizontal, Theme.s32)
-            Text("Open source · MIT licensed · github.com/OpenQuack")
+            Text("Open source · MIT licensed · github.com/larryxiao")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
                 .padding(.top, Theme.s12)

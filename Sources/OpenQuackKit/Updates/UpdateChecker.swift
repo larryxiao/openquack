@@ -34,7 +34,7 @@ public actor UpdateChecker {
     private let repo: String
     private let session: URLSession
 
-    public init(repo: String = "OpenQuack/openquack", session: URLSession = .shared) {
+    public init(repo: String = "larryxiao/openquack", session: URLSession = .shared) {
         self.repo = repo
         self.session = session
     }

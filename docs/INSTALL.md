@@ -8,12 +8,12 @@ an Apple Developer ID + notarised builds, which is on the roadmap — install
 it via this repo as a tap:
 
 ```sh
-brew tap OpenQuack/openquack https://github.com/OpenQuack/openquack
+brew tap larryxiao/openquack https://github.com/larryxiao/openquack
 brew install --cask openquack
 ```
 
 That points at `Casks/openquack.rb` in this repo, which fetches the latest
-DMG attached to a [GitHub release](https://github.com/OpenQuack/openquack/releases).
+DMG attached to a [GitHub release](https://github.com/larryxiao/openquack/releases).
 
 To upgrade later:
 
@@ -33,7 +33,7 @@ Once OpenQuack lands in `homebrew-cask`, the tap step goes away and
 ## DMG (manual)
 
 Download `OpenQuack-<version>.dmg` from the
-[Releases page](https://github.com/OpenQuack/openquack/releases), open it,
+[Releases page](https://github.com/larryxiao/openquack/releases), open it,
 drag OpenQuack into Applications.
 
 Pre-notarisation DMGs come with an "unidentified developer" prompt on first

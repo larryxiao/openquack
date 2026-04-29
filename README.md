@@ -68,7 +68,7 @@ Schedule and SPEC details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 Homebrew (one-liner, works as soon as a release is tagged):
 
 ```sh
-brew tap OpenQuack/openquack https://github.com/OpenQuack/openquack
+brew tap larryxiao/openquack https://github.com/larryxiao/openquack
 brew install --cask openquack
 ```
 

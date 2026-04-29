@@ -5,10 +5,10 @@ cask "openquack" do
   # release has been tagged yet.
   sha256 :no_check
 
-  url "https://github.com/OpenQuack/openquack/releases/download/v#{version}/OpenQuack-#{version}.dmg"
+  url "https://github.com/larryxiao/openquack/releases/download/v#{version}/OpenQuack-#{version}.dmg"
   name "OpenQuack"
   desc "Voice dictation for macOS that runs entirely on your Mac"
-  homepage "https://github.com/OpenQuack/openquack"
+  homepage "https://github.com/larryxiao/openquack"
 
   livecheck do
     url :url

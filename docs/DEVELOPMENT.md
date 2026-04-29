@@ -7,7 +7,7 @@ For people building, hacking, or benchmarking OpenQuack. End-user install lives 
 Requires **Xcode 16+**. The Swift Package Manager from CommandLineTools alone won't compile some macro-using deps (e.g. `KeyboardShortcuts`).
 
 ```sh
-git clone https://github.com/OpenQuack/openquack.git
+git clone https://github.com/larryxiao/openquack.git
 cd openquack
 bash scripts/wrap_app.sh
 open build/OpenQuack.app

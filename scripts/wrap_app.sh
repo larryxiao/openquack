@@ -90,7 +90,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>NSPrincipalClass</key>              <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>       <true/>
     <key>NSMicrophoneUsageDescription</key>  <string>OpenQuack transcribes your voice locally to dispatch commands to your AI agent. Audio never leaves the machine.</string>
-    <key>NSHumanReadableCopyright</key>      <string>MIT — github.com/OpenQuack</string>
+    <key>NSHumanReadableCopyright</key>      <string>MIT — github.com/larryxiao</string>
 </dict>
 </plist>
 PLIST
