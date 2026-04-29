@@ -89,35 +89,18 @@ hotkey in Settings → Shortcut. Default ⌃⇧Space.
 
 More options (uninstall, build-from-source, what's downloaded on first run): [`docs/INSTALL.md`](docs/INSTALL.md).
 
-## Roadmap
-
-- **M1** Foundations ✅
-- **M2** Voice → Action MVP 🟡
-- **M3** Local AI agents, signed builds, auto-update
-- **M4** Meeting mode, multilingual UI, cross-platform
-
-Full task list in [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
 ## Contribute
 
-OpenQuack is built to be **AI-native open source** — every PR cites a SPEC, atomic tasks are picked from the roadmap, the workflow is friendly to coding agents at scale. Humans equally welcome on the same path.
+OpenQuack is **AI-native open source** — every PR cites a SPEC, atomic tasks come from the roadmap, the workflow is friendly to coding agents at scale (and humans on the same path).
 
 Start with [`AGENTS.md`](AGENTS.md), pick a 🔵 task in [`docs/ROADMAP.md`](docs/ROADMAP.md), open a draft PR.
 
-## Under the hood
+Under the hood: [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`INSTALL`](docs/INSTALL.md).
 
-For builders, hackers, and anyone running the bench:
+## Vision
 
-- [`docs/INSTALL.md`](docs/INSTALL.md) — install paths and permissions.
-- [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — build from source, signing, CLI, and the benchmark framework.
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module layout and design notes.
-- [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) — measured accuracy and speed across hardware.
-- [`docs/VISION.md`](docs/VISION.md) — what OpenQuack is becoming.
+The duck has bigger plans. Where this is going: [`docs/VISION.md`](docs/VISION.md).
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
-
----
-
-> The duck has bigger plans — a longer write-up of where this is going lives in [`docs/VISION.md`](docs/VISION.md).
