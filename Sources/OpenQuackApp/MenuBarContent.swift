@@ -212,7 +212,7 @@ struct MenuBarContent: View {
         case .warming:                  return "Getting ready…"
         case .idle:                     return "Ready"
         case .starting:                 return "Starting…"
-        case .recording:                return "Recording"
+        case .recording:                return "Listening"
         case .transcribing:             return "Thinking…"
         case .ready:
             return state.lastPasted ? "Pasted at cursor" : "On clipboard — press ⌘V to paste"

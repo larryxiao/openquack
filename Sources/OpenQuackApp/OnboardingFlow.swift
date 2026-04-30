@@ -564,7 +564,7 @@ private struct DemoStep: View {
             HStack(spacing: Theme.s8) {
                 Image(systemName: "info.circle")
                     .foregroundStyle(.secondary)
-                Text("A small pill at the top of your screen shows recording state.")
+                Text("A small pill at the top of your screen shows when it's listening.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

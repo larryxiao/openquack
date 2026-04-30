@@ -38,6 +38,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 - **One-key dictation.** Pick a hotkey (default ⌃⇧Space). Toggle or push-to-talk.
 - **All local.** Speech recognition runs on your Mac. No internet needed for dictation.
+- **Multi-language.** Whisper handles 99 languages — English, Chinese, Japanese, Korean, Spanish, French, German, Italian, and Portuguese are right in Settings; auto-detect on by default.
 - **Auto-paste at the cursor** in any app. (Falls back to your clipboard if you'd rather paste yourself.)
 - **Smart formatting** — capitalisation, end-punctuation, "um/uh" cleanup.
 - **Custom dictionary** — teach it the proper nouns and project names you actually use.
