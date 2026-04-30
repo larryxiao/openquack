@@ -14,6 +14,7 @@ import OpenQuackKit
 struct SettingsView: View {
     enum Tab: Hashable { case general, shortcut, about }
     @State private var selection: Tab = .general
+    @ObservedObject var appState: AppState
 
     var body: some View {
         TabView(selection: $selection) {
@@ -23,7 +24,7 @@ struct SettingsView: View {
             ShortcutPane()
                 .tabItem { Label("Shortcut", systemImage: "command") }
                 .tag(Tab.shortcut)
-            AboutPane()
+            AboutPane(appState: appState)
                 .tabItem { Label("About", systemImage: "info.circle") }
                 .tag(Tab.about)
         }
@@ -166,6 +167,8 @@ private struct ShortcutPane: View {
 // MARK: - About
 
 private struct AboutPane: View {
+    @ObservedObject var appState: AppState
+
     var body: some View {
         ZStack {
             CreamSurface().ignoresSafeArea()
@@ -219,20 +222,72 @@ private struct AboutPane: View {
     }
 
     private var actions: some View {
-        HStack(spacing: Theme.s12) {
-            Button("Check for updates") {
-                if let delegate = NSApp.delegate as? AppDelegate {
-                    delegate.checkForUpdatesManually()
+        VStack(spacing: Theme.s8) {
+            HStack(spacing: Theme.s12) {
+                Button(checkForUpdatesLabel) {
+                    if let delegate = NSApp.delegate as? AppDelegate {
+                        delegate.checkForUpdatesManually()
+                    }
                 }
-            }
-            .buttonStyle(.bordered)
+                .buttonStyle(.bordered)
+                .disabled(isChecking)
 
-            Button("Replay onboarding") {
-                if let delegate = NSApp.delegate as? AppDelegate {
-                    delegate.replayOnboarding()
+                Button("Replay onboarding") {
+                    if let delegate = NSApp.delegate as? AppDelegate {
+                        delegate.replayOnboarding()
+                    }
                 }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.bordered)
+
+            // Inline status — keeps "Check for updates" from feeling like a
+            // dead button when the user is already on the latest version.
+            updateStatusLine
+        }
+    }
+
+    private var checkForUpdatesLabel: String {
+        isChecking ? "Checking…" : "Check for updates"
+    }
+
+    private var isChecking: Bool {
+        if case .checking = appState.updateStatus { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private var updateStatusLine: some View {
+        switch appState.updateStatus {
+        case .unknown:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Checking GitHub Releases…")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        case .upToDate(let version, _):
+            Label("You're on the latest — v\(version).", systemImage: "checkmark.circle.fill")
+                .labelStyle(.titleAndIcon)
+                .font(.caption)
+                .foregroundStyle(Theme.moss)
+        case .available(let release):
+            HStack(spacing: Theme.s8) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(Theme.moss)
+                Text("v\(release.version) is available.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button(appState.installMethod.isBrew ? "Upgrade" : "Download") {
+                    UpgradeAction.run(release: release, installMethod: appState.installMethod)
+                }
+                .controlSize(.small)
+            }
+        case .failed(let message):
+            Label("Couldn't check: \(message)", systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(Theme.amber)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
         }
     }
 

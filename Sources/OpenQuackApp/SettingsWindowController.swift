@@ -7,7 +7,7 @@ import SwiftUI
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private static var shared: SettingsWindowController?
 
-    static func show() {
+    static func show(appState: AppState) {
         if let existing = shared {
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -18,7 +18,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // can re-find it after switching to System Settings or another app.
         NSApp.setActivationPolicy(.regular)
 
-        let view = SettingsView()
+        let view = SettingsView(appState: appState)
         let host = NSHostingController(rootView: view)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 580, height: 500),

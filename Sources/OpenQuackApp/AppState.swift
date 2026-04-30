@@ -42,9 +42,38 @@ public final class AppState: ObservableObject {
     @Published public var lastPasted: Bool = false
     @Published public var accessibilityTrusted: Bool = false
     @Published public var modelLabel: String = "medium"
-    @Published public var availableUpdate: UpdateChecker.ReleaseInfo? = nil
-    @Published public var lastUpdateCheckError: String? = nil
+    /// Lifecycle of an update check — drives both the menu-bar 🦆⬆
+    /// indicator and the Settings → About status line. Single source of
+    /// truth so a manual "Check for updates" click can flip from
+    /// `.checking` to a terminal state and back to `.unknown` after a
+    /// while if needed.
+    @Published public var updateStatus: UpdateCheckStatus = .unknown
     @Published public var installMethod: InstallMethod = .manual
 
+    /// Convenience for the popover banner — only present when the
+    /// status terminal-states into `.available`.
+    public var availableUpdate: UpdateChecker.ReleaseInfo? {
+        if case .available(let release) = updateStatus { return release }
+        return nil
+    }
+
     public init() {}
+}
+
+public enum UpdateCheckStatus: Equatable {
+    /// No check has run yet this launch.
+    case unknown
+    /// A check is in flight.
+    case checking
+    /// Latest reachable release is the running build.
+    case upToDate(version: String, at: Date)
+    /// Newer release found.
+    case available(UpdateChecker.ReleaseInfo)
+    /// Last check failed (network, parse, etc).
+    case failed(String)
+
+    public var hasAvailableUpdate: Bool {
+        if case .available = self { return true }
+        return false
+    }
 }

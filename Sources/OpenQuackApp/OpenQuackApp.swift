@@ -171,19 +171,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            Date().timeIntervalSince(last) < 24 * 60 * 60 {
             return
         }
+        await MainActor.run { appState.updateStatus = .checking }
         do {
             let release = try await updater.checkForUpdate(currentVersion: OpenQuackKit.version)
+            let now = Date()
             await MainActor.run {
-                appState.availableUpdate = release
-                appState.lastUpdateCheckError = nil
+                if let release {
+                    appState.updateStatus = .available(release)
+                } else {
+                    appState.updateStatus = .upToDate(version: OpenQuackKit.version, at: now)
+                }
             }
-            UserDefaults.standard.set(Date(), forKey: "lastUpdateCheck")
+            UserDefaults.standard.set(now, forKey: "lastUpdateCheck")
         } catch UpdateChecker.Error.noReleases {
-            // No releases yet — not an error worth surfacing during the v0
-            // alpha (the repo may not exist or have any releases).
-            await MainActor.run { appState.lastUpdateCheckError = nil }
+            // Repo has no releases at all — uncommon, but treat as
+            // up-to-date rather than an error so manual checks don't
+            // surface a scary message during pre-release windows.
+            await MainActor.run {
+                appState.updateStatus = .upToDate(version: OpenQuackKit.version, at: Date())
+            }
         } catch {
-            await MainActor.run { appState.lastUpdateCheckError = "\(error)" }
+            await MainActor.run { appState.updateStatus = .failed("\(error)") }
         }
     }
 
@@ -251,10 +259,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Icon depends on phase + whether an update is available, so observe
         // both. CombineLatest republishes whenever either side changes.
         appState.$phase
-            .combineLatest(appState.$availableUpdate)
+            .combineLatest(appState.$updateStatus)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] phase, update in
-                self?.updateIcon(for: phase, hasUpdate: update != nil)
+            .sink { [weak self] phase, status in
+                self?.updateIcon(for: phase, hasUpdate: status.hasAvailableUpdate)
             }
             .store(in: &cancellables)
     }

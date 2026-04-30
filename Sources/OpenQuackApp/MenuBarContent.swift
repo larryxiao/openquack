@@ -44,8 +44,6 @@ struct MenuBarContent: View {
         }
     }
 
-    /// Subtitle copy adapts to the install method — brew users get a
-    /// shell command they can paste; manual users get a download note.
     /// `.symbolEffect(.bounce)` is macOS 14+. Static fallback on Ventura.
     @ViewBuilder
     private func bounceableArrow(versionKey: String) -> some View {
@@ -59,9 +57,11 @@ struct MenuBarContent: View {
         }
     }
 
+    /// Subtitle copy adapts to the install method — brew users get a
+    /// shell command they can paste; manual users get a download note.
     private var updateSubtitle: String {
         switch state.installMethod {
-        case .homebrew: return "Tap Upgrade to copy `brew upgrade --cask openquack`."
+        case .homebrew: return "Tap Upgrade — runs `brew upgrade --cask openquack` in Terminal."
         case .manual:   return "Tap Download for the new DMG."
         }
     }
@@ -72,22 +72,7 @@ struct MenuBarContent: View {
 
     private func handleUpdateAction() {
         guard let update = state.availableUpdate else { return }
-        switch state.installMethod {
-        case .homebrew:
-            // One-click flow for brew users: drop the upgrade command on
-            // the clipboard and open Terminal so they can ⌘V + ⏎. Doing
-            // the brew run for them would need a privileged subprocess
-            // and a bunch of edge-case handling — clipboard + Terminal
-            // covers 90 % of the friction with 0 % of the risk.
-            let cmd = "brew upgrade --cask openquack"
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(cmd, forType: .string)
-            if let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
-                NSWorkspace.shared.open(terminal)
-            }
-        case .manual:
-            NSWorkspace.shared.open(update.dmgURL ?? update.pageURL)
-        }
+        UpgradeAction.run(release: update, installMethod: state.installMethod)
     }
 
     @ViewBuilder
@@ -189,7 +174,7 @@ struct MenuBarContent: View {
             }
             Spacer()
             Button {
-                SettingsWindowController.show()
+                SettingsWindowController.show(appState: state)
             } label: {
                 Label("Settings", systemImage: "gearshape")
                     .labelStyle(.titleAndIcon)
