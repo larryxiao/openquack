@@ -44,6 +44,7 @@ public final class AppState: ObservableObject {
     @Published public var modelLabel: String = "medium"
     @Published public var availableUpdate: UpdateChecker.ReleaseInfo? = nil
     @Published public var lastUpdateCheckError: String? = nil
+    @Published public var installMethod: InstallMethod = .manual
 
     public init() {}
 }

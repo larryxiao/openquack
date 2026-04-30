@@ -29,24 +29,64 @@ struct MenuBarContent: View {
     private var updateBanner: some View {
         if let update = state.availableUpdate {
             HStack(alignment: .top, spacing: Theme.s8) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.title3)
-                    .foregroundStyle(Theme.moss)
+                bounceableArrow(versionKey: update.version)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Update available — v\(update.version)")
-                        .font(.caption.weight(.semibold))
-                    Text("Click to download from GitHub Releases.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    Text("v\(update.version) is here").font(.caption.weight(.semibold))
+                    Text(updateSubtitle).font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: Theme.s4)
-                Button("Get") {
-                    NSWorkspace.shared.open(update.dmgURL ?? update.pageURL)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                Button(updateButtonLabel, action: handleUpdateAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
             .oqBanner(tint: Theme.moss)
+            .transition(.scale(scale: 0.96).combined(with: .opacity))
+        }
+    }
+
+    /// Subtitle copy adapts to the install method — brew users get a
+    /// shell command they can paste; manual users get a download note.
+    /// `.symbolEffect(.bounce)` is macOS 14+. Static fallback on Ventura.
+    @ViewBuilder
+    private func bounceableArrow(versionKey: String) -> some View {
+        let icon = Image(systemName: "arrow.down.circle")
+            .font(.title3)
+            .foregroundStyle(Theme.moss)
+        if #available(macOS 14.0, *) {
+            icon.symbolEffect(.bounce, value: versionKey)
+        } else {
+            icon
+        }
+    }
+
+    private var updateSubtitle: String {
+        switch state.installMethod {
+        case .homebrew: return "Tap Upgrade to copy `brew upgrade --cask openquack`."
+        case .manual:   return "Tap Download for the new DMG."
+        }
+    }
+
+    private var updateButtonLabel: String {
+        state.installMethod.isBrew ? "Upgrade" : "Download"
+    }
+
+    private func handleUpdateAction() {
+        guard let update = state.availableUpdate else { return }
+        switch state.installMethod {
+        case .homebrew:
+            // One-click flow for brew users: drop the upgrade command on
+            // the clipboard and open Terminal so they can ⌘V + ⏎. Doing
+            // the brew run for them would need a privileged subprocess
+            // and a bunch of edge-case handling — clipboard + Terminal
+            // covers 90 % of the friction with 0 % of the risk.
+            let cmd = "brew upgrade --cask openquack"
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(cmd, forType: .string)
+            if let terminal = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Terminal") {
+                NSWorkspace.shared.open(terminal)
+            }
+        case .manual:
+            NSWorkspace.shared.open(update.dmgURL ?? update.pageURL)
         }
     }
 

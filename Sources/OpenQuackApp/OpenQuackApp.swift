@@ -76,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        appState.installMethod = InstallMethodDetector.detect()
         installStatusItem()
         installPopover()
         installHotkey()
@@ -247,17 +248,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - icon ↔ phase
 
     private func observePhaseForIcon() {
+        // Icon depends on phase + whether an update is available, so observe
+        // both. CombineLatest republishes whenever either side changes.
         appState.$phase
+            .combineLatest(appState.$availableUpdate)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] phase in self?.updateIcon(for: phase) }
+            .sink { [weak self] phase, update in
+                self?.updateIcon(for: phase, hasUpdate: update != nil)
+            }
             .store(in: &cancellables)
     }
 
-    private func updateIcon(for phase: AppState.Phase) {
+    private func updateIcon(for phase: AppState.Phase, hasUpdate: Bool) {
         let glyph: String
         switch phase {
         case .warming: glyph = "🟡"
-        case .idle, .ready: glyph = "🦆"
+        case .idle, .ready: glyph = hasUpdate ? "🦆⬆" : "🦆"
         case .starting, .recording: glyph = "🔴"
         case .transcribing: glyph = "⌛"
         case .error: glyph = "❌"
