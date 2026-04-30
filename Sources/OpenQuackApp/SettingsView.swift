@@ -205,7 +205,7 @@ private struct AboutPane: View {
     private var hero: some View {
         VStack(spacing: Theme.s8) {
             Spacer().frame(height: Theme.s24)
-            Text("🦆").font(.system(size: 80))
+            DuckMark(size: 96)
             Text("OpenQuack").font(.oqTitleSerif)
             Text("v\(OpenQuackKit.version)")
                 .font(.callout).foregroundStyle(.secondary)

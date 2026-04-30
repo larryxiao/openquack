@@ -319,7 +319,7 @@ private struct StepGlyph: View {
 private struct WelcomeStep: View {
     var body: some View {
         VStack(spacing: Theme.s16) {
-            Text("🦆").font(.system(size: 32))
+            DuckMark(size: 40)
             Text("Welcome to OpenQuack")
                 .font(.oqHeroSerif)
             Text("Speak. Send. Privately.")

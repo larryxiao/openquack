@@ -203,6 +203,44 @@ struct CreamSurface: View {
     }
 }
 
+// MARK: - Brand mark
+
+/// Pond-blue line-art duck mark for use on cream and neutral surfaces.
+/// Source artwork: OpenQuack design system (`duck-mark-pond.png` + @2x).
+/// macOS-native chrome (the menu-bar status item) uses the silhouette
+/// template icons in `Resources/MenuIcons/` instead — those are tiny
+/// phase glyphs, not a brand mark.
+struct DuckMark: View {
+    var size: CGFloat
+    var body: some View {
+        if let nsImage = Self.markImage {
+            Image(nsImage: nsImage)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .accessibilityLabel("OpenQuack")
+        } else {
+            // Fallback if the resource bundle is missing — keeps layouts stable.
+            Text("🦆").font(.system(size: size * 0.85))
+        }
+    }
+
+    private static let markImage: NSImage? = {
+        let bundle = Bundle.module
+        guard let url1x = bundle.url(forResource: "duck-mark-pond", withExtension: "png"),
+              let image = NSImage(contentsOf: url1x) else { return nil }
+        let logical = image.size
+        if let url2x = bundle.url(forResource: "duck-mark-pond@2x", withExtension: "png"),
+           let img2x = NSImage(contentsOf: url2x),
+           let rep2x = img2x.representations.first {
+            rep2x.size = logical
+            image.addRepresentation(rep2x)
+        }
+        return image
+    }()
+}
+
 private struct VisualEffect: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blending: NSVisualEffectView.BlendingMode

@@ -1,6 +1,8 @@
 <div align="center">
 
-# OpenQuack 🦆
+<img src="docs/images/duck-mark-pond.png" width="96" alt="OpenQuack duck-mark">
+
+# OpenQuack
 
 **Speak. Send. Privately.**
 
