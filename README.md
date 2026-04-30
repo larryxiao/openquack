@@ -28,7 +28,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 ## Why
 
-**Local.** Everything runs on your device — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction.
+**Local.** Everything runs on your device — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction. And because there's no API call in the loop, it just keeps working — offline, on a plane, behind a corporate firewall.
 
 **Fast.** Whisper on Apple Silicon transcribes in roughly a fifth of the time you spent speaking. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB. Faster than typing in most cases. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
@@ -37,7 +37,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 ## What you get
 
 - **One-key dictation.** Pick a hotkey (default ⌃⇧Space). Toggle or push-to-talk.
-- **All local.** Speech recognition runs on your Mac. No internet needed for dictation.
+- **All local.** Speech recognition runs on your Mac. No internet needed for dictation — works offline, on a plane, in a tunnel, behind a corporate firewall. No API keys, no rate limits, no service outages. Same dictation in personal or business settings.
 - **Multi-language.** Whisper handles 99 languages — English, Chinese, Japanese, Korean, Spanish, French, German, Italian, and Portuguese are right in Settings; auto-detect on by default.
 - **Auto-paste at the cursor** in any app. (Falls back to your clipboard if you'd rather paste yourself.)
 - **Smart formatting** — capitalisation, end-punctuation, "um/uh" cleanup.
