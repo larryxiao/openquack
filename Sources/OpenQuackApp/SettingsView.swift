@@ -12,7 +12,7 @@ import OpenQuackKit
 // "reception" pane and uses CreamSurface + serif titles.
 
 struct SettingsView: View {
-    enum Tab: Hashable { case general, shortcut, about }
+    enum Tab: Hashable { case general, shortcut, stats, history, about }
     @State private var selection: Tab = .general
     @ObservedObject var appState: AppState
 
@@ -24,6 +24,12 @@ struct SettingsView: View {
             ShortcutPane()
                 .tabItem { Label("Shortcut", systemImage: "command") }
                 .tag(Tab.shortcut)
+            StatsPane()
+                .tabItem { Label("Stats", systemImage: "chart.bar") }
+                .tag(Tab.stats)
+            HistoryPane()
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+                .tag(Tab.history)
             AboutPane(appState: appState)
                 .tabItem { Label("About", systemImage: "info.circle") }
                 .tag(Tab.about)
@@ -338,6 +344,267 @@ private struct AboutPane: View {
                 .foregroundStyle(.tertiary)
                 .padding(.top, Theme.s12)
                 .padding(.bottom, Theme.s16)
+        }
+    }
+}
+
+// MARK: - Stats (SPEC-013)
+
+private struct StatsPane: View {
+    @AppStorage("showUsageStats")  private var showUsageStats: Bool = false
+    @AppStorage("trackUsageStats") private var trackUsageStats: Bool = true
+    @AppStorage("typingWPM")       private var typingWPM: Int = 50
+    @State private var snapshot: UsageStatsSnapshot?
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Show usage statistics", isOn: $showUsageStats)
+                Text("Stats are tracked locally — toggle on to reveal the numbers. Nothing leaves your Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Display")
+            }
+
+            if showUsageStats {
+                Section {
+                    if let snap = snapshot {
+                        statRow("Words dictated",        value: snap.wordsDictated.formatted())
+                        statRow("Audio processed",       value: Self.formatDuration(snap.audioSeconds))
+                        statRow("Dictations",            value: snap.dictationCount.formatted())
+                        statRow("Time saved vs. typing", value: Self.formatDuration(snap.timeSaved(typingWordsPerMinute: typingWPM)))
+                        if let since = snap.firstRecordedAt {
+                            statRow("Since", value: since.formatted(date: .abbreviated, time: .omitted))
+                        }
+                    } else {
+                        Text("Loading…").font(.caption).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    SectionHeader("This Mac")
+                }
+            }
+
+            Section {
+                Stepper("Typing speed: \(typingWPM) WPM", value: $typingWPM, in: 20...150)
+                Text("Default is 50 WPM (typical desktop typist, Dhakal et al. 2018). Adjust to match yours for an honest comparison.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Track usage statistics", isOn: $trackUsageStats)
+                    .onChange(of: trackUsageStats) { newValue in
+                        Task { await Self.stats?.setTrackingEnabled(newValue) }
+                    }
+                Text("When off, OpenQuack stops counting new dictations; existing totals stay until you reset.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Tracking")
+            }
+
+            Section {
+                HStack {
+                    Button("Export…") { exportSnapshot() }
+                    Spacer()
+                    Button("Reset…") { confirmReset() }
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .task { await refresh() }
+        .onChange(of: showUsageStats) { _ in
+            Task { await refresh() }
+        }
+    }
+
+    private static var stats: UsageStats? {
+        (NSApp.delegate as? AppDelegate)?.usageStats
+    }
+
+    private func refresh() async {
+        snapshot = await Self.stats?.snapshot()
+    }
+
+    private static func formatDuration(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m)m \(s)s" }
+        return "\(s)s"
+    }
+
+    private func statRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value).font(.body.monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+
+    private func exportSnapshot() {
+        Task {
+            guard let stats = Self.stats else { return }
+            guard let data = try? await stats.exportJSON() else { return }
+            await MainActor.run {
+                let panel = NSSavePanel()
+                panel.nameFieldStringValue = "openquack-stats.json"
+                panel.allowedContentTypes = [.json]
+                if panel.runModal() == .OK, let url = panel.url {
+                    try? data.write(to: url)
+                }
+            }
+        }
+    }
+
+    private func confirmReset() {
+        let alert = NSAlert()
+        alert.messageText = "Reset all usage statistics?"
+        alert.informativeText = "This can't be undone."
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            await Self.stats?.reset()
+            await refresh()
+        }
+    }
+}
+
+// MARK: - History (SPEC-014)
+
+private struct HistoryPane: View {
+    @AppStorage("saveTranscripts")    private var saveTranscripts: Bool = true
+    @AppStorage("saveAudio")          private var saveAudio: Bool = false
+    @AppStorage("historyMaxEntries")  private var maxEntries: Int = 50
+    @AppStorage("historyMaxDays")     private var maxDays: Int = 14
+    @AppStorage("historyMaxMB")       private var maxMB: Int = 500
+    @State private var entries: [HistoryEntry] = []
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Save transcripts", isOn: $saveTranscripts)
+                Toggle("Save audio (enables crash recovery)", isOn: $saveAudio)
+                if saveAudio {
+                    Text("Audio is stored locally and capped at \(maxMB) MB. Voice carries biometrics — keep this off if you share this Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                SectionHeader("What to save")
+            }
+
+            Section {
+                Stepper("Keep up to \(maxEntries) entries", value: $maxEntries, in: 10...500, step: 10)
+                    .onChange(of: maxEntries) { _ in updatePolicy() }
+                Stepper("Keep up to \(maxDays) days", value: $maxDays, in: 1...90)
+                    .onChange(of: maxDays) { _ in updatePolicy() }
+                Stepper("Cap disk at \(maxMB) MB", value: $maxMB, in: 100...5000, step: 100)
+                    .onChange(of: maxMB) { _ in updatePolicy() }
+            } header: {
+                SectionHeader("Retention")
+            }
+
+            Section {
+                if entries.isEmpty {
+                    Text("No recordings yet.").font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(entries) { entry in
+                        historyRow(entry)
+                    }
+                }
+            } header: {
+                SectionHeader("Recent")
+            }
+
+            Section {
+                Button("Delete all history…") { confirmPurge() }
+                    .foregroundStyle(.red)
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .task { await refresh() }
+    }
+
+    private static var store: HistoryStore? {
+        (NSApp.delegate as? AppDelegate)?.historyStore
+    }
+
+    private func refresh() async {
+        entries = await Self.store?.list(limit: 50) ?? []
+    }
+
+    private func updatePolicy() {
+        let policy = RetentionPolicy(
+            maxEntries: maxEntries,
+            maxAge: TimeInterval(maxDays) * 24 * 60 * 60,
+            maxBytesOnDisk: Int64(maxMB) * 1024 * 1024
+        )
+        Task {
+            await Self.store?.setPolicy(policy)
+            await Self.store?.enforceRetention()
+            await refresh()
+        }
+    }
+
+    private func historyRow(_ entry: HistoryEntry) -> some View {
+        HStack(alignment: .top, spacing: Theme.s8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.recordedAt.formatted(.relative(presentation: .named)))
+                    .font(.caption.weight(.medium))
+                Text(entry.transcript ?? "(no transcript yet)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer()
+            Menu {
+                if entry.transcript != nil {
+                    Button("Re-paste") { rePaste(entry) }
+                }
+                if entry.audioURL != nil {
+                    Button("Reveal in Finder") { revealInFinder(entry) }
+                }
+                Button("Delete", role: .destructive) { delete(entry) }
+            } label: {
+                Image(systemName: "ellipsis.circle").imageScale(.medium)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        }
+    }
+
+    private func rePaste(_ entry: HistoryEntry) {
+        guard let text = entry.transcript else { return }
+        if UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true {
+            _ = PasteService.paste(text)
+        } else {
+            PasteService.copyToClipboard(text)
+        }
+    }
+
+    private func revealInFinder(_ entry: HistoryEntry) {
+        guard let url = entry.audioURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func delete(_ entry: HistoryEntry) {
+        Task {
+            try? await Self.store?.delete(entry.id)
+            await refresh()
+        }
+    }
+
+    private func confirmPurge() {
+        let alert = NSAlert()
+        alert.messageText = "Permanently delete all history?"
+        alert.informativeText = "Transcripts and recordings on this Mac will be removed. This cannot be undone."
+        alert.addButton(withTitle: "Delete all")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task {
+            try? await Self.store?.purgeAll()
+            await refresh()
         }
     }
 }

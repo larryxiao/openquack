@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 import Combine
 import OpenQuackKit
@@ -49,6 +50,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let raw = UserDefaults.standard.double(forKey: "vadSilenceSeconds")
         return raw > 0 ? raw : 1.5
     }
+    // SPEC-014 — transcripts persisted by default; audio opt-in (privacy posture).
+    private var saveTranscripts: Bool {
+        UserDefaults.standard.object(forKey: "saveTranscripts") as? Bool ?? true
+    }
+    private var saveAudio: Bool {
+        UserDefaults.standard.bool(forKey: "saveAudio")
+    }
 
     private var lastVoiceAt: Date?
     private static let voiceThreshold: Float = 0.06
@@ -60,6 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transcriber: WhisperKitEngine?
     private var overlay: RecordingOverlay?
     private let updater = UpdateChecker()
+    let usageStats = UsageStats()        // SPEC-013
+    let historyStore = HistoryStore()    // SPEC-014
 
     /// Persist the last recording so the user can verify capture quality
     /// independent of model output. `open ~/Library/Application Support/OpenQuack/last-recording.wav`.
@@ -131,6 +141,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Light, opportunistic update poll. Once per launch, no faster than
         // once per 24h; quietly skips on network failure.
         Task { await pollForUpdate() }
+
+        // SPEC-014 — sweep retention + offer crash-recovery on launch.
+        let history = historyStore
+        Task { @MainActor in
+            await history.enforceRetention()
+            await self.offerRecoveryIfNeeded()
+        }
     }
 
     /// macOS calls this when the user double-clicks the .app while it's
@@ -450,6 +467,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.phase = .ready
                     playSound("Pop")
                 }
+
+                // SPEC-013/014 — record stats and persist history. Best-effort:
+                // failures must not block paste (which already happened above).
+                let detectedLanguage = result.detectedLanguage
+                let modelLabel = self.defaultModel
+                let audioDuration = result.audioSeconds
+                let saveTranscriptsFlag = self.saveTranscripts
+                let saveAudioFlag = self.saveAudio
+                let stats = self.usageStats
+                let history = self.historyStore
+                Task {
+                    await stats.record(transcript: polished, audioSeconds: audioDuration)
+                    if saveTranscriptsFlag {
+                        let audio = saveAudioFlag ? Self.loadAudioSamples(from: url) : nil
+                        _ = try? await history.save(
+                            audio: audio?.samples,
+                            audioSampleRate: audio?.sampleRate ?? 16_000,
+                            transcript: polished,
+                            language: detectedLanguage,
+                            modelID: modelLabel,
+                            durationSeconds: audioDuration
+                        )
+                    }
+                }
             } catch {
                 await MainActor.run {
                     appState.phase = .error("Transcription failed: \(error)")
@@ -519,4 +560,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         elapsedTimer = nil
     }
 
+    // MARK: - SPEC-014 crash recovery
+
+    /// Read the recorder's WAV back as float samples. Used to feed history
+    /// when the user has audio storage enabled. The recorder writes at the
+    /// input device's native rate; we preserve that and let HistoryStore
+    /// encode at whatever rate it received.
+    static func loadAudioSamples(from url: URL) -> (samples: [Float], sampleRate: Double)? {
+        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+        let format = file.processingFormat
+        let frameCount = AVAudioFrameCount(file.length)
+        guard frameCount > 0,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
+        else { return nil }
+        do { try file.read(into: buffer) } catch { return nil }
+        guard let channelData = buffer.floatChannelData?[0] else { return nil }
+        let samples = Array(UnsafeBufferPointer(start: channelData, count: Int(buffer.frameLength)))
+        return (samples, format.sampleRate)
+    }
+
+    /// On launch, surface any recordings that didn't complete transcription.
+    /// Spec calls for a non-modal popover anchored to the menu-bar icon;
+    /// alpha.5 ships an NSAlert as the simpler MVP. Replace in a follow-up.
+    @MainActor
+    private func offerRecoveryIfNeeded() async {
+        let entries = await historyStore.recoverable()
+        guard !entries.isEmpty else { return }
+
+        let alert = NSAlert()
+        if entries.count == 1 {
+            let mins = max(1, Int(Date().timeIntervalSince(entries[0].recordedAt) / 60))
+            alert.messageText = "We found a recording from \(mins) min ago that didn't finish."
+            alert.informativeText = "Recover transcribes the audio and pastes the result. Discard deletes the recording."
+            alert.addButton(withTitle: "Recover")
+            alert.addButton(withTitle: "Discard")
+        } else {
+            alert.messageText = "\(entries.count) recordings to recover."
+            alert.informativeText = "Recover all transcribes each one and pastes the results. Discard all deletes them."
+            alert.addButton(withTitle: "Recover all")
+            alert.addButton(withTitle: "Discard all")
+        }
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            for entry in entries { await recoverEntry(entry) }
+        case .alertSecondButtonReturn:
+            for entry in entries { try? await historyStore.delete(entry.id) }
+        default: break
+        }
+    }
+
+    @MainActor
+    private func recoverEntry(_ entry: HistoryEntry) async {
+        guard let audioURL = entry.audioURL else { return }
+        // Engine may not be warm yet at this stage; warm if needed before
+        // attempting recovery so the user-facing flow doesn't error out.
+        if transcriber == nil { await warmTranscriber() }
+        guard let engine = transcriber else { return }
+        do {
+            let result = try await engine.transcribe(
+                audioFile: audioURL,
+                language: entry.language,
+                customWords: customWords
+            )
+            let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
+            let polished = polishEnabled ? TextPolisher.polish(result.text) : result.text
+            let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
+            if autoPasteEnabled {
+                _ = PasteService.paste(polished)
+            } else {
+                PasteService.copyToClipboard(polished)
+            }
+            try? await historyStore.markTranscribed(entry.id, transcript: polished)
+            await usageStats.record(transcript: polished, audioSeconds: result.audioSeconds)
+        } catch {
+            // Best-effort — leave the entry recoverable for next launch.
+        }
+    }
 }
