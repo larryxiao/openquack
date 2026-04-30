@@ -48,11 +48,9 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 - **Open source**, MIT.
 
 <p align="center">
-  <img src="docs/images/onboarding.webp" height="280" alt="OpenQuack first-launch welcome screen — Local-only by design, Fast and accurate, Open source MIT">
+  <img src="docs/images/onboarding.webp" height="420" alt="OpenQuack first-launch welcome screen — Local-only by design, Fast and accurate, Open source MIT">
   &nbsp;
-  <img src="docs/images/settings.webp" height="280" alt="OpenQuack Settings → General tab — Speech-to-text model picker, Behaviour toggles, Language">
-  &nbsp;
-  <img src="docs/images/about.webp" height="280" alt="OpenQuack Settings → About tab — version, links, FAQ">
+  <img src="docs/images/settings.webp" height="420" alt="OpenQuack Settings → General tab — Speech-to-text model picker, Behaviour toggles, Language">
 </p>
 
 ## Privacy, in one screen
