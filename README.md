@@ -20,6 +20,14 @@ OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it agai
 
 Speech recognition happens on your Mac. No cloud, no account, no signup, no telemetry.
 
+<p align="center">
+  <img src="docs/images/menubar.webp" width="420" alt="OpenQuack menu-bar popover — Speak. Send. Privately. with a Ready status and the dictation hotkey">
+</p>
+
+<p align="center">
+  <img src="docs/images/onboarding.webp" width="520" alt="OpenQuack first-launch welcome screen — Local-only by design, Fast and accurate, Open source MIT">
+</p>
+
 ## Why
 
 **Local.** Everything runs on your device — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction.
