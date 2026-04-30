@@ -215,8 +215,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - status item + popover
 
     private func installStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: 32)
-        statusItem.button?.title = "🦆"
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // Phase-driven NSImage is set in `updateIcon`; seed with the idle duck
+        // so the status item renders something on first paint before phase
+        // observation kicks in.
+        if let idle = Self.menuIcon(for: .idle) {
+            statusItem.button?.image = idle
+            statusItem.button?.imagePosition = .imageOnly
+        } else {
+            statusItem.button?.title = "🦆"
+        }
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover(_:))
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -285,15 +293,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateIcon(for phase: AppState.Phase, hasUpdate: Bool) {
-        let glyph: String
-        switch phase {
-        case .warming: glyph = "🟡"
-        case .idle, .ready: glyph = hasUpdate ? "🦆⬆" : "🦆"
-        case .starting, .recording: glyph = "🔴"
-        case .transcribing: glyph = "⌛"
-        case .error: glyph = "❌"
+        guard let button = statusItem.button else { return }
+        if let image = Self.menuIcon(for: phase) {
+            button.image = image
+            button.title = hasUpdate ? "⬆" : ""
+            button.imagePosition = hasUpdate ? .imageLeading : .imageOnly
+        } else {
+            // No icon for this phase yet (error). Fall back to a glyph so the
+            // user still sees something distinctive.
+            button.image = nil
+            button.title = "❌"
+            button.imagePosition = .noImage
         }
-        statusItem.button?.title = glyph
+    }
+
+    /// Cached template NSImages for each phase. Loaded once from the SwiftPM
+    /// resource bundle; nil means "no icon, use the fallback glyph."
+    private static let menuIconCache: [String: NSImage] = {
+        var cache: [String: NSImage] = [:]
+        for name in ["idle", "recording", "warming", "transcribing", "ready"] {
+            if let img = loadMenuTemplateIcon(named: "duck-\(name)") {
+                cache[name] = img
+            }
+        }
+        return cache
+    }()
+
+    private static func menuIcon(for phase: AppState.Phase) -> NSImage? {
+        switch phase {
+        case .warming:              return menuIconCache["warming"]
+        case .idle:                 return menuIconCache["idle"]
+        case .ready:                return menuIconCache["ready"]
+        case .starting, .recording: return menuIconCache["recording"]
+        case .transcribing:         return menuIconCache["transcribing"]
+        case .error:                return nil
+        }
+    }
+
+    /// Load an `@1x` PNG from the resource bundle and attach the matching
+    /// `@2x` rep so retina displays render the icon at native resolution.
+    /// `isTemplate = true` lets macOS auto-tint to the menu-bar text colour
+    /// (black in light mode, white in dark mode).
+    private static func loadMenuTemplateIcon(named name: String) -> NSImage? {
+        let bundle = Bundle.module
+        // SPM `.process(...)` flattens directory structure, so resources land
+        // at the bundle root regardless of source folder layout.
+        guard let url1x = bundle.url(forResource: name, withExtension: "png"),
+              let image = NSImage(contentsOf: url1x) else { return nil }
+        let logicalSize = image.size
+        if let url2x = bundle.url(forResource: "\(name)@2x", withExtension: "png"),
+           let img2x = NSImage(contentsOf: url2x),
+           let rep2x = img2x.representations.first {
+            rep2x.size = logicalSize
+            image.addRepresentation(rep2x)
+        }
+        image.isTemplate = true
+        return image
     }
 
     // MARK: - hotkey

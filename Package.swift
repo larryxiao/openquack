@@ -58,7 +58,10 @@ let package = Package(
         .executableTarget(
             name: "OpenQuackApp",
             dependencies: ["OpenQuackKit"],
-            path: "Sources/OpenQuackApp"
+            path: "Sources/OpenQuackApp",
+            resources: [
+                .process("Resources"),
+            ]
         ),
         .testTarget(
             name: "OpenQuackKitTests",
