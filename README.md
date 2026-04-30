@@ -22,10 +22,8 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 <p align="center">
   <img src="docs/images/menubar.webp" width="420" alt="OpenQuack menu-bar popover — Speak. Send. Privately. with a Ready status and the dictation hotkey">
-</p>
-
-<p align="center">
-  <img src="docs/images/onboarding.webp" width="520" alt="OpenQuack first-launch welcome screen — Local-only by design, Fast and accurate, Open source MIT">
+  &nbsp;
+  <img src="docs/images/recording.webp" width="380" alt="OpenQuack recording overlay — small pill with a live audio level meter and elapsed time">
 </p>
 
 ## Why
@@ -48,6 +46,16 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 - **Quick first-launch setup** — permissions, hotkey, done in a minute.
 - **Tiny.** An 8 MB menu-bar app, plus the speech model on first run.
 - **Open source**, MIT.
+
+<p align="center">
+  <img src="docs/images/onboarding.webp" height="400" alt="OpenQuack first-launch welcome screen — Local-only by design, Fast and accurate, Open source MIT">
+</p>
+
+<p align="center">
+  <img src="docs/images/settings.webp" height="400" alt="OpenQuack Settings → General tab — Speech-to-text model picker, Behaviour toggles, Language">
+  &nbsp;
+  <img src="docs/images/about.webp" height="400" alt="OpenQuack Settings → About tab — version, links, FAQ">
+</p>
 
 ## Privacy, in one screen
 
