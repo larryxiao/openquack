@@ -79,10 +79,10 @@ SPEC-006 (agent dispatch) builds on.
 | ⚪ | `OllamaAgent` (local HTTP) | SPEC-006 ext | S |
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
 | ⚪ | Active-app context: feed the foreground app + focused input field's surrounding text into Whisper's prompt bias and the polish/agent prompt, so domain terms resolve correctly and the agent has the same context the user does (sequenced after M2.5) | new SPEC | M |
-| ⚪ | Stream transcription for long audio (>~30s): chunk while recording so wait time after stop stays flat. Perf-oriented; user never sees partials. Needs feasibility + design investigation (WhisperKit streaming API, chunk boundaries, polish interaction). | new SPEC | L |
+| 🔵 | Stream transcription for long audio (>~30s): chunk while recording so wait time after stop stays flat. Perf-oriented; user never sees partials. | SPEC-012 | L |
 | ⚪ | Live partial transcripts in the pill/popover while speaking — UX-facing (lets the user see what's being captured, catch mistakes early). Distinct from the perf streaming above; could share infra. | new SPEC | M |
-| ⚪ | Usage stats pane: words dictated via OpenQuack, time saved (vs. typing baseline), total audio processed. Local-only, opt-in display. | new SPEC | S |
-| ⚪ | Local audio + transcript history: keep recent recordings on disk so a crash/failure mid-long-utterance doesn't force the user to repeat 1–2 minutes of speech. Local-only, retention cap, easy purge. Privacy selling point — works offline, nothing leaves the device. | new SPEC | M |
+| 🔵 | Usage stats pane: words dictated via OpenQuack, time saved (vs. typing baseline), total audio processed. Local-only, opt-in display. | SPEC-013 | S |
+| 🔵 | Local audio + transcript history: keep recent recordings on disk so a crash/failure mid-long-utterance doesn't force the user to repeat 1–2 minutes of speech. Local-only, retention cap, easy purge. Privacy selling point — works offline, nothing leaves the device. | SPEC-014 | M |
 | ⚪ | Code signing + notarisation | — | S |
 | ⚪ | Sparkle auto-update | — | S |
 | ⚪ | Demo gif + landing page (GitHub Pages) | — | S |

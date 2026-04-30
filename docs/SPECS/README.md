@@ -20,6 +20,10 @@ Conventions:
 | [SPEC-006](SPEC-006-agent-dispatch.md) | Agent dispatch | draft | M2 |
 | [SPEC-007](SPEC-007-llm-polish.md) | LLM transcript polish | draft | M2.5 |
 | [SPEC-010](SPEC-010-app-shell.md) | App shell | draft | M2 |
+| [SPEC-011](SPEC-011-update-flow.md) | Update flow | draft | M2 |
+| [SPEC-012](SPEC-012-streaming-transcription.md) | Streaming transcription (perf) | draft | M3 |
+| [SPEC-013](SPEC-013-usage-stats.md) | Usage stats pane | draft | M3 |
+| [SPEC-014](SPEC-014-local-history.md) | Local audio + transcript history | draft | M3 |
 
 ## Spec lifecycle
 
