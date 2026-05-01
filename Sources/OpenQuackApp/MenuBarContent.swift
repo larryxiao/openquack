@@ -100,30 +100,39 @@ struct MenuBarContent: View {
         }
     }
 
-    // MARK: - hero (duck + live status + hint)
+    // MARK: - hero (brand + live status + hint)
 
     private var heroSection: some View {
-        HStack(alignment: .top, spacing: Theme.s12) {
-            QuackingDuck(size: 40)
-                .frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    StatusDot(phase: state.phase)
-                    Text(statusText)
-                        .font(.oqHeadline)
-                        .foregroundStyle(.primary)
-                    Spacer(minLength: 0)
-                    if case .recording = state.phase {
-                        Text(String(format: "%.1fs", state.elapsedSeconds))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
+        VStack(alignment: .leading, spacing: Theme.s8) {
+            // Brand row: duck + name + tagline.
+            HStack(alignment: .center, spacing: Theme.s12) {
+                QuackingDuck(size: 36)
+                    .frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("OpenQuack").font(.oqHeadline)
+                    Text("Speak. Send. Privately.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                Text(hint)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            // Status row: dot + live phase text + (recording elapsed).
+            HStack(spacing: 6) {
+                StatusDot(phase: state.phase)
+                Text(statusText)
+                    .font(.callout.weight(.medium))
+                Spacer(minLength: 0)
+                if case .recording = state.phase {
+                    Text(String(format: "%.1fs", state.elapsedSeconds))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Text(hint)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -151,15 +160,11 @@ struct MenuBarContent: View {
     }
 
     private var footer: some View {
-        HStack(spacing: Theme.s8) {
+        HStack(spacing: Theme.s12) {
             if state.lastTranscript != nil {
                 Button("Copy") { PasteService.copyToClipboard(state.lastTranscript ?? "") }
-                    .buttonStyle(.oqNeutralSmall)
-            }
-            if let url = state.lastRecordingURL, FileManager.default.fileExists(atPath: url.path) {
-                Button("Listen") { NSWorkspace.shared.open(url) }
-                    .buttonStyle(.oqNeutralSmall)
-                    .help("Open the last recording — useful for diagnosing audio vs model issues.")
+                    .buttonStyle(.borderless)
+                    .font(.caption)
             }
             Spacer()
             Button {
@@ -168,7 +173,8 @@ struct MenuBarContent: View {
                 Label("Settings", systemImage: "gearshape")
                     .labelStyle(.titleAndIcon)
             }
-            .buttonStyle(.oqNeutralSmall)
+            .buttonStyle(.borderless)
+            .font(.caption.weight(.medium))
             .keyboardShortcut(",", modifiers: .command)
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.borderless)
@@ -199,16 +205,16 @@ struct MenuBarContent: View {
         case .warming:
             return "First launch downloads about 700 MB. After that, every launch is offline and takes 5–10 s."
         case .idle:
-            return "Press \(hk) to dictate. Press again to stop."
+            return "Press \(hk) to dictate."
         case .ready:
             if !state.accessibilityTrusted && !state.lastPasted {
                 return "Grant Accessibility above to paste at cursor automatically."
             }
-            return "Press \(hk) to dictate. Press again to stop."
+            return "Press \(hk) to dictate."
         case .starting:
             return "Starting up the mic…"
         case .recording:
-            return "Press \(hk) again to stop and transcribe."
+            return "Press \(hk) to finish."
         case .transcribing:
             return "Thinking — your audio stays on your Mac."
         case .error(let msg):
