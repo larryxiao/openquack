@@ -54,6 +54,52 @@ public enum VocabularyFile {
     }
 }
 
+/// User profile fed into the polish prompt. Higher-density context than a
+/// flat vocabulary list — domain + style + projects let the model disambiguate
+/// in cases where vocabulary alone can't (semantic ambiguity, not acoustic;
+/// acoustic disambiguation belongs to Whisper's prompt biasing).
+public struct UserProfile: Codable, Sendable {
+    public let domain: String?
+    public let languages: [String]?
+    public let primaryLanguage: String?
+    public let projects: [String]?
+    public let style: String?
+    public let commonApps: [String: String]?
+
+    enum CodingKeys: String, CodingKey {
+        case domain, languages, projects, style
+        case primaryLanguage = "primary_language"
+        case commonApps      = "common_apps"
+    }
+
+    public func renderForPrompt() -> String {
+        var lines: [String] = []
+        if let d = domain { lines.append("Domain: \(d)") }
+        if let p = projects, !p.isEmpty {
+            let joined = p.joined(separator: "; ")
+            lines.append("Projects: \(joined)")
+        }
+        if let s = style { lines.append("Style: \(s)") }
+        if let langs = languages, !langs.isEmpty {
+            let primary = primaryLanguage.map { " (primary: \($0))" } ?? ""
+            let joined = langs.joined(separator: ", ")
+            lines.append("Languages: \(joined)\(primary)")
+        }
+        if let apps = commonApps, !apps.isEmpty {
+            let pairs = apps.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($1.value)" }
+            let joined = pairs.joined(separator: "; ")
+            lines.append("Typical apps: \(joined)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    public static func load(at url: URL) throws -> UserProfile {
+        let data = try Data(contentsOf: url)
+        struct File: Decodable { let profile: UserProfile }
+        return try JSONDecoder().decode(File.self, from: data).profile
+    }
+}
+
 public enum PolishCorpus {
     public static func load(at url: URL) throws -> [PolishCase] {
         let data = try Data(contentsOf: url)
