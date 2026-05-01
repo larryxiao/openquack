@@ -198,6 +198,98 @@ extension View {
     }
 }
 
+// MARK: - Buttons
+
+/// Design-system button, three variants:
+///
+/// - `.neutral`     — paper-white fill, hairline edge. Default ask, like
+///                    "Export" or any reversible action.
+/// - `.primary`     — deep ink fill, cream-on-ink. The page's main CTA.
+///                    Used sparingly — one per surface at most.
+/// - `.destructive` — coral fill, white type. Anything irreversible
+///                    (Reset stats, Delete all history).
+///
+/// Designed for cream surfaces. Reads on macOS materials too thanks to
+/// the hairline + alpha-tinted fills.
+struct OQButtonStyle: ButtonStyle {
+    enum Variant { case neutral, primary, destructive }
+    var variant: Variant = .neutral
+    var size: Size = .regular
+    enum Size { case small, regular }
+
+    @Environment(\.isEnabled) private var enabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        configuration.label
+            .font(font)
+            .padding(.horizontal, hPad)
+            .padding(.vertical, vPad)
+            .frame(minHeight: minHeight)
+            .background(background(pressed: pressed))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.rInline, style: .continuous)
+                    .strokeBorder(strokeColor, lineWidth: 1)
+            )
+            .foregroundStyle(textColor)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.rInline, style: .continuous))
+            .opacity(enabled ? 1.0 : 0.4)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.rInline, style: .continuous))
+            .animation(.easeOut(duration: 0.08), value: pressed)
+    }
+
+    private var font: Font {
+        size == .small ? .caption.weight(.medium) : .callout.weight(.medium)
+    }
+    private var hPad: CGFloat { size == .small ? Theme.s8 : Theme.s12 }
+    private var vPad: CGFloat { size == .small ? 4 : 6 }
+    private var minHeight: CGFloat { size == .small ? 22 : 28 }
+
+    @ViewBuilder
+    private func background(pressed: Bool) -> some View {
+        switch variant {
+        case .neutral:
+            (pressed ? Color.white.opacity(0.45) : Color.white.opacity(0.7))
+        case .primary:
+            ZStack {
+                Theme.ink
+                LinearGradient(
+                    colors: [Color.white.opacity(0.10), Color.clear],
+                    startPoint: .top, endPoint: .bottom
+                )
+            }
+            .opacity(pressed ? 0.85 : 1.0)
+        case .destructive:
+            Theme.coral.opacity(pressed ? 0.80 : 0.92)
+        }
+    }
+
+    private var strokeColor: Color {
+        switch variant {
+        case .neutral:     return Color.black.opacity(0.10)
+        case .primary:     return Color.black.opacity(0.45)
+        case .destructive: return Theme.coral.opacity(0.55)
+        }
+    }
+
+    private var textColor: Color {
+        switch variant {
+        case .neutral:     return Theme.ink
+        case .primary:     return Color.white
+        case .destructive: return Color.white
+        }
+    }
+}
+
+extension ButtonStyle where Self == OQButtonStyle {
+    static var oqNeutral: OQButtonStyle { OQButtonStyle(variant: .neutral) }
+    static var oqPrimary: OQButtonStyle { OQButtonStyle(variant: .primary) }
+    static var oqDestructive: OQButtonStyle { OQButtonStyle(variant: .destructive) }
+    static var oqNeutralSmall: OQButtonStyle { OQButtonStyle(variant: .neutral, size: .small) }
+    static var oqPrimarySmall: OQButtonStyle { OQButtonStyle(variant: .primary, size: .small) }
+    static var oqDestructiveSmall: OQButtonStyle { OQButtonStyle(variant: .destructive, size: .small) }
+}
+
 /// Drop in as the topmost layer of a "reception" surface (onboarding, About).
 /// Honours dark mode by deferring to the visual-effect view there.
 struct CreamSurface: View {

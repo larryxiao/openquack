@@ -2,11 +2,12 @@ import SwiftUI
 import AppKit
 import OpenQuackKit
 
-/// Popover that appears when the user clicks the menu-bar 🦆.
+/// Popover that appears when the user clicks the menu-bar duck.
 ///
-/// Composition (top → bottom): update banner → accessibility banner → header
-/// → STATUS section → TRANSCRIPT section → footer. Banners hide when not
-/// applicable so the cold-open looks calm.
+/// Composition (top → bottom): update banner → accessibility banner → hero
+/// (duck + live status + hint) → transcript → footer. Header and status
+/// are merged into a single hero block so the popover reads "what is the
+/// duck doing right now" first, brand identity second.
 struct MenuBarContent: View {
     @ObservedObject var state: AppState
 
@@ -14,8 +15,7 @@ struct MenuBarContent: View {
         VStack(alignment: .leading, spacing: Theme.s16) {
             updateBanner
             accessibilityBanner
-            header
-            statusSection
+            heroSection
             transcriptSection
             footer
         }
@@ -36,8 +36,7 @@ struct MenuBarContent: View {
                 }
                 Spacer(minLength: Theme.s4)
                 Button(updateButtonLabel, action: handleUpdateAction)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.oqPrimarySmall)
             }
             .oqBanner(tint: Theme.moss)
             .transition(.scale(scale: 0.96).combined(with: .opacity))
@@ -95,46 +94,36 @@ struct MenuBarContent: View {
                     _ = PasteService.isAccessibilityTrusted(prompt: true)
                     PasteService.openAccessibilitySettings()
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .buttonStyle(.oqPrimarySmall)
             }
             .oqBanner(tint: Theme.amber)
         }
     }
 
-    // MARK: - sections
+    // MARK: - hero (duck + live status + hint)
 
-    private var header: some View {
-        HStack(spacing: Theme.s12) {
-            QuackingDuck(size: 44)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("OpenQuack").font(.oqHeadline)
-                Text("Speak. Send. Privately.")
+    private var heroSection: some View {
+        HStack(alignment: .top, spacing: Theme.s12) {
+            QuackingDuck(size: 40)
+                .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    StatusDot(phase: state.phase)
+                    Text(statusText)
+                        .font(.oqHeadline)
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 0)
+                    if case .recording = state.phase {
+                        Text(String(format: "%.1fs", state.elapsedSeconds))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(hint)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-    }
-
-    private var statusSection: some View {
-        VStack(alignment: .leading, spacing: Theme.s8) {
-            SectionHeader("Status")
-            HStack(spacing: Theme.s8) {
-                StatusDot(phase: state.phase)
-                Text(statusText).font(.caption)
-                Spacer()
-                if case .recording = state.phase {
-                    Text(String(format: "%.1f s", state.elapsedSeconds))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Text(hint)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -162,14 +151,14 @@ struct MenuBarContent: View {
     }
 
     private var footer: some View {
-        HStack(spacing: Theme.s12) {
+        HStack(spacing: Theme.s8) {
             if state.lastTranscript != nil {
                 Button("Copy") { PasteService.copyToClipboard(state.lastTranscript ?? "") }
-                    .buttonStyle(.borderless).font(.caption)
+                    .buttonStyle(.oqNeutralSmall)
             }
             if let url = state.lastRecordingURL, FileManager.default.fileExists(atPath: url.path) {
                 Button("Listen") { NSWorkspace.shared.open(url) }
-                    .buttonStyle(.borderless).font(.caption)
+                    .buttonStyle(.oqNeutralSmall)
                     .help("Open the last recording — useful for diagnosing audio vs model issues.")
             }
             Spacer()
@@ -179,8 +168,7 @@ struct MenuBarContent: View {
                 Label("Settings", systemImage: "gearshape")
                     .labelStyle(.titleAndIcon)
             }
-            .buttonStyle(.borderless)
-            .font(.caption.weight(.medium))
+            .buttonStyle(.oqNeutralSmall)
             .keyboardShortcut(",", modifiers: .command)
             Button("Quit") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.borderless)

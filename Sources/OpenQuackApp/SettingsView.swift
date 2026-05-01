@@ -398,9 +398,10 @@ private struct StatsPane: View {
             Section {
                 HStack {
                     Button("Export…") { exportSnapshot() }
+                        .buttonStyle(.oqNeutral)
                     Spacer()
                     Button("Reset…") { confirmReset() }
-                        .foregroundStyle(.red)
+                        .buttonStyle(.oqDestructive)
                 }
             }
         }
@@ -471,38 +472,45 @@ private struct StatsPane: View {
 // MARK: - History (SPEC-014)
 
 private struct HistoryPane: View {
-    @AppStorage("saveTranscripts")    private var saveTranscripts: Bool = true
-    @AppStorage("saveAudio")          private var saveAudio: Bool = false
-    @AppStorage("historyMaxEntries")  private var maxEntries: Int = 50
+    @AppStorage("saveAudio")         private var saveAudio: Bool = false
+    @AppStorage("historyMaxEntries") private var maxEntries: Int = 50
     @State private var entries: [HistoryEntry] = []
 
-    private static let entriesMin = 10
-    private static let entriesMax = 500
+    /// Sentinel for the "Unlimited" picker option. `RetentionPolicy` reads
+    /// this verbatim — `Int.max` never triggers eviction.
+    private static let unlimited = Int.max
 
     var body: some View {
         Form {
             Section {
-                Toggle("Save transcripts", isOn: $saveTranscripts)
+                Picker("Keep transcripts", selection: $maxEntries) {
+                    Text("None").tag(0)
+                    Text("10 entries").tag(10)
+                    Text("20 entries").tag(20)
+                    Text("30 entries").tag(30)
+                    Text("50 entries").tag(50)
+                    Text("100 entries").tag(100)
+                    Text("Unlimited").tag(Self.unlimited)
+                }
+                .pickerStyle(.menu)
+                .onChange(of: maxEntries) { _ in
+                    Task {
+                        await syncPolicy()
+                        await refresh()
+                    }
+                }
+                Text(retentionFootnote)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 Toggle("Save audio (enables crash recovery)", isOn: $saveAudio)
                 if saveAudio {
                     Text("Audio is stored locally on this Mac. Voice carries biometrics — keep this off if you share this Mac.")
                         .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             } header: {
                 SectionHeader("What to save")
-            }
-
-            Section {
-                HStack {
-                    Text("Keep up to **\(maxEntries)** entries")
-                    Spacer()
-                    Button("Change…") { promptEditEntries() }
-                        .controlSize(.small)
-                }
-                Text("Older recordings are deleted oldest-first when this limit is exceeded.")
-                    .font(.caption).foregroundStyle(.secondary)
-            } header: {
-                SectionHeader("Retention")
             }
 
             Section {
@@ -519,7 +527,7 @@ private struct HistoryPane: View {
 
             Section {
                 Button("Delete all history…") { confirmPurge() }
-                    .foregroundStyle(.red)
+                    .buttonStyle(.oqDestructive)
             }
         }
         .formStyle(.grouped)
@@ -531,6 +539,14 @@ private struct HistoryPane: View {
         }
     }
 
+    private var retentionFootnote: String {
+        switch maxEntries {
+        case 0:           return "Transcripts won't be saved. Crash-recovery is unaffected if Save audio is on."
+        case Self.unlimited: return "Every transcript is kept until you Delete all history."
+        default:          return "Older transcripts are deleted oldest-first when the count is exceeded."
+        }
+    }
+
     private static var store: HistoryStore? {
         (NSApp.delegate as? AppDelegate)?.historyStore
     }
@@ -539,9 +555,8 @@ private struct HistoryPane: View {
         entries = await Self.store?.list(limit: 50) ?? []
     }
 
-    /// Push the entry-cap to the store. Other caps (age, disk size) stay
-    /// at very loose defaults so the entry count is the only lever the
-    /// user actually feels.
+    /// Push the entry-cap to the store. Age and disk caps stay loose so
+    /// the entry count is the only lever the user actually feels.
     private func syncPolicy() async {
         let policy = RetentionPolicy(
             maxEntries: maxEntries,
@@ -550,44 +565,6 @@ private struct HistoryPane: View {
         )
         await Self.store?.setPolicy(policy)
         await Self.store?.enforceRetention()
-    }
-
-    /// Modal input for the entry cap — the stepper felt like a chore.
-    private func promptEditEntries() {
-        let alert = NSAlert()
-        alert.messageText = "Keep up to how many entries?"
-        alert.informativeText = "Pick any number between \(Self.entriesMin) and \(Self.entriesMax)."
-
-        let field = NSTextField(string: String(maxEntries))
-        field.frame = NSRect(x: 0, y: 0, width: 80, height: 24)
-        field.alignment = .center
-        let formatter = NumberFormatter()
-        formatter.minimum = NSNumber(value: Self.entriesMin)
-        formatter.maximum = NSNumber(value: Self.entriesMax)
-        formatter.allowsFloats = false
-        field.formatter = formatter
-        alert.accessoryView = field
-
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-
-        // Focus the text field so the user can type immediately, with the
-        // current value pre-selected for quick replacement.
-        DispatchQueue.main.async { [weak field] in
-            field?.becomeFirstResponder()
-            field?.currentEditor()?.selectAll(nil)
-        }
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let raw = field.integerValue
-        let clamped = min(Self.entriesMax, max(Self.entriesMin, raw))
-        if clamped != maxEntries {
-            maxEntries = clamped
-            Task {
-                await syncPolicy()
-                await refresh()
-            }
-        }
     }
 
     private func historyRow(_ entry: HistoryEntry) -> some View {

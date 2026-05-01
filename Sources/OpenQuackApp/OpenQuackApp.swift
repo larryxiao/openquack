@@ -50,9 +50,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let raw = UserDefaults.standard.double(forKey: "vadSilenceSeconds")
         return raw > 0 ? raw : 1.5
     }
-    // SPEC-014 — transcripts persisted by default; audio opt-in (privacy posture).
+    // SPEC-014 — transcripts persisted by default (entry cap = 50);
+    // audio opt-in (privacy posture). The Settings → History dropdown
+    // sets `historyMaxEntries`; 0 means "None — stop saving".
     private var saveTranscripts: Bool {
-        UserDefaults.standard.object(forKey: "saveTranscripts") as? Bool ?? true
+        let raw = UserDefaults.standard.object(forKey: "historyMaxEntries") as? Int
+        return (raw ?? 50) > 0
     }
     private var saveAudio: Bool {
         UserDefaults.standard.bool(forKey: "saveAudio")
