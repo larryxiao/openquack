@@ -194,7 +194,6 @@ private struct AboutPane: View {
             ScrollView {
                 VStack(spacing: Theme.s24) {
                     hero
-                    statusCard
                     linksRow
                     faqSection
                     footer
@@ -205,9 +204,9 @@ private struct AboutPane: View {
                 .padding(.bottom, Theme.s16)
             }
         }
-        // Auto-poll on appear — fills in `.unknown` immediately so the user
-        // sees "Up to date" or "vX.Y available" without clicking the button.
-        // Already-checked / in-flight states are left alone.
+        // Auto-poll on appear — `.unknown`/`.failed` fire a fresh check so
+        // the user sees "Up to date" or "vX.Y ready" without clicking. The
+        // poll itself respects the 24h cache for non-forced calls.
         .task {
             switch appState.updateStatus {
             case .unknown, .failed:
@@ -220,7 +219,7 @@ private struct AboutPane: View {
         }
     }
 
-    // MARK: hero — mark, wordmark, tagline
+    // MARK: hero — mark, wordmark, tagline, version+status line
 
     private var hero: some View {
         VStack(spacing: Theme.s8) {
@@ -229,61 +228,21 @@ private struct AboutPane: View {
             Text("Speak. Send. Privately.")
                 .font(.oqTaglineSerif)
                 .foregroundStyle(.secondary)
+            versionLine
+                .padding(.top, Theme.s4)
         }
     }
 
-    // MARK: status card — version, update state, primary actions
-
-    private var statusCard: some View {
-        VStack(spacing: Theme.s12) {
-            HStack(spacing: Theme.s8) {
-                Text("Version")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(OpenQuackKit.version)
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(Theme.ink.opacity(0.85))
-                Spacer()
-                updateStatusChip
-            }
-            Divider().opacity(0.35)
-            HStack(spacing: Theme.s8) {
-                Button(checkForUpdatesLabel) {
-                    if let delegate = NSApp.delegate as? AppDelegate {
-                        delegate.checkForUpdatesManually()
-                    }
-                }
-                .buttonStyle(.bordered)
-                .disabled(isChecking)
-
-                Button("Replay onboarding") {
-                    if let delegate = NSApp.delegate as? AppDelegate {
-                        delegate.replayOnboarding()
-                    }
-                }
-                .buttonStyle(.bordered)
-
-                Spacer()
-            }
+    /// Single inline row: `v2.0.0-alpha.7 · ✓ Up to date` / `· vX.Y ready`.
+    /// Replaces the old status card + button pair — auto-check on appear
+    /// keeps it fresh without the user clicking anything.
+    private var versionLine: some View {
+        HStack(spacing: Theme.s8) {
+            Text("v\(OpenQuackKit.version)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+            updateStatusChip
         }
-        .padding(Theme.s16)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
-                .fill(Color.white.opacity(0.6))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
-                .stroke(Color.black.opacity(0.06), lineWidth: 1)
-        )
-    }
-
-    private var checkForUpdatesLabel: String {
-        isChecking ? "Checking…" : "Check for updates"
-    }
-
-    private var isChecking: Bool {
-        if case .checking = appState.updateStatus { return true }
-        return false
     }
 
     @ViewBuilder
@@ -294,32 +253,35 @@ private struct AboutPane: View {
         case .checking:
             HStack(spacing: 4) {
                 ProgressView().controlSize(.mini)
-                Text("Checking…").font(.caption2).foregroundStyle(.secondary)
+                Text("Checking…").font(.caption).foregroundStyle(.tertiary)
             }
         case .upToDate:
-            Label("Up to date", systemImage: "checkmark.circle.fill")
-                .labelStyle(.titleAndIcon)
-                .font(.caption2)
-                .foregroundStyle(Theme.moss)
-        case .available(let release):
-            Button {
-                UpgradeAction.run(release: release, installMethod: appState.installMethod)
-            } label: {
-                Label("v\(release.version) ready", systemImage: "arrow.down.circle.fill")
+            HStack(spacing: 4) {
+                Text("·").foregroundStyle(.tertiary)
+                Label("Up to date", systemImage: "checkmark.circle.fill")
                     .labelStyle(.titleAndIcon)
-                    .font(.caption2)
+                    .font(.caption)
+                    .foregroundStyle(Theme.moss)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Theme.moss)
+        case .available(let release):
+            HStack(spacing: 4) {
+                Text("·").foregroundStyle(.tertiary)
+                Button {
+                    UpgradeAction.run(release: release, installMethod: appState.installMethod)
+                } label: {
+                    Label("v\(release.version) ready", systemImage: "arrow.down.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.moss)
+            }
         case .failed:
-            Label("Check failed", systemImage: "exclamationmark.triangle")
-                .labelStyle(.titleAndIcon)
-                .font(.caption2)
-                .foregroundStyle(Theme.amber)
+            EmptyView()
         }
     }
 
-    // MARK: links
+    // MARK: links — Tutorial replays onboarding instead of opening a URL.
 
     private var linksRow: some View {
         HStack(spacing: Theme.s12) {
@@ -329,7 +291,11 @@ private struct AboutPane: View {
             Text("·").foregroundStyle(.tertiary)
             Link("Benchmarks", destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/BENCHMARKS.md")!)
             Text("·").foregroundStyle(.tertiary)
-            Link("Tutorial",   destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/TUTORIAL.md")!)
+            Button("Tutorial") {
+                (NSApp.delegate as? AppDelegate)?.replayOnboarding()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
         }
         .font(.callout)
     }
