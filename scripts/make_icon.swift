@@ -1,8 +1,8 @@
 #!/usr/bin/env swift
 
-// Generates build/AppIcon.icns from the design-system duck-in-pond mark
+// Generates build/AppIcon.icns from the design-system quacking-duck mark
 // composited onto a cream rounded square. The mark loads from
-// `Sources/OpenQuackApp/Resources/Brand/duck-in-pond@2x.png` so the icon
+// `Sources/OpenQuackApp/Resources/Brand/duck-quacking@2x.png` so the icon
 // stays in lockstep with whatever ships in the app bundle.
 //
 // At small icon sizes (16/32 pt) the line art gets thin; we counter by
@@ -17,7 +17,7 @@ let buildDir   = URL(fileURLWithPath: cwd).appendingPathComponent("build")
 let iconsetDir = buildDir.appendingPathComponent("AppIcon.iconset")
 let icnsURL    = buildDir.appendingPathComponent("AppIcon.icns")
 let markURL    = URL(fileURLWithPath: cwd)
-    .appendingPathComponent("Sources/OpenQuackApp/Resources/Brand/duck-in-pond@2x.png")
+    .appendingPathComponent("Sources/OpenQuackApp/Resources/Brand/duck-quacking@2x.png")
 
 guard let mark = NSImage(contentsOf: markURL) else {
     print("error: brand mark missing at \(markURL.path)")
