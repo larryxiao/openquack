@@ -133,6 +133,7 @@ private struct GeneralPane: View {
         }
         .formStyle(.grouped)
         .padding()
+        .creamSettingsBackground()
     }
 }
 
@@ -167,6 +168,7 @@ private struct ShortcutPane: View {
         }
         .formStyle(.grouped)
         .padding()
+        .creamSettingsBackground()
     }
 }
 
@@ -175,61 +177,64 @@ private struct ShortcutPane: View {
 private struct AboutPane: View {
     @ObservedObject var appState: AppState
 
+    private static let faqs: [(q: String, a: String)] = [
+        (q: "Why is the first launch slower?",
+         a: "OpenQuack downloads a small speech model on first run (about 700 MB for the default size). After that it lives on disk and dictation runs entirely offline. Loading the model into memory takes a few seconds at the start of each session, then dictations are instant."),
+        (q: "Why does macOS keep asking for permission after I update?",
+         a: "macOS ties Accessibility and microphone grants to the app's signature. Pre-notarised builds ask again whenever the signature changes. Builds signed with a stable identity keep the grant across upgrades — that lands once Apple Developer ID is set up."),
+        (q: "Where do the speech-model files live on disk?",
+         a: "~/Library/Application Support/OpenQuack/WhisperKit/. Uninstalling via Homebrew with --zap clears them; manually deleting the folder is safe too."),
+        (q: "Can I use a different speech model?",
+         a: "Yes — Settings → Speech-to-text. Larger models are more accurate but use more disk and load more slowly. The default (medium) hits a good balance for most speech.")
+    ]
+
     var body: some View {
         ZStack {
             CreamSurface().ignoresSafeArea()
-
             ScrollView {
-                VStack(spacing: 0) {
+                VStack(spacing: Theme.s24) {
                     hero
-                    links.padding(.top, Theme.s16)
-                    actions.padding(.top, Theme.s12)
-
-                    Divider()
-                        .opacity(0.4)
-                        .padding(.horizontal, Theme.s32)
-                        .padding(.vertical, Theme.s24)
-
-                    faq.padding(.horizontal, Theme.s32)
-
-                    Spacer().frame(height: Theme.s24)
+                    statusCard
+                    linksRow
+                    faqSection
                     footer
                 }
                 .frame(maxWidth: .infinity)
+                .padding(.horizontal, Theme.s32)
+                .padding(.top, Theme.s32)
+                .padding(.bottom, Theme.s16)
             }
         }
     }
 
-    // MARK: hero
+    // MARK: hero — mark, wordmark, tagline
 
     private var hero: some View {
         VStack(spacing: Theme.s8) {
-            Spacer().frame(height: Theme.s24)
-            DuckMark(size: 96)
+            DuckMark(size: 88)
             Text("OpenQuack").font(.oqTitleSerif)
-            Text("v\(OpenQuackKit.version)")
-                .font(.callout).foregroundStyle(.secondary)
             Text("Speak. Send. Privately.")
                 .font(.oqTaglineSerif)
-                .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, Theme.s32)
-                .padding(.top, Theme.s4)
         }
     }
 
-    private var links: some View {
-        HStack(spacing: Theme.s16) {
-            Link("Source",     destination: URL(string: "https://github.com/larryxiao/openquack")!)
-            Link("Vision",     destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/VISION.md")!)
-            Link("Benchmarks", destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/BENCHMARKS.md")!)
-        }
-        .font(.callout)
-    }
+    // MARK: status card — version, update state, primary actions
 
-    private var actions: some View {
-        VStack(spacing: Theme.s8) {
-            HStack(spacing: Theme.s12) {
+    private var statusCard: some View {
+        VStack(spacing: Theme.s12) {
+            HStack(spacing: Theme.s8) {
+                Text("Version")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(OpenQuackKit.version)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(Theme.ink.opacity(0.85))
+                Spacer()
+                updateStatusChip
+            }
+            Divider().opacity(0.35)
+            HStack(spacing: Theme.s8) {
                 Button(checkForUpdatesLabel) {
                     if let delegate = NSApp.delegate as? AppDelegate {
                         delegate.checkForUpdatesManually()
@@ -244,12 +249,19 @@ private struct AboutPane: View {
                     }
                 }
                 .buttonStyle(.bordered)
-            }
 
-            // Inline status — keeps "Check for updates" from feeling like a
-            // dead button when the user is already on the latest version.
-            updateStatusLine
+                Spacer()
+            }
         }
+        .padding(Theme.s16)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
+                .fill(Color.white.opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
+                .stroke(Color.black.opacity(0.06), lineWidth: 1)
+        )
     }
 
     private var checkForUpdatesLabel: String {
@@ -262,89 +274,93 @@ private struct AboutPane: View {
     }
 
     @ViewBuilder
-    private var updateStatusLine: some View {
+    private var updateStatusChip: some View {
         switch appState.updateStatus {
         case .unknown:
             EmptyView()
         case .checking:
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 ProgressView().controlSize(.mini)
-                Text("Checking GitHub Releases…")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("Checking…").font(.caption2).foregroundStyle(.secondary)
             }
-        case .upToDate(let version, _):
-            Label("You're on the latest — v\(version).", systemImage: "checkmark.circle.fill")
+        case .upToDate:
+            Label("Up to date", systemImage: "checkmark.circle.fill")
                 .labelStyle(.titleAndIcon)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(Theme.moss)
         case .available(let release):
-            HStack(spacing: Theme.s8) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(Theme.moss)
-                Text("v\(release.version) is available.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button(appState.installMethod.isBrew ? "Upgrade" : "Download") {
-                    UpgradeAction.run(release: release, installMethod: appState.installMethod)
-                }
-                .controlSize(.small)
+            Button {
+                UpgradeAction.run(release: release, installMethod: appState.installMethod)
+            } label: {
+                Label("v\(release.version) ready", systemImage: "arrow.down.circle.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.caption2)
             }
-        case .failed(let message):
-            Label("Couldn't check: \(message)", systemImage: "exclamationmark.triangle")
-                .font(.caption)
+            .buttonStyle(.borderless)
+            .foregroundStyle(Theme.moss)
+        case .failed:
+            Label("Check failed", systemImage: "exclamationmark.triangle")
+                .labelStyle(.titleAndIcon)
+                .font(.caption2)
                 .foregroundStyle(Theme.amber)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
         }
     }
 
-    // MARK: faq
+    // MARK: links
 
-    private var faq: some View {
-        VStack(alignment: .leading, spacing: Theme.s16) {
+    private var linksRow: some View {
+        HStack(spacing: Theme.s12) {
+            Link("Source",     destination: URL(string: "https://github.com/larryxiao/openquack")!)
+            Text("·").foregroundStyle(.tertiary)
+            Link("Vision",     destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/VISION.md")!)
+            Text("·").foregroundStyle(.tertiary)
+            Link("Benchmarks", destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/BENCHMARKS.md")!)
+        }
+        .font(.callout)
+    }
+
+    // MARK: faq — collapsible disclosure groups
+
+    private var faqSection: some View {
+        VStack(alignment: .leading, spacing: Theme.s8) {
             SectionHeader("FAQ")
-            faqItem(
-                q: "Why is the first launch slower?",
-                a: "OpenQuack downloads a small speech model on first run (about 700 MB for the default size). After that it lives on disk and dictation runs entirely offline. Loading the model into memory takes a few seconds at the start of each session, then dictations are instant."
+                .padding(.bottom, Theme.s4)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(Self.faqs.enumerated()), id: \.offset) { idx, item in
+                    if idx > 0 { Divider().opacity(0.25) }
+                    DisclosureGroup {
+                        Text(item.a)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, Theme.s8)
+                            .padding(.bottom, Theme.s8)
+                    } label: {
+                        Text(item.q)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(Theme.ink.opacity(0.85))
+                    }
+                    .padding(.vertical, Theme.s8)
+                }
+            }
+            .padding(.horizontal, Theme.s12)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
+                    .fill(Color.white.opacity(0.6))
             )
-            faqItem(
-                q: "Why does macOS keep asking for permission after I update?",
-                a: "macOS ties Accessibility and microphone grants to the app's signature. Pre-notarised builds ask again whenever the signature changes. Builds signed with a stable identity keep the grant across upgrades — that lands once Apple Developer ID is set up."
-            )
-            faqItem(
-                q: "Where do the speech-model files live on disk?",
-                a: "~/Library/Application Support/OpenQuack/WhisperKit/. Uninstalling via Homebrew with --zap clears them; manually deleting the folder is safe too."
-            )
-            faqItem(
-                q: "Can I use a different speech model?",
-                a: "Yes — Settings → Speech-to-text. Larger models are more accurate but use more disk and load more slowly. The default (medium) hits a good balance for most speech."
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.rCard, style: .continuous)
+                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func faqItem(q: String, a: String) -> some View {
-        VStack(alignment: .leading, spacing: Theme.s4) {
-            Text(q)
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Theme.ink.opacity(0.85))
-            Text(a)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    // MARK: footer
-
     private var footer: some View {
-        VStack(spacing: 4) {
-            Divider().opacity(0.4).padding(.horizontal, Theme.s32)
-            Text("Open source · MIT licensed · github.com/larryxiao")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .padding(.top, Theme.s12)
-                .padding(.bottom, Theme.s16)
-        }
+        Text("Open source · MIT licensed · github.com/larryxiao")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .padding(.top, Theme.s8)
     }
 }
 
@@ -409,6 +425,7 @@ private struct StatsPane: View {
         }
         .formStyle(.grouped)
         .padding()
+        .creamSettingsBackground()
         .task { await refresh() }
         .onChange(of: showUsageStats) { _ in
             Task { await refresh() }
@@ -476,9 +493,10 @@ private struct HistoryPane: View {
     @AppStorage("saveTranscripts")    private var saveTranscripts: Bool = true
     @AppStorage("saveAudio")          private var saveAudio: Bool = false
     @AppStorage("historyMaxEntries")  private var maxEntries: Int = 50
-    @AppStorage("historyMaxDays")     private var maxDays: Int = 14
-    @AppStorage("historyMaxMB")       private var maxMB: Int = 500
     @State private var entries: [HistoryEntry] = []
+
+    private static let entriesMin = 10
+    private static let entriesMax = 500
 
     var body: some View {
         Form {
@@ -486,7 +504,7 @@ private struct HistoryPane: View {
                 Toggle("Save transcripts", isOn: $saveTranscripts)
                 Toggle("Save audio (enables crash recovery)", isOn: $saveAudio)
                 if saveAudio {
-                    Text("Audio is stored locally and capped at \(maxMB) MB. Voice carries biometrics — keep this off if you share this Mac.")
+                    Text("Audio is stored locally on this Mac. Voice carries biometrics — keep this off if you share this Mac.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } header: {
@@ -494,12 +512,14 @@ private struct HistoryPane: View {
             }
 
             Section {
-                Stepper("Keep up to \(maxEntries) entries", value: $maxEntries, in: 10...500, step: 10)
-                    .onChange(of: maxEntries) { _ in updatePolicy() }
-                Stepper("Keep up to \(maxDays) days", value: $maxDays, in: 1...90)
-                    .onChange(of: maxDays) { _ in updatePolicy() }
-                Stepper("Cap disk at \(maxMB) MB", value: $maxMB, in: 100...5000, step: 100)
-                    .onChange(of: maxMB) { _ in updatePolicy() }
+                HStack {
+                    Text("Keep up to **\(maxEntries)** entries")
+                    Spacer()
+                    Button("Change…") { promptEditEntries() }
+                        .controlSize(.small)
+                }
+                Text("Older recordings are deleted oldest-first when this limit is exceeded.")
+                    .font(.caption).foregroundStyle(.secondary)
             } header: {
                 SectionHeader("Retention")
             }
@@ -523,7 +543,11 @@ private struct HistoryPane: View {
         }
         .formStyle(.grouped)
         .padding()
-        .task { await refresh() }
+        .creamSettingsBackground()
+        .task {
+            await refresh()
+            await syncPolicy()
+        }
     }
 
     private static var store: HistoryStore? {
@@ -534,16 +558,54 @@ private struct HistoryPane: View {
         entries = await Self.store?.list(limit: 50) ?? []
     }
 
-    private func updatePolicy() {
+    /// Push the entry-cap to the store. Other caps (age, disk size) stay
+    /// at very loose defaults so the entry count is the only lever the
+    /// user actually feels.
+    private func syncPolicy() async {
         let policy = RetentionPolicy(
             maxEntries: maxEntries,
-            maxAge: TimeInterval(maxDays) * 24 * 60 * 60,
-            maxBytesOnDisk: Int64(maxMB) * 1024 * 1024
+            maxAge: 365 * 24 * 60 * 60,
+            maxBytesOnDisk: 5 * 1024 * 1024 * 1024
         )
-        Task {
-            await Self.store?.setPolicy(policy)
-            await Self.store?.enforceRetention()
-            await refresh()
+        await Self.store?.setPolicy(policy)
+        await Self.store?.enforceRetention()
+    }
+
+    /// Modal input for the entry cap — the stepper felt like a chore.
+    private func promptEditEntries() {
+        let alert = NSAlert()
+        alert.messageText = "Keep up to how many entries?"
+        alert.informativeText = "Pick any number between \(Self.entriesMin) and \(Self.entriesMax)."
+
+        let field = NSTextField(string: String(maxEntries))
+        field.frame = NSRect(x: 0, y: 0, width: 80, height: 24)
+        field.alignment = .center
+        let formatter = NumberFormatter()
+        formatter.minimum = NSNumber(value: Self.entriesMin)
+        formatter.maximum = NSNumber(value: Self.entriesMax)
+        formatter.allowsFloats = false
+        field.formatter = formatter
+        alert.accessoryView = field
+
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        // Focus the text field so the user can type immediately, with the
+        // current value pre-selected for quick replacement.
+        DispatchQueue.main.async { [weak field] in
+            field?.becomeFirstResponder()
+            field?.currentEditor()?.selectAll(nil)
+        }
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let raw = field.integerValue
+        let clamped = min(Self.entriesMax, max(Self.entriesMin, raw))
+        if clamped != maxEntries {
+            maxEntries = clamped
+            Task {
+                await syncPolicy()
+                await refresh()
+            }
         }
     }
 

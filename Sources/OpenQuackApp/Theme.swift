@@ -186,6 +186,18 @@ extension View {
 
 // MARK: - Cream surface background
 
+/// Wrap a Settings pane's `Form` in cream, matching About. The form's own
+/// scrolled background is hidden so cards float on the warm surface
+/// instead of the default system grey.
+extension View {
+    func creamSettingsBackground() -> some View {
+        ZStack {
+            CreamSurface().ignoresSafeArea()
+            self.scrollContentBackground(.hidden)
+        }
+    }
+}
+
 /// Drop in as the topmost layer of a "reception" surface (onboarding, About).
 /// Honours dark mode by deferring to the visual-effect view there.
 struct CreamSurface: View {
@@ -226,19 +238,42 @@ struct DuckMark: View {
         }
     }
 
-    private static let markImage: NSImage? = {
-        let bundle = Bundle.module
-        guard let url1x = bundle.url(forResource: "duck-in-pond", withExtension: "png"),
-              let image = NSImage(contentsOf: url1x) else { return nil }
-        let logical = image.size
-        if let url2x = bundle.url(forResource: "duck-in-pond@2x", withExtension: "png"),
-           let img2x = NSImage(contentsOf: url2x),
-           let rep2x = img2x.representations.first {
-            rep2x.size = logical
-            image.addRepresentation(rep2x)
+    private static let markImage: NSImage? = loadBrandMark(named: "duck-in-pond")
+}
+
+/// Quacking duck — head + open beak + sound waves, pond-blue line-art.
+/// Used on the menu-bar popover header where "speak / listen" reads
+/// stronger than the at-rest duck-in-pond mark.
+struct QuackingDuck: View {
+    var size: CGFloat
+    var body: some View {
+        if let nsImage = Self.markImage {
+            Image(nsImage: nsImage)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .accessibilityLabel("OpenQuack")
+        } else {
+            Text("🦆").font(.system(size: size * 0.85))
         }
-        return image
-    }()
+    }
+    private static let markImage: NSImage? = loadBrandMark(named: "duck-quacking")
+}
+
+/// Shared bundle loader for `Resources/Brand/<name>.png` + `<name>@2x.png`.
+private func loadBrandMark(named name: String) -> NSImage? {
+    let bundle = Bundle.module
+    guard let url1x = bundle.url(forResource: name, withExtension: "png"),
+          let image = NSImage(contentsOf: url1x) else { return nil }
+    let logical = image.size
+    if let url2x = bundle.url(forResource: "\(name)@2x", withExtension: "png"),
+       let img2x = NSImage(contentsOf: url2x),
+       let rep2x = img2x.representations.first {
+        rep2x.size = logical
+        image.addRepresentation(rep2x)
+    }
+    return image
 }
 
 private struct VisualEffect: NSViewRepresentable {

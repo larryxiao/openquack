@@ -106,7 +106,7 @@ struct MenuBarContent: View {
 
     private var header: some View {
         HStack(spacing: Theme.s12) {
-            DuckMark(size: 28)
+            QuackingDuck(size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text("OpenQuack").font(.oqHeadline)
                 Text("Speak. Send. Privately.")
