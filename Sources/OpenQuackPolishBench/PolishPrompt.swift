@@ -4,7 +4,7 @@ public enum PolishPrompt {
     /// Ported verbatim from SPEC-007 §Prompt template. Every extra token here
     /// adds latency — keep it tight. Multilingual: input language drives output
     /// language.
-    public static let system: String = """
+    public static let baseSystem: String = """
     You reorganise raw voice transcriptions into clean, structured text.
 
     You MUST:
@@ -17,6 +17,19 @@ public enum PolishPrompt {
     - Preserve all technical terms, proper nouns, and names exactly as spoken.
     - Output ONLY the reorganised text — no commentary, labels, or markdown fences.
     """
+
+    /// Compose the system prompt with optional glossary and per-context nudge.
+    /// Glossary block sits between the base prompt and the context nudge so
+    /// it's the most-recent thing the model sees before the user message.
+    public static func system(glossary: Glossary?, appContext: String?) -> String {
+        var s = baseSystem
+        if let g = glossary, !g.terms.isEmpty {
+            s += "\n\nKnown vocabulary — preserve these spellings exactly when the input is a likely mishearing of one of them. Do not insert a glossary term unless it fits the context:\n"
+            s += g.terms.map { "- \($0)" }.joined(separator: "\n")
+        }
+        s += contextNudge(appContext)
+        return s
+    }
 
     /// SPEC-008 per-category nudges, appended to `system` when the case has
     /// app context. Empty for unknown / nil contexts.
@@ -39,11 +52,22 @@ public enum PolishPrompt {
         }
     }
 
-    /// Wrap raw text with optional `[Context: <kind>]` line. Mirrors v0.1's
-    /// thinker.py shape; the bench injects `appContext` from the case.
-    public static func userMessage(raw: String, appContext: String?) -> String {
-        guard let ctx = appContext, !ctx.isEmpty, ctx != "other" else { return raw }
-        return "[Context: writing in \(ctx)]\n\(raw)"
+    /// Wrap raw text with an explicit "Transcript:" label so small instruct
+    /// models don't read the message as a fresh question to answer (gemma3:1b
+    /// without the label asks the user to provide a transcript). Adds a
+    /// `[Context: <kind>]` line when the case has app context, and a
+    /// "Surrounding text:" block when the AX layer (or the bench's
+    /// per-case slot) supplies one.
+    public static func userMessage(raw: String, appContext: String?, surroundingText: String?) -> String {
+        var msg = ""
+        if let ctx = appContext, !ctx.isEmpty, ctx != "other" {
+            msg += "[Context: writing in \(ctx)]\n"
+        }
+        if let st = surroundingText, !st.isEmpty {
+            msg += "Surrounding text already in the field:\n\(st)\n\n"
+        }
+        msg += "Transcript:\n\(raw)"
+        return msg
     }
 
     /// Token budget for `num_predict`. Mirrors v0.1's

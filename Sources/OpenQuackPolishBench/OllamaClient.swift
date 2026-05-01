@@ -45,7 +45,7 @@ public struct OllamaClient: Sendable {
         user: String,
         temperature: Double,
         numPredict: Int,
-        keepAlive: String = "-1"
+        keepAlive: Int = -1
     ) async throws -> OllamaChatResponse {
         let url = baseURL.appendingPathComponent("api/chat")
         var req = URLRequest(url: url)
@@ -61,7 +61,7 @@ public struct OllamaClient: Sendable {
             ],
             "stream": false,
             "think": false,
-            "keep_alive": keepAlive,
+            "keep_alive": keepAlive,  // -1 = stay loaded, 0 = unload now
             "options": [
                 "temperature": temperature,
                 "num_predict": numPredict,
@@ -96,7 +96,7 @@ public struct OllamaClient: Sendable {
         let body: [String: Any] = [
             "model": model,
             "messages": [],
-            "keep_alive": "-1",
+            "keep_alive": -1,
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 

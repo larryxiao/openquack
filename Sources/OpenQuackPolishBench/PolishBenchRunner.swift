@@ -31,6 +31,8 @@ public enum PolishBenchRunner {
         model: String,
         cases: [PolishCase],
         client: OllamaClient,
+        glossary: Glossary?,
+        useSurroundingText: Bool,
         verbose: Bool
     ) async -> PolishModelResult {
         stderr("◇ \(model): warming...")
@@ -57,8 +59,12 @@ public enum PolishBenchRunner {
             do {
                 let resp = try await client.chat(
                     model: model,
-                    system: PolishPrompt.system + PolishPrompt.contextNudge(c.appContext),
-                    user: PolishPrompt.userMessage(raw: c.raw, appContext: c.appContext),
+                    system: PolishPrompt.system(glossary: glossary, appContext: c.appContext),
+                    user: PolishPrompt.userMessage(
+                        raw: c.raw,
+                        appContext: c.appContext,
+                        surroundingText: useSurroundingText ? c.surroundingText : nil
+                    ),
                     temperature: PolishPrompt.temperature(for: c.raw),
                     numPredict: PolishPrompt.numPredict(for: c.raw)
                 )

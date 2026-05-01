@@ -38,6 +38,14 @@ struct OpenQuackPolishBenchCommand: AsyncParsableCommand {
             help: "Run only the case with this id (smoke testing).")
     var onlyID: String?
 
+    @Option(name: .customLong("glossary"),
+            help: "Path to a glossary JSON {\"terms\": [...]}. When set, the terms are appended to the system prompt as known vocabulary.")
+    var glossary: String?
+
+    @Flag(name: .customLong("use-surrounding-text"),
+          help: "Inject the case's surrounding_text field into the user message. Off by default so unaugmented baseline is the default.")
+    var useSurroundingText: Bool = false
+
     @Flag(name: .customLong("verbose"),
           help: "Stream per-case progress to stderr.")
     var verbose: Bool = false
@@ -87,10 +95,23 @@ struct OpenQuackPolishBenchCommand: AsyncParsableCommand {
         stderr("◇ corpus: \(cases.count) cases at \(corpusURL.path)")
         stderr("◇ models: \(modelTags.joined(separator: ", "))")
 
+        let gloss: Glossary? = try glossary.map { try Glossary.load(at: URL(fileURLWithPath: $0)) }
+        if let g = gloss {
+            stderr("◇ glossary: \(g.terms.count) terms loaded from \(glossary!)")
+        }
+        if useSurroundingText {
+            stderr("◇ surrounding_text injection: ON")
+        }
+
         var results: [PolishModelResult] = []
         for tag in modelTags {
             let r = await PolishBenchRunner.run(
-                model: tag, cases: cases, client: client, verbose: verbose
+                model: tag,
+                cases: cases,
+                client: client,
+                glossary: gloss,
+                useSurroundingText: useSurroundingText,
+                verbose: verbose
             )
             results.append(r)
             if unloadAfter {
