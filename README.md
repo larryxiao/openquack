@@ -1,10 +1,10 @@
+<p align="center">
+  <img src="docs/images/banner.png" alt="OpenQuack — Speak. Send. Privately. Recording overlay shows 'Listening' with a live level meter; menu-bar popover shows 'Pasted at cursor' with the last transcript and a Settings / Quit footer.">
+</p>
+
 <div align="center">
 
-<img src="docs/images/app-icon.png" width="160" alt="OpenQuack app icon — quacking duck on cream">
-
-# OpenQuack
-
-**Speak. Send. Privately.**
+**OpenQuack** *Speak. Send. Privately.*
 
 Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
@@ -21,12 +21,6 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript appears at the cursor. Wherever you can type, you can talk.
 
 Speech recognition happens on your Mac. No cloud, no account, no signup, no telemetry.
-
-<p align="center">
-  <img src="docs/images/menubar.webp" width="420" alt="OpenQuack menu-bar popover — Speak. Send. Privately. with a Ready status and the dictation hotkey">
-  &nbsp;
-  <img src="docs/images/recording.webp" width="380" alt="OpenQuack recording overlay — small pill with a live audio level meter and elapsed time">
-</p>
 
 ## Why
 
@@ -49,12 +43,6 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 - **Quick first-launch setup** — permissions, hotkey, done in a minute.
 - **Tiny.** An 8 MB menu-bar app, plus the speech model on first run.
 - **Open source**, MIT.
-
-<p align="center">
-  <img src="docs/images/onboarding.webp" height="420" alt="OpenQuack first-launch welcome screen — Local-only by design, Fast and accurate, Open source MIT">
-  &nbsp;
-  <img src="docs/images/settings.webp" height="420" alt="OpenQuack Settings → General tab — Speech-to-text model picker, Behaviour toggles, Language">
-</p>
 
 ## Privacy, in one screen
 
