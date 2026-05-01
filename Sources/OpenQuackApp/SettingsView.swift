@@ -205,6 +205,19 @@ private struct AboutPane: View {
                 .padding(.bottom, Theme.s16)
             }
         }
+        // Auto-poll on appear — fills in `.unknown` immediately so the user
+        // sees "Up to date" or "vX.Y available" without clicking the button.
+        // Already-checked / in-flight states are left alone.
+        .task {
+            switch appState.updateStatus {
+            case .unknown, .failed:
+                if let delegate = NSApp.delegate as? AppDelegate {
+                    delegate.checkForUpdatesManually()
+                }
+            default:
+                break
+            }
+        }
     }
 
     // MARK: hero — mark, wordmark, tagline
@@ -315,6 +328,8 @@ private struct AboutPane: View {
             Link("Vision",     destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/VISION.md")!)
             Text("·").foregroundStyle(.tertiary)
             Link("Benchmarks", destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/BENCHMARKS.md")!)
+            Text("·").foregroundStyle(.tertiary)
+            Link("Tutorial",   destination: URL(string: "https://github.com/larryxiao/openquack/blob/main/docs/TUTORIAL.md")!)
         }
         .font(.callout)
     }

@@ -86,6 +86,8 @@ Or [download the DMG](https://github.com/larryxiao/openquack/releases) and drag 
 
 Grant **Microphone** when macOS asks, pick a hotkey in **Settings → Shortcut** (default ⌃⇧Space).
 
+Want a guided walkthrough? See [`docs/TUTORIAL.md`](docs/TUTORIAL.md) — five minutes from install to first dictation.
+
 ### Or tell your AI agent
 
 Paste this into Claude Code, Codex, opencode, Hermes, or similar:
@@ -111,7 +113,7 @@ OpenQuack is **AI-native open source** — every PR cites a SPEC, atomic tasks c
 
 Start with [`AGENTS.md`](AGENTS.md), pick a 🔵 task in [`docs/ROADMAP.md`](docs/ROADMAP.md), open a draft PR.
 
-Under the hood: [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`INSTALL`](docs/INSTALL.md).
+Under the hood: [`TUTORIAL`](docs/TUTORIAL.md) · [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`INSTALL`](docs/INSTALL.md).
 
 ## License
 

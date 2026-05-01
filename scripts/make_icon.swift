@@ -1,21 +1,47 @@
 #!/usr/bin/env swift
 
-// Generates build/AppIcon.icns from a procedural design — warm cream gradient
-// rounded square with a 🦆 mark centred. Replaces the system "no icon" with
-// something on-brand for v0; bespoke art can drop into the same path later
-// (just produce a build/AppIcon.iconset and rerun iconutil).
+// Generates build/AppIcon.icns from the design-system duck-in-pond mark
+// composited onto a cream rounded square. The mark loads from
+// `Sources/OpenQuackApp/Resources/Brand/duck-in-pond@2x.png` so the icon
+// stays in lockstep with whatever ships in the app bundle.
+//
+// At small icon sizes (16/32 pt) the line art gets thin; we counter by
+// drawing the mark at higher logical width than at large sizes — see the
+// per-size scale curve below.
 
 import AppKit
 import Foundation
 
 let cwd = FileManager.default.currentDirectoryPath
-let buildDir = URL(fileURLWithPath: cwd).appendingPathComponent("build")
+let buildDir   = URL(fileURLWithPath: cwd).appendingPathComponent("build")
 let iconsetDir = buildDir.appendingPathComponent("AppIcon.iconset")
-let icnsURL = buildDir.appendingPathComponent("AppIcon.icns")
+let icnsURL    = buildDir.appendingPathComponent("AppIcon.icns")
+let markURL    = URL(fileURLWithPath: cwd)
+    .appendingPathComponent("Sources/OpenQuackApp/Resources/Brand/duck-in-pond@2x.png")
+
+guard let mark = NSImage(contentsOf: markURL) else {
+    print("error: brand mark missing at \(markURL.path)")
+    exit(1)
+}
 
 try? FileManager.default.removeItem(at: iconsetDir)
 try FileManager.default.createDirectory(at: iconsetDir, withIntermediateDirectories: true)
-try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+try FileManager.default.createDirectory(at: buildDir,   withIntermediateDirectories: true)
+
+// Cream tones — match Theme.swift / `--oq-cream` from the design system.
+let creamTop    = NSColor(srgbRed: 0.969, green: 0.957, blue: 0.929, alpha: 1.0)  // #F7F4ED
+let creamBottom = NSColor(srgbRed: 0.910, green: 0.875, blue: 0.788, alpha: 1.0)  // #E8DFC9 (creamRaised)
+
+// Scale curve: bigger marks at small canvases so the line weight reads,
+// smaller marks at large canvases for proper "icon" breathing room.
+func markScale(side: CGFloat) -> CGFloat {
+    switch side {
+    case ..<48:   return 0.92
+    case ..<128:  return 0.86
+    case ..<512:  return 0.80
+    default:      return 0.76
+    }
+}
 
 func renderIcon(side: CGFloat) -> NSImage {
     let img = NSImage(size: NSSize(width: side, height: side))
@@ -25,44 +51,32 @@ func renderIcon(side: CGFloat) -> NSImage {
     let rect = NSRect(x: 0, y: 0, width: side, height: side)
     let cornerRadius = side * 0.22
 
-    // Warm cream → soft amber gradient.
-    let top    = NSColor(srgbRed: 1.00, green: 0.94, blue: 0.74, alpha: 1.0)
-    let bottom = NSColor(srgbRed: 0.96, green: 0.78, blue: 0.36, alpha: 1.0)
-    let gradient = NSGradient(starting: top, ending: bottom)!
+    // Cream gradient bg.
+    let gradient = NSGradient(starting: creamTop, ending: creamBottom)!
     let bg = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
     gradient.draw(in: bg, angle: -90)
 
-    // Inner hairline for a slight rim.
-    NSColor.black.withAlphaComponent(0.08).setStroke()
+    // Inner hairline rim — gives the icon a subtle crisp edge.
+    NSColor.black.withAlphaComponent(0.06).setStroke()
     let inset = NSBezierPath(
         roundedRect: rect.insetBy(dx: max(1, side * 0.008), dy: max(1, side * 0.008)),
         xRadius: cornerRadius * 0.96, yRadius: cornerRadius * 0.96
     )
-    inset.lineWidth = max(1, side * 0.01)
+    inset.lineWidth = max(1, side * 0.010)
     inset.stroke()
 
-    // Soft drop-shadow for the glyph so it lifts off the gradient.
-    let shadow = NSShadow()
-    shadow.shadowColor = NSColor.black.withAlphaComponent(0.18)
-    shadow.shadowBlurRadius = side * 0.04
-    shadow.shadowOffset = NSSize(width: 0, height: -side * 0.012)
-    shadow.set()
-
-    // 🦆 centred. Use a font size relative to icon side — leaves margin for the rim.
-    let emojiSize = side * 0.66
-    let para = NSMutableParagraphStyle()
-    para.alignment = .center
-    let attrs: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: emojiSize),
-        .paragraphStyle: para,
-    ]
-    let glyph = NSAttributedString(string: "🦆", attributes: attrs)
-    let glyphSize = glyph.size()
-    let origin = NSPoint(
-        x: (side - glyphSize.width) / 2,
-        y: (side - glyphSize.height) / 2 - side * 0.03  // shifted down slightly for visual balance
+    // Composite the duck-in-pond mark, centred, preserving its native aspect.
+    let scale = markScale(side: side)
+    let markAspect = mark.size.width / max(mark.size.height, 1)
+    let markW = side * scale
+    let markH = markW / markAspect
+    let markRect = NSRect(
+        x: (side - markW) / 2,
+        y: (side - markH) / 2,
+        width: markW,
+        height: markH
     )
-    glyph.draw(at: origin)
+    mark.draw(in: markRect, from: .zero, operation: .sourceOver, fraction: 1.0)
 
     return img
 }
@@ -93,7 +107,7 @@ let layouts: [(side: Int, name: String)] = [
     (1024, "icon_512x512@2x.png"),
 ]
 
-print("→ Rendering \(layouts.count) sizes...")
+print("→ Rendering \(layouts.count) sizes from duck-in-pond mark...")
 for layout in layouts {
     let img = renderIcon(side: CGFloat(layout.side))
     try writePNG(img, side: layout.side, name: layout.name)
@@ -111,6 +125,4 @@ guard p.terminationStatus == 0 else {
 }
 
 print("✓ \(icnsURL.path)")
-
-// Tidy the intermediate iconset; the .icns is the only durable artefact.
 try? FileManager.default.removeItem(at: iconsetDir)
