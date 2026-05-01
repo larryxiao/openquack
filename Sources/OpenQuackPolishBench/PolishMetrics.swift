@@ -72,8 +72,8 @@ public enum PolishMetrics {
     }
 
     static func lengthRatio(raw: String, polished: String) -> Double {
-        let r = max(1, PolishPrompt.estimateWords(raw))
-        let p = PolishPrompt.estimateWords(polished)
+        let r = max(1, PolishPrompts.estimateWords(raw))
+        let p = PolishPrompts.estimateWords(polished)
         return Double(p) / Double(r)
     }
 

@@ -10,6 +10,9 @@ public enum PolishReport {
             for c in r.perCase {
                 let row = OutputRow(
                     model: r.model,
+                    prompt_id: r.promptID,
+                    use_surrounding_text: r.useSurroundingText,
+                    vocab_size: r.vocabularySize,
                     case_id: c.caseID,
                     category: c.category,
                     language: c.language,
@@ -42,11 +45,12 @@ public enum PolishReport {
     }
 
     public static func writeCSV(_ results: [PolishModelResult], to url: URL) throws {
-        var lines = ["model,case_id,category,language,app_context,total_s,prompt_eval_s,eval_s,eval_tokens,filler_removal,punctuation,length_ratio,must_contain,must_not_contain,edit_distance,ref_min_distance,used_delta_mb,compressed_delta_mb,pageins_delta,error"]
+        var lines = ["model,prompt_id,use_surr,vocab_size,case_id,category,language,app_context,total_s,prompt_eval_s,eval_s,eval_tokens,filler_removal,punctuation,length_ratio,must_contain,must_not_contain,edit_distance,ref_min_distance,used_delta_mb,compressed_delta_mb,pageins_delta,error"]
         for r in results {
             for c in r.perCase {
                 let row = [
-                    r.model, c.caseID, c.category, c.language, c.appContext ?? "",
+                    r.model, r.promptID, r.useSurroundingText ? "yes" : "no", String(r.vocabularySize),
+                    c.caseID, c.category, c.language, c.appContext ?? "",
                     f(c.totalSeconds, 3), f(c.promptEvalSeconds, 3), f(c.evalSeconds, 3),
                     String(c.evalTokens),
                     optf(c.scores.fillerRemoval, 3),
@@ -73,22 +77,23 @@ public enum PolishReport {
         s += "**Date:** \(Date())\n\n"
         s += "_Auto micro-metrics only — judge scores are added by `bench/judge.py`._\n\n"
 
-        s += "## Aggregate (per model)\n\n"
-        s += "| Model | Warm | Mean wall | P95 wall | Tokens/s | ΔUsed peak | ΔCompressed peak | Peak RSS | Cases |\n"
-        s += "|---|---:|---:|---:|---:|---:|---:|---:|---:|\n"
+        s += "## Aggregate (per model × prompt × context)\n\n"
+        s += "| Model | Prompt | Vocab | Surr | Warm | Mean wall | P95 wall | Tokens/s | ΔUsed peak | ΔCompressed peak | Cases |\n"
+        s += "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n"
         for r in results {
             let walls = r.perCase.compactMap { $0.error == nil ? $0.totalSeconds : nil }
             let mean = walls.isEmpty ? 0 : walls.reduce(0,+) / Double(walls.count)
             let p95  = percentile(walls.sorted(), 0.95)
             let tps  = tokensPerSec(r.perCase)
-            s += "| `\(r.model)` | \(fmt(r.warmSeconds, 1))s | \(fmt(mean, 2))s | \(fmt(p95, 2))s | \(fmt(tps, 0)) | \(mb(r.peakUsedDeltaBytes)) | \(mb(r.peakCompressedDeltaBytes)) | \(mb(r.peakResidentBytes)) | \(walls.count)/\(r.perCase.count) |\n"
+            let surr = r.useSurroundingText ? "✓" : "—"
+            s += "| `\(r.model)` | `\(r.promptID)` | \(r.vocabularySize) | \(surr) | \(fmt(r.warmSeconds, 1))s | \(fmt(mean, 2))s | \(fmt(p95, 2))s | \(fmt(tps, 0)) | \(mb(r.peakUsedDeltaBytes)) | \(mb(r.peakCompressedDeltaBytes)) | \(walls.count)/\(r.perCase.count) |\n"
         }
 
         s += "\n## Per-category quality (means; nil cases omitted)\n\n"
         for cat in PolishCase.Category.allCases {
             s += "\n### \(cat.rawValue)\n\n"
-            s += "| Model | Filler↑ | Punct↑ | LenRatio | MustContain↑ | MustNotContain↑ | RefMinDist↓ |\n"
-            s += "|---|---:|---:|---:|---:|---:|---:|\n"
+            s += "| Model | Prompt | Vocab | Surr | Filler↑ | Punct↑ | LenRatio | MustContain↑ | MustNotContain↑ | RefMinDist↓ |\n"
+            s += "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|\n"
             for r in results {
                 let cs = r.perCase.filter { $0.category == cat.rawValue && $0.error == nil }
                 if cs.isEmpty { continue }
@@ -98,13 +103,14 @@ public enum PolishReport {
                 let mc     = mean(cs.map { $0.scores.mustContainHits })
                 let mnc    = mean(cs.map { $0.scores.mustNotContainHits })
                 let rmd    = mean(cs.map { Double($0.scores.referenceMinDistance) })
-                s += "| `\(r.model)` | \(optfmt(filler, 2)) | \(fmt(punct, 2)) | \(fmt(lr, 2)) | \(fmt(mc, 2)) | \(fmt(mnc, 2)) | \(fmt(rmd, 1)) |\n"
+                let surr   = r.useSurroundingText ? "✓" : "—"
+                s += "| `\(r.model)` | `\(r.promptID)` | \(r.vocabularySize) | \(surr) | \(optfmt(filler, 2)) | \(fmt(punct, 2)) | \(fmt(lr, 2)) | \(fmt(mc, 2)) | \(fmt(mnc, 2)) | \(fmt(rmd, 1)) |\n"
             }
         }
 
         s += "\n## Per-case detail\n\n"
         for r in results {
-            s += "\n### `\(r.model)`\n\n"
+            s += "\n### `\(r.model)` × prompt:`\(r.promptID)` (vocab=\(r.vocabularySize), surr=\(r.useSurroundingText ? "✓" : "—"))\n\n"
             s += "| Case | Wall | Length | Filler | MustHit | MustMiss | Polished |\n"
             s += "|---|---:|---:|---:|---:|---:|---|\n"
             for c in r.perCase {
@@ -122,6 +128,9 @@ public enum PolishReport {
 
     private struct OutputRow: Encodable {
         let model: String
+        let prompt_id: String
+        let use_surrounding_text: Bool
+        let vocab_size: Int
         let case_id: String
         let category: String
         let language: String

@@ -14,6 +14,10 @@ struct OpenQuackPolishBenchCommand: AsyncParsableCommand {
             help: "Comma-separated Ollama model tags. Default: the SPEC-007 candidate sweep.")
     var models: String = "gemma3:270m,qwen2.5:0.5b-instruct,gemma3:1b,llama3.2:1b,gemma3:4b-it-qat"
 
+    @Option(name: .customLong("prompts"),
+            help: "Comma-separated prompt version ids. Each (model × prompt) pair runs as its own row. Known: v1, v2.")
+    var prompts: String = "v1,v2"
+
     @Option(name: .customLong("corpus"),
             help: "Path to polish corpus JSONL.")
     var corpus: String = "bench/polish_corpus/cases.jsonl"
@@ -38,9 +42,9 @@ struct OpenQuackPolishBenchCommand: AsyncParsableCommand {
             help: "Run only the case with this id (smoke testing).")
     var onlyID: String?
 
-    @Option(name: .customLong("glossary"),
-            help: "Path to a glossary JSON {\"terms\": [...]}. When set, the terms are appended to the system prompt as known vocabulary.")
-    var glossary: String?
+    @Option(name: .customLong("vocab"),
+            help: "Path to a vocabulary JSON {\"terms\": [...]}. When set, the terms fill the VOCABULARY slot of the system prompt.")
+    var vocab: String?
 
     @Flag(name: .customLong("use-surrounding-text"),
           help: "Inject the case's surrounding_text field into the user message. Off by default so unaugmented baseline is the default.")
@@ -80,6 +84,12 @@ struct OpenQuackPolishBenchCommand: AsyncParsableCommand {
             .filter { !$0.isEmpty }
         guard !modelTags.isEmpty else { throw ValidationError("--models is empty.") }
 
+        let promptIDs = prompts
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let promptVersions = try PolishPrompts.resolve(promptIDs)
+
         guard let url = URL(string: ollamaURL) else { throw ValidationError("invalid --ollama-url") }
         let client = OllamaClient(baseURL: url)
         let installed = (try? await client.listModels()) ?? []
@@ -94,10 +104,11 @@ struct OpenQuackPolishBenchCommand: AsyncParsableCommand {
         stderr("◇ host: \(host.hostTag) — \(host.chip), \(String(format: "%.0f", host.memoryGB)) GB")
         stderr("◇ corpus: \(cases.count) cases at \(corpusURL.path)")
         stderr("◇ models: \(modelTags.joined(separator: ", "))")
+        stderr("◇ prompts: \(promptVersions.map(\.id).joined(separator: ", "))")
 
-        let gloss: Glossary? = try glossary.map { try Glossary.load(at: URL(fileURLWithPath: $0)) }
-        if let g = gloss {
-            stderr("◇ glossary: \(g.terms.count) terms loaded from \(glossary!)")
+        let vocabulary: [String] = try vocab.map { try VocabularyFile.load(at: URL(fileURLWithPath: $0)) } ?? []
+        if !vocabulary.isEmpty {
+            stderr("◇ vocabulary: \(vocabulary.count) terms loaded from \(vocab!)")
         }
         if useSurroundingText {
             stderr("◇ surrounding_text injection: ON")
@@ -105,15 +116,18 @@ struct OpenQuackPolishBenchCommand: AsyncParsableCommand {
 
         var results: [PolishModelResult] = []
         for tag in modelTags {
-            let r = await PolishBenchRunner.run(
-                model: tag,
-                cases: cases,
-                client: client,
-                glossary: gloss,
-                useSurroundingText: useSurroundingText,
-                verbose: verbose
-            )
-            results.append(r)
+            for prompt in promptVersions {
+                let r = await PolishBenchRunner.run(
+                    model: tag,
+                    prompt: prompt,
+                    cases: cases,
+                    client: client,
+                    vocabulary: vocabulary,
+                    useSurroundingText: useSurroundingText,
+                    verbose: verbose
+                )
+                results.append(r)
+            }
             if unloadAfter {
                 try? await client.unload(model: tag)
             }

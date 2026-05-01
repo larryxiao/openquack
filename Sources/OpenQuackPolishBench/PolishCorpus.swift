@@ -43,16 +43,14 @@ public struct PolishCase: Codable, Sendable {
     }
 }
 
-/// Static vocabulary list loaded from JSON. Mirrors what Settings → Vocabulary
-/// (and an AX/auto-mined glossary) would feed the runtime polish engine.
-public struct Glossary: Sendable {
-    public let terms: [String]
-
-    public static func load(at url: URL) throws -> Glossary {
+/// Loads `{"terms": [...]}` from JSON. Just a list of strings — there is no
+/// "Glossary" concept at the architectural level; the terms are the vocabulary
+/// slot inside the system prompt.
+public enum VocabularyFile {
+    public static func load(at url: URL) throws -> [String] {
         let data = try Data(contentsOf: url)
         struct File: Decodable { let terms: [String] }
-        let decoded = try JSONDecoder().decode(File.self, from: data)
-        return Glossary(terms: decoded.terms)
+        return try JSONDecoder().decode(File.self, from: data).terms
     }
 }
 

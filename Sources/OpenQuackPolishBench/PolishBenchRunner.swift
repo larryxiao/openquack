@@ -19,6 +19,9 @@ public struct PolishCaseResult: Sendable {
 
 public struct PolishModelResult: Sendable {
     public let model: String
+    public let promptID: String
+    public let useSurroundingText: Bool
+    public let vocabularySize: Int
     public let warmSeconds: Double
     public let perCase: [PolishCaseResult]
     public let peakResidentBytes: Int64       // process RSS, kept for continuity
@@ -29,13 +32,14 @@ public struct PolishModelResult: Sendable {
 public enum PolishBenchRunner {
     public static func run(
         model: String,
+        prompt: PolishPromptVersion,
         cases: [PolishCase],
         client: OllamaClient,
-        glossary: Glossary?,
+        vocabulary: [String],
         useSurroundingText: Bool,
         verbose: Bool
     ) async -> PolishModelResult {
-        stderr("◇ \(model): warming...")
+        stderr("◇ \(model) × prompt:\(prompt.id): warming...")
         let warmStart = Date()
         do {
             try await client.warm(model: model)
@@ -59,14 +63,14 @@ public enum PolishBenchRunner {
             do {
                 let resp = try await client.chat(
                     model: model,
-                    system: PolishPrompt.system(glossary: glossary, appContext: c.appContext),
-                    user: PolishPrompt.userMessage(
-                        raw: c.raw,
-                        appContext: c.appContext,
-                        surroundingText: useSurroundingText ? c.surroundingText : nil
+                    system: prompt.composeSystem(vocabulary, c.appContext),
+                    user: prompt.composeUser(
+                        c.raw,
+                        c.appContext,
+                        useSurroundingText ? c.surroundingText : nil
                     ),
-                    temperature: PolishPrompt.temperature(for: c.raw),
-                    numPredict: PolishPrompt.numPredict(for: c.raw)
+                    temperature: prompt.temperature(c.raw),
+                    numPredict: prompt.numPredict(c.raw)
                 )
                 let totalWall = Date().timeIntervalSince(t0)
                 let after = MemoryPressure.snapshot()
@@ -129,6 +133,9 @@ public enum PolishBenchRunner {
 
         return PolishModelResult(
             model: model,
+            promptID: prompt.id,
+            useSurroundingText: useSurroundingText,
+            vocabularySize: vocabulary.count,
             warmSeconds: warmSeconds,
             perCase: perCase,
             peakResidentBytes: peakRSS,
