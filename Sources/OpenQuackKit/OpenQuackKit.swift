@@ -1,5 +1,7 @@
 import Foundation
+@_exported import OpenQuackPlatform
 
 public enum OpenQuackKit {
-    public static let version = "2.0.0-alpha.8"
+    /// Re-exported from `OpenQuackPlatform.version` so existing call sites keep working.
+    public static var version: String { OpenQuackPlatform.version }
 }
