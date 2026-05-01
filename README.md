@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/duck-in-pond.png" width="160" alt="OpenQuack duck-in-pond mark">
+<img src="docs/images/app-icon.png" width="160" alt="OpenQuack app icon — quacking duck on cream">
 
 # OpenQuack
 
