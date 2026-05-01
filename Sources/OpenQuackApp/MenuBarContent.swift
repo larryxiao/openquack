@@ -203,22 +203,24 @@ struct MenuBarContent: View {
         }
     }
 
+    /// The hotkey is rendered separately on the right of the bottom row, so
+    /// the hint copy never embeds the glyph — keeps the two halves of the
+    /// row visually distinct (verb on the left, key on the right).
     private var hint: String {
-        let hk = HotkeyDisplay.current
         switch state.phase {
         case .warming:
             return "First launch downloads ~700 MB. Subsequent launches are offline."
         case .idle:
-            return "Press \(hk) to dictate."
+            return "Press to dictate."
         case .ready:
             if !state.accessibilityTrusted && !state.lastPasted {
                 return "Grant Accessibility above to paste at cursor."
             }
-            return "Press \(hk) to dictate again."
+            return "Press to dictate again."
         case .starting:
             return "Starting up the mic…"
         case .recording:
-            return "Press \(hk) to finish."
+            return "Press to finish."
         case .transcribing:
             return "Wait a moment — transcribing locally."
         case .error(let msg):
