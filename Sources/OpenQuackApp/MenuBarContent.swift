@@ -2,22 +2,22 @@ import SwiftUI
 import AppKit
 import OpenQuackKit
 
-/// Popover that appears when the user clicks the menu-bar duck.
+/// Popover that appears on left-click of the menu-bar duck.
 ///
-/// Composition (top → bottom): update banner → accessibility banner → hero
-/// (duck + live status + hint) → transcript → footer. Header and status
-/// are merged into a single hero block so the popover reads "what is the
-/// duck doing right now" first, brand identity second.
+/// Minimal hero by design: big quacking-duck mark on the left, live state
+/// on the right (status text + level meter when recording + a hint row
+/// with the dictation hotkey). Banners (update / accessibility) and the
+/// last-transcript card layer in above and below the hero when relevant.
+/// App-management actions (Show app, Quit) live in the right-click menu.
 struct MenuBarContent: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.s16) {
+        VStack(alignment: .leading, spacing: Theme.s12) {
             updateBanner
             accessibilityBanner
             heroSection
             transcriptSection
-            footer
         }
         .padding(Theme.s16)
         .frame(width: 340)
@@ -56,8 +56,6 @@ struct MenuBarContent: View {
         }
     }
 
-    /// Subtitle copy adapts to the install method — brew users get a
-    /// shell command they can paste; manual users get a download note.
     private var updateSubtitle: String {
         switch state.installMethod {
         case .homebrew: return "Tap Upgrade — runs `brew upgrade --cask openquack` in Terminal."
@@ -100,41 +98,72 @@ struct MenuBarContent: View {
         }
     }
 
-    // MARK: - hero (brand + live status + hint)
+    // MARK: - hero (big duck + live state)
 
     private var heroSection: some View {
-        VStack(alignment: .leading, spacing: Theme.s8) {
-            // Brand row: duck + name + tagline.
-            HStack(alignment: .center, spacing: Theme.s12) {
-                QuackingDuck(size: 36)
-                    .frame(width: 36, height: 36)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("OpenQuack").font(.oqHeadline)
-                    Text("Speak. Send. Privately.")
-                        .font(.caption2)
+        HStack(alignment: .center, spacing: Theme.s16) {
+            QuackingDuck(size: 72)
+                .frame(width: 72, height: 72)
+
+            VStack(alignment: .leading, spacing: Theme.s8) {
+                // Status / phase title — fills the visual weight of "OpenQuack".
+                HStack(spacing: 6) {
+                    Text(statusTitle)
+                        .font(.title3.weight(.semibold))
+                    Spacer(minLength: 0)
+                    if case .recording = state.phase {
+                        Text(String(format: "%.1fs", state.elapsedSeconds))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // State-dependent middle row: meter when recording, progress
+                // when transcribing, otherwise nothing.
+                stateContent
+
+                Divider().opacity(0.4)
+
+                // Bottom row: hint on left, hotkey glyphs on right.
+                HStack(alignment: .center, spacing: Theme.s8) {
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: Theme.s8)
+                    Text(HotkeyDisplay.current)
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             }
-
-            // Status row: dot + live phase text + (recording elapsed).
-            HStack(spacing: 6) {
-                StatusDot(phase: state.phase)
-                Text(statusText)
-                    .font(.callout.weight(.medium))
-                Spacer(minLength: 0)
-                if case .recording = state.phase {
-                    Text(String(format: "%.1fs", state.elapsedSeconds))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Text(hint)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
+
+    @ViewBuilder
+    private var stateContent: some View {
+        switch state.phase {
+        case .recording:
+            PopoverLevelMeter(history: state.levelHistory)
+        case .transcribing:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Audio stays on your Mac.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        case .warming:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Loading model…")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        default:
+            // Idle / ready / starting / error → no extra row; keeps the
+            // hero quiet when nothing is actively happening.
+            EmptyView()
+        }
+    }
+
+    // MARK: - transcript (kept below hero when there is one)
 
     @ViewBuilder
     private var transcriptSection: some View {
@@ -159,42 +188,17 @@ struct MenuBarContent: View {
         }
     }
 
-    private var footer: some View {
-        HStack(spacing: Theme.s12) {
-            if state.lastTranscript != nil {
-                Button("Copy") { PasteService.copyToClipboard(state.lastTranscript ?? "") }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-            }
-            Spacer()
-            Button {
-                SettingsWindowController.show(appState: state)
-            } label: {
-                Label("Settings", systemImage: "gearshape")
-                    .labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.borderless)
-            .font(.caption.weight(.medium))
-            .keyboardShortcut(",", modifiers: .command)
-            Button("Quit") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.borderless)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .keyboardShortcut("q", modifiers: .command)
-        }
-    }
-
     // MARK: - phase derivations
 
-    private var statusText: String {
+    private var statusTitle: String {
         switch state.phase {
-        case .warming:                  return "Getting ready…"
+        case .warming:                  return "Getting ready"
         case .idle:                     return "Ready"
         case .starting:                 return "Starting…"
-        case .recording:                return "Listening"
+        case .recording:                return "Listening…"
         case .transcribing:             return "Thinking…"
         case .ready:
-            return state.lastPasted ? "Pasted at cursor" : "On clipboard — press ⌘V to paste"
+            return state.lastPasted ? "Pasted at cursor" : "On clipboard"
         case .error:                    return "Error"
         }
     }
@@ -203,22 +207,58 @@ struct MenuBarContent: View {
         let hk = HotkeyDisplay.current
         switch state.phase {
         case .warming:
-            return "First launch downloads about 700 MB. After that, every launch is offline and takes 5–10 s."
+            return "First launch downloads ~700 MB. Subsequent launches are offline."
         case .idle:
             return "Press \(hk) to dictate."
         case .ready:
             if !state.accessibilityTrusted && !state.lastPasted {
-                return "Grant Accessibility above to paste at cursor automatically."
+                return "Grant Accessibility above to paste at cursor."
             }
-            return "Press \(hk) to dictate."
+            return "Press \(hk) to dictate again."
         case .starting:
             return "Starting up the mic…"
         case .recording:
             return "Press \(hk) to finish."
         case .transcribing:
-            return "Thinking — your audio stays on your Mac."
+            return "Wait a moment — transcribing locally."
         case .error(let msg):
             return msg
         }
+    }
+}
+
+// MARK: - Level meter for the popover
+
+/// Wider, ink-toned variant of the recording-overlay level meter so it
+/// reads on the popover's translucent material. Same `[Float]` history as
+/// the overlay; fade older bars subtly so the right edge feels live.
+private struct PopoverLevelMeter: View {
+    let history: [Float]
+
+    private let barWidth: CGFloat = 3
+    private let barSpacing: CGFloat = 4
+    private let maxBarHeight: CGFloat = 22
+
+    var body: some View {
+        HStack(alignment: .center, spacing: barSpacing) {
+            ForEach(Array(history.enumerated()), id: \.offset) { idx, level in
+                Capsule()
+                    .fill(Theme.ink.opacity(opacity(at: idx)))
+                    .frame(width: barWidth, height: barHeight(level))
+                    .animation(.easeOut(duration: 0.10), value: level)
+            }
+        }
+        .frame(height: maxBarHeight)
+    }
+
+    private func barHeight(_ level: Float) -> CGFloat {
+        let scaled = CGFloat(level) * maxBarHeight
+        return max(3, min(maxBarHeight, scaled))
+    }
+
+    private func opacity(at index: Int) -> Double {
+        let total = max(1, history.count - 1)
+        let position = Double(index) / Double(total)
+        return 0.45 + 0.45 * position
     }
 }

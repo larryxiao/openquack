@@ -245,6 +245,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc func togglePopover(_ sender: AnyObject?) {
+        // Route right-click to a small context menu (Show app, Quit). Left
+        // click toggles the popover with live state.
+        if let event = NSApp.currentEvent,
+           event.type == .rightMouseUp || event.type == .rightMouseDown {
+            showStatusItemMenu()
+            return
+        }
         guard let button = statusItem.button else { return }
         if popover.isShown {
             popover.performClose(sender)
@@ -257,6 +264,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.contentViewController?.view.window?.makeKey()
             monitorClicksOutside()
         }
+    }
+
+    /// Right-click context menu — minimal: Show app + Quit. Settings still
+    /// reachable via the popover; `showApp` opens it directly so power users
+    /// can skip the popover entirely.
+    @MainActor
+    private func showStatusItemMenu() {
+        let menu = NSMenu()
+
+        let show = NSMenuItem(title: "Show app", action: #selector(menuShowApp), keyEquivalent: ",")
+        show.target = self
+        menu.addItem(show)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: "Quit OpenQuack", action: #selector(menuQuitApp), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+
+        // Attach the menu, fire a synthetic click so AppKit shows it
+        // anchored to the status-item button, then detach so the next
+        // click routes back to `togglePopover`.
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    @MainActor
+    @objc private func menuShowApp() {
+        SettingsWindowController.show(appState: appState)
+    }
+
+    @MainActor
+    @objc private func menuQuitApp() {
+        NSApplication.shared.terminate(nil)
     }
 
     @MainActor
