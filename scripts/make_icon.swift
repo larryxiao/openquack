@@ -34,45 +34,57 @@ let creamBottom = NSColor(srgbRed: 0.910, green: 0.875, blue: 0.788, alpha: 1.0)
 
 // Scale curve: bigger marks at small canvases so the line weight reads,
 // smaller marks at large canvases for proper "icon" breathing room.
-func markScale(side: CGFloat) -> CGFloat {
-    switch side {
-    case ..<48:   return 0.92
-    case ..<128:  return 0.86
-    case ..<512:  return 0.80
-    default:      return 0.76
+// Computed relative to the *inner* (visible) square, not the canvas.
+func markScale(innerSide: CGFloat) -> CGFloat {
+    switch innerSide {
+    case ..<48:   return 0.86
+    case ..<128:  return 0.80
+    case ..<512:  return 0.74
+    default:      return 0.70
     }
 }
+
+// macOS Big Sur+ icon template: the visible rounded square is ~824 px on
+// a 1024-canvas (≈ 80.5%), leaving ~100 px transparent margin per side
+// so app icons line up with system apps in the Dock and Finder.
+// `iconMarginFraction` is the per-side margin as a fraction of canvas.
+let iconMarginFraction: CGFloat = 100.0 / 1024.0
 
 func renderIcon(side: CGFloat) -> NSImage {
     let img = NSImage(size: NSSize(width: side, height: side))
     img.lockFocus()
     defer { img.unlockFocus() }
 
-    let rect = NSRect(x: 0, y: 0, width: side, height: side)
-    let cornerRadius = side * 0.22
+    // Transparent margin → visible rounded square inside.
+    let margin = (side * iconMarginFraction).rounded()
+    let innerSide = side - margin * 2
+    let rect = NSRect(x: margin, y: margin, width: innerSide, height: innerSide)
+    // Apple's template radius on the 824 visible square is ~185 (≈ 22.5%).
+    let cornerRadius = innerSide * 0.225
 
-    // Cream gradient bg.
+    // Cream gradient bg, painted only inside the rounded inner rect; the
+    // canvas margin stays transparent.
     let gradient = NSGradient(starting: creamTop, ending: creamBottom)!
     let bg = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
     gradient.draw(in: bg, angle: -90)
 
     // Inner hairline rim — gives the icon a subtle crisp edge.
     NSColor.black.withAlphaComponent(0.06).setStroke()
-    let inset = NSBezierPath(
-        roundedRect: rect.insetBy(dx: max(1, side * 0.008), dy: max(1, side * 0.008)),
-        xRadius: cornerRadius * 0.96, yRadius: cornerRadius * 0.96
+    let rim = NSBezierPath(
+        roundedRect: rect.insetBy(dx: max(0.5, innerSide * 0.005), dy: max(0.5, innerSide * 0.005)),
+        xRadius: cornerRadius * 0.97, yRadius: cornerRadius * 0.97
     )
-    inset.lineWidth = max(1, side * 0.010)
-    inset.stroke()
+    rim.lineWidth = max(1, innerSide * 0.008)
+    rim.stroke()
 
-    // Composite the duck-in-pond mark, centred, preserving its native aspect.
-    let scale = markScale(side: side)
+    // Composite the mark, centred in the inner rect, preserving native aspect.
+    let scale = markScale(innerSide: innerSide)
     let markAspect = mark.size.width / max(mark.size.height, 1)
-    let markW = side * scale
+    let markW = innerSide * scale
     let markH = markW / markAspect
     let markRect = NSRect(
-        x: (side - markW) / 2,
-        y: (side - markH) / 2,
+        x: rect.midX - markW / 2,
+        y: rect.midY - markH / 2,
         width: markW,
         height: markH
     )
