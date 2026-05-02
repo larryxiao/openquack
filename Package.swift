@@ -53,6 +53,14 @@ let package = Package(
             path: "Sources/OpenQuackPlatform"
         ),
         .target(
+            name: "OpenQuackStreaming",
+            dependencies: [
+                "OpenQuackPlatform",
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+            ],
+            path: "Sources/OpenQuackStreaming"
+        ),
+        .target(
             name: "OpenQuackKit",
             dependencies: [
                 "OpenQuackPlatform",
@@ -90,6 +98,7 @@ let package = Package(
             name: "OpenQuackStreamBench",
             dependencies: [
                 "OpenQuackPlatform",
+                "OpenQuackStreaming",
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
