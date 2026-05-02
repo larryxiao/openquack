@@ -29,6 +29,10 @@ let package = Package(
             targets: ["OpenQuackBiasBench"]
         ),
         .executable(
+            name: "openquack-stream-bench",
+            targets: ["OpenQuackStreamBench"]
+        ),
+        .executable(
             name: "openquack-cli",
             targets: ["OpenQuackCLI"]
         ),
@@ -81,6 +85,15 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "Sources/OpenQuackBiasBench"
+        ),
+        .executableTarget(
+            name: "OpenQuackStreamBench",
+            dependencies: [
+                "OpenQuackPlatform",
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            path: "Sources/OpenQuackStreamBench"
         ),
         .executableTarget(
             name: "OpenQuackCLI",
