@@ -86,7 +86,7 @@ public struct UserProfile: Codable, Sendable {
             lines.append("Languages: \(joined)\(primary)")
         }
         if let apps = commonApps, !apps.isEmpty {
-            let pairs = apps.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($1.value)" }
+            let pairs = apps.sorted(by: { $0.key < $1.key }).map { "\($0.key)=\($0.value)" }
             let joined = pairs.joined(separator: "; ")
             lines.append("Typical apps: \(joined)")
         }
