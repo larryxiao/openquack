@@ -1,0 +1,11 @@
+{
+  "comment": "Compact 6-term vocabulary — only the OpenQuack-domain proper nouns most likely to appear in dictation. Use for latency-sensitive bias experiments.",
+  "terms": [
+    "OpenQuack",
+    "Claude Code",
+    "WhisperKit",
+    "mlx-swift",
+    "Apple Silicon",
+    "Privacy-first"
+  ]
+}
