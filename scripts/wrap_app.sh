@@ -34,7 +34,7 @@ fi
 
 BUNDLE="$ROOT/build/OpenQuack.app"
 BIN_NAME="openquack"
-VERSION="$(grep -E 'public static let version' Sources/OpenQuackKit/OpenQuackKit.swift | sed -E 's/.*"([^"]+)".*/\1/')"
+VERSION="$(grep -E 'public static let version' Sources/OpenQuackPlatform/OpenQuackPlatform.swift | sed -E 's/.*"([^"]+)".*/\1/')"
 
 echo "→ Building release..."
 swift build -c release --product "$BIN_NAME" >/dev/null

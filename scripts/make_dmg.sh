@@ -13,7 +13,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VERSION="$(grep -E 'public static let version' Sources/OpenQuackKit/OpenQuackKit.swift | sed -E 's/.*"([^"]+)".*/\1/')"
+VERSION="$(grep -E 'public static let version' Sources/OpenQuackPlatform/OpenQuackPlatform.swift | sed -E 's/.*"([^"]+)".*/\1/')"
 APP="$ROOT/build/OpenQuack.app"
 DMG="$ROOT/build/OpenQuack-$VERSION.dmg"
 STAGING="$ROOT/build/dmg-staging"
