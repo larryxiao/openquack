@@ -64,6 +64,7 @@ let package = Package(
             name: "OpenQuackKit",
             dependencies: [
                 "OpenQuackPlatform",
+                "OpenQuackStreaming",
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
             ],

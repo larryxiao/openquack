@@ -48,6 +48,13 @@ public final class AudioRecorder {
     /// scaled for UI). Set this before calling `start` to drive a level meter.
     public var levelHandler: ((Float) -> Void)?
 
+    /// SPEC-012: emitted on the audio thread for every captured tap buffer
+    /// (~10–20 ms at typical input rates). Set before `start()`. Called
+    /// with raw float32 samples in the input device's native rate; consumers
+    /// must resample if they need 16 kHz. Opt-in — existing dictation-only
+    /// callers leave it nil and pay nothing.
+    public var framesHandler: (([Float], Double) -> Void)?
+
     public init() {}
 
     public var isRecording: Bool {
@@ -135,6 +142,8 @@ public final class AudioRecorder {
         }
 
         let levelHandler = self.levelHandler
+        let framesHandler = self.framesHandler
+        let inputSampleRate = inputFormat.sampleRate
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
             do {
@@ -149,6 +158,17 @@ public final class AudioRecorder {
             if let levelHandler {
                 let level = Self.uiLevel(from: buffer)
                 DispatchQueue.main.async { levelHandler(level) }
+            }
+
+            // SPEC-012 streaming: emit raw float samples on the audio thread.
+            // Consumer (StreamingTranscriber) is an actor; it'll re-enter on
+            // its own queue, so this stays cheap on the capture thread.
+            if let framesHandler,
+               let channelData = buffer.floatChannelData?[0],
+               buffer.frameLength > 0 {
+                let count = Int(buffer.frameLength)
+                let samples = Array(UnsafeBufferPointer(start: channelData, count: count))
+                framesHandler(samples, inputSampleRate)
             }
         }
 

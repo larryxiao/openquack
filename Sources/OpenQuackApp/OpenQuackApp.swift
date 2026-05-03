@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyManager()
     private var transcriber: WhisperKitEngine?
+    private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     private var overlay: RecordingOverlay?
     private let updater = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
@@ -85,6 +86,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var elapsedTimer: Timer?
     private var permissionPollTimer: Timer?
+
+    /// SPEC-012: serial pump from the audio thread → StreamingTranscriber.
+    /// Spawning a `Task` per buffer doesn't guarantee FIFO at the actor;
+    /// the AsyncStream pump does (yield is ordered, the consumer awaits one
+    /// frame at a time).
+    private var framesContinuation: AsyncStream<(samples: [Float], rate: Double)>.Continuation?
+    private var framesPumpTask: Task<Void, Never>?
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -459,6 +467,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             await MainActor.run { appState.phase = .starting }
 
+            // SPEC-012: wire the streamer before start() so we don't miss the
+            // first tap buffer. We always wire even for short utterances —
+            // stopAndTranscribe decides whether to use the streamed result or
+            // cancel the streamer and use the offline path. If the engine
+            // isn't warm yet, framesHandler stays nil and we pay nothing.
+            let language = defaultLanguage
+            let words = customWords
+            await tearDownFramesPump()
+            if let streamer {
+                // Pump pattern: the audio thread `yield`s into an unbounded
+                // AsyncStream; a single Task drains it serially into the
+                // actor. This preserves FIFO order — `Task { await ... }` per
+                // buffer would race because actor reentry isn't queued in
+                // submission order.
+                //
+                // `.unbounded` is safe: the pump consumer just hops into the
+                // actor (sub-ms) per buffer, and producer rate is ~50/s of
+                // ~10 ms buffers. The actor itself only retains samples until
+                // the next emitChunksIfReady cut, so steady-state memory is
+                // bounded by maxChunkSeconds, not stream backlog.
+                let (stream, continuation) = AsyncStream<(samples: [Float], rate: Double)>.makeStream(
+                    bufferingPolicy: .unbounded
+                )
+                self.framesContinuation = continuation
+                recorder.framesHandler = { samples, rate in
+                    continuation.yield((samples, rate))
+                }
+                self.framesPumpTask = Task { [weak streamer] in
+                    for await frame in stream {
+                        await streamer?.appendFrames(frame.samples, sampleRate: frame.rate)
+                    }
+                }
+                await streamer.begin(language: language, customWords: words)
+            } else {
+                recorder.framesHandler = nil
+            }
+
             do {
                 _ = try recorder.start(outputURL: lastRecordingURL)
                 await MainActor.run {
@@ -470,6 +515,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     playSound("Tink")
                 }
             } catch {
+                await tearDownFramesPump()
+                if let streamer { await streamer.cancel() }
                 await MainActor.run {
                     appState.phase = .error("Recording failed: \(error)")
                 }
@@ -482,6 +529,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// faster than the eye can register, which defeats the point of having
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
+
+    /// SPEC-012: utterances at or above this duration take the streaming
+    /// path; shorter ones stay on the offline path (faster end-to-end on
+    /// short audio). Mirrors `StreamingTranscriber.Config.streamingThreshold`.
+    private static let streamingThreshold: TimeInterval = 30
 
     private func stopAndTranscribe() {
         stopElapsedTimer()
@@ -523,11 +575,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer { progressTask.cancel() }
 
             do {
-                let result = try await engine.transcribe(
-                    audioFile: url,
-                    language: defaultLanguage,
-                    customWords: customWords
-                )
+                // SPEC-012: streaming path on long audio, offline on short.
+                // Streaming reuses chunks transcribed during recording, so the
+                // post-stop wait stays roughly flat as utterance length grows.
+                // Teardown drains the audio-thread pump first so finish()
+                // sees every frame; cancel() is fine to call after teardown
+                // (any frames still queued become a no-op once cancelled).
+                let result: EngineTranscription
+                if audioDuration >= Self.streamingThreshold, let streamer {
+                    await tearDownFramesPump()
+                    let r = try await streamer.finish()
+                    result = EngineTranscription(
+                        text: r.text,
+                        detectedLanguage: r.detectedLanguage,
+                        audioSeconds: r.audioSeconds > 0 ? r.audioSeconds : audioDuration,
+                        wallSeconds: r.wallSeconds,
+                        timeToFirstToken: nil
+                    )
+                } else {
+                    await tearDownFramesPump()
+                    if let streamer { await streamer.cancel() }
+                    result = try await engine.transcribe(
+                        audioFile: url,
+                        language: defaultLanguage,
+                        customWords: customWords
+                    )
+                }
 
                 // Smart formatting on raw Whisper output (capitalisation,
                 // end-punctuation, fillers). Toggle: Settings → General.
@@ -609,6 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             let engine = try await WhisperKitEngine(model: defaultModel)
             self.transcriber = engine
+            self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
             await MainActor.run {
                 appState.phase = .idle
                 appState.modelLabel = defaultModel
@@ -658,6 +732,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopElapsedTimer() {
         elapsedTimer?.invalidate()
         elapsedTimer = nil
+    }
+
+    /// SPEC-012: close the audio-thread → streamer pump. Awaits the pump
+    /// task so any frames buffered in the AsyncStream actually land on
+    /// `StreamingTranscriber.appendFrames` before the caller proceeds —
+    /// load-bearing for `streamer.finish()` returning a complete transcript.
+    /// Safe to call when nothing is wired (no-op).
+    private func tearDownFramesPump() async {
+        recorder.framesHandler = nil
+        framesContinuation?.finish()
+        framesContinuation = nil
+        if let task = framesPumpTask {
+            framesPumpTask = nil
+            await task.value
+        }
     }
 
     // MARK: - SPEC-014 crash recovery
