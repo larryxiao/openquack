@@ -9,12 +9,28 @@ let package = Package(
     ],
     products: [
         .library(
+            name: "OpenQuackPlatform",
+            targets: ["OpenQuackPlatform"]
+        ),
+        .library(
             name: "OpenQuackKit",
             targets: ["OpenQuackKit"]
         ),
         .executable(
             name: "openquack-bench",
             targets: ["OpenQuackBench"]
+        ),
+        .executable(
+            name: "openquack-polish-bench",
+            targets: ["OpenQuackPolishBench"]
+        ),
+        .executable(
+            name: "openquack-bias-bench",
+            targets: ["OpenQuackBiasBench"]
+        ),
+        .executable(
+            name: "openquack-stream-bench",
+            targets: ["OpenQuackStreamBench"]
         ),
         .executable(
             name: "openquack-cli",
@@ -32,8 +48,22 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "OpenQuackPlatform",
+            dependencies: [],
+            path: "Sources/OpenQuackPlatform"
+        ),
+        .target(
+            name: "OpenQuackStreaming",
+            dependencies: [
+                "OpenQuackPlatform",
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+            ],
+            path: "Sources/OpenQuackStreaming"
+        ),
+        .target(
             name: "OpenQuackKit",
             dependencies: [
+                "OpenQuackPlatform",
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
             ],
@@ -46,6 +76,33 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             path: "Sources/OpenQuackBench"
+        ),
+        .executableTarget(
+            name: "OpenQuackPolishBench",
+            dependencies: [
+                "OpenQuackPlatform",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            path: "Sources/OpenQuackPolishBench"
+        ),
+        .executableTarget(
+            name: "OpenQuackBiasBench",
+            dependencies: [
+                "OpenQuackPlatform",
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            path: "Sources/OpenQuackBiasBench"
+        ),
+        .executableTarget(
+            name: "OpenQuackStreamBench",
+            dependencies: [
+                "OpenQuackPlatform",
+                "OpenQuackStreaming",
+                .product(name: "WhisperKit", package: "argmax-oss-swift"),
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            path: "Sources/OpenQuackStreamBench"
         ),
         .executableTarget(
             name: "OpenQuackCLI",

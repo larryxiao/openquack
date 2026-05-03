@@ -1,0 +1,9 @@
+{
+  "comment": "What a real user would actually type into Settings → Custom dictionary. 4 proper nouns of things they routinely dictate. Matches the example placeholder in SettingsView.swift.",
+  "terms": [
+    "OpenQuack",
+    "WhisperKit",
+    "Claude Code",
+    "Apple Silicon"
+  ]
+}

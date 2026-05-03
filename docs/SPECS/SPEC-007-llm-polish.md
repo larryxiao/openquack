@@ -167,20 +167,116 @@ New tab or section:
 
 ## Quality gates
 
-Bench-able. Add to `openquack-bench`:
+Bench-able. A new SPM target `openquack-polish-bench` drives engine ×
+model × corpus → `bench/out/polish/<host-tag>/`. WER is **not** the right
+metric — polish intentionally rewrites — so we measure across three
+dimensions plus latency and RAM.
 
-- **Polish WER delta** — LibriSpeech raw vs polished output, against the
-  reference. Polish should NOT make WER worse on already-correct text.
-- **Polish latency** — wall-clock for a 50-word input. Target < 1 s on
-  M-series 16 GB with the default 1.5–3 B model.
-- **Polish RAM** — peak RSS during polish; combined with WhisperKit
-  medium (200 MB), the total budget should fit comfortably on 8 GB Macs.
+### Three quality dimensions (scored separately, not averaged)
+
+1. **Transcription error correction** — does the model fix homophone /
+   proper-noun errors common in Whisper output?
+   *Examples:* "cloud code" → "Claude Code", "income tax" → "in-context",
+   "Gemma three" → "Gemma 3". Scored via `must_contain` /
+   `must_not_contain` substring checks against the corpus case.
+2. **Rephrase, organise, format** — fillers stripped, false starts
+   removed, multi-idea runs split into bullets, sentence-end punctuation,
+   length not bloated. Scored via auto micro-metrics:
+   - filler-token removal rate (`um|uh|like|you know|...` regex pre/post)
+   - punctuation completeness (% sentences ending in `.!?` / `。！？`)
+   - length ratio (output / input — should be ≤ 1.0 per the prompt)
+   - idempotency on already-clean input (polish(clean) ≈ clean; edit
+     distance ≤ 5%).
+3. **In-context rewrite** — same `raw`, different `app_context` slot
+   (Slack / Mail / VS Code / Pages) → distinct, context-appropriate
+   outputs. Detail: see SPEC-008.
+
+### LLM-as-judge (final ranking signal)
+
+Auto micro-metrics screen out broken outputs but don't discriminate
+between models that all strip fillers correctly. The ranking signal is a
+judge LLM that scores each candidate output 1–5 against the multi-
+reference list, conditioned on the dimension being scored.
+
+- **Primary judge:** `claude-haiku-4-5-20251001` (cheap, fast).
+- **Adversarial / hard cases + gold-reference generation:**
+  `claude-sonnet-4-6`.
+- **Tiebreak only:** `claude-opus-4-7`.
+
+This is bench-only — judge calls happen on the developer's machine when
+producing a report, never in the runtime hot path. The privacy contract
+covers what ships in the app, not what generates the README table.
+
+### Latency / memory pressure
+
+The optimisation target is **headroom**, not fit. A model that *just*
+fits at idle will thrash under real user load (Whisper warm, polish
+warm, browser + Slack open) and the cost shows up as P95/P99 latency
+spikes — the user feels stutter even when the mean is fine.
+
+- **Polish latency** — TTFT, mean, P95, P99 for a 50-word input. Target
+  < 1 s mean and < 2 s P95 on M-series 16 GB with the chosen default
+  model. Cold (just-loaded) and warm-and-held are reported separately.
+- **Memory pressure (not just RSS).** Per call, sample:
+  - `vm_stat` deltas: pages-compressed, pageins, pageouts.
+  - System-wide free + wired pages via `host_statistics64(HOST_VM_INFO64)`.
+  - macOS memory-pressure level (`memorystatus` API).
+  RSS alone undercounts CoreML / Metal / ANE working sets — it's kept
+  for continuity but is not the primary metric.
+- **Coexistence test.** Hold WhisperKit medium + polish model warm,
+  idle 60 s with a synthetic background allocation (~2 GB) to simulate
+  a user's other apps, *then* measure polish latency on a fresh
+  utterance. That's the latency users actually experience.
+
+### Recommendation hierarchy
+
+Smaller-that-clears-quality > faster > more accurate. If the smallest
+candidate flunks only one quality dimension (e.g. category-1 proper-
+noun correction) and is otherwise good, prefer it + an out-of-band
+fallback (regex / domain-term dictionary) over scaling up the model.
+
+### Corpus shape
+
+`bench/polish_corpus/cases.jsonl` — one case per line:
+
+```json
+{
+  "id": "en_trans_001",
+  "category": "transcription_errors",
+  "language": "en",
+  "raw": "we should use cloud code to open a PR for this branch",
+  "app_context": null,
+  "references": [
+    "Use Claude Code to open a PR for this branch.",
+    "We should use Claude Code to open a PR for this branch."
+  ],
+  "must_contain": ["Claude Code"],
+  "must_not_contain": ["cloud code"],
+  "notes": "Whisper hears 'Claude' as 'cloud'"
+}
+```
+
+Target ~80 cases at first launch:
+
+| Bucket | Count | Notes |
+|---|---:|---|
+| `transcription_errors` (en) | 20 | Real Whisper mishearings, proper nouns |
+| `rephrase_organize` (en) | 20 | Fillers, false starts, multi-clause runs |
+| `in_context` paired sets | 30 | 10 raws × 3 contexts = 30 (SPEC-008) |
+| Multilingual (zh/ja/es/fr/de) | 10 | 2 per language across both en buckets |
+
+Cases drawn from: actual WhisperKit-medium output on the existing 177-clip
+corpus (`bench/out/M4-16GB/report.csv`) where the polish step has work
+to do, plus hand-crafted cases for failure modes Whisper doesn't reach.
 
 ## Open questions
 
-- **Default model** — settle once we benchmark gemma3:1b / qwen2.5:1.5b /
-  qwen2.5:3b on representative dictation corpora. The v0.1 prototype
-  used gemma4:e2b (7.7 GB) which is too heavy; aim for ≤ 2 GB.
+- **Default model** — settle once we benchmark the candidate set on the
+  three-dimension corpus above. Candidates: `gemma3:1b`, `gemma3:4b-it-qat`,
+  `qwen2.5:1.5b-instruct`, `qwen2.5:3b-instruct`, `llama3.2:1b`,
+  `llama3.2:3b`. The v0.1 incumbent `gemma3n:e2b` (~5.6 GB; aliased
+  `gemma4:e2b` in v0.1's config) is included as a reference data point
+  even though it busts the ≤ 2 GB cap.
 - **Streaming** — should the polish step stream into the overlay? The
   raw transcript is already shown; streaming the polish on top is
   visually noisy. Lean: don't stream; show polish-in-progress spinner

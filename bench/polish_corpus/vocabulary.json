@@ -1,0 +1,30 @@
+{
+  "comment": "Corpus-wide vocabulary list. In production this becomes Settings → Vocabulary + AX-mined terms from the user's editor / shell. Includes distractors so the model has to PICK the right substitution, not blindly reach for any glossary entry.",
+  "terms": [
+    "Claude Code",
+    "WhisperKit",
+    "mlx-swift",
+    "OpenQuack",
+    "in-context",
+    "gemma3:1b",
+    "gemma3:4b-it-qat",
+    "qwen2.5",
+    "qwen3:1.7b",
+    "llama3.2",
+    "SPM",
+    "CocoaPods",
+    "Apple Silicon",
+    "Privacy-first",
+    "lazy dog",
+    "Pull Request",
+    "PR",
+    "Levenshtein",
+    "Cursor",
+    "Xcode",
+    "Slack",
+    "Pages",
+    "Mail",
+    "Terminal",
+    "VS Code"
+  ]
+}

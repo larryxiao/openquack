@@ -1,0 +1,15 @@
+{
+  "comment": "User profile fed into the polish prompt as a 'who am I writing for' block. In production: editable in Settings, optionally seeded from on-device signals (default IDE language, primary git author email, frequent file types). Stays local; not transmitted.",
+  "profile": {
+    "domain": "macOS / Apple Silicon development, ML/AI tooling, voice UX",
+    "languages": ["en", "zh"],
+    "primary_language": "en",
+    "projects": ["OpenQuack (voice-to-text app)", "WhisperKit", "MLX-Swift"],
+    "style": "concise, direct, technical when relevant; lower-case prose in chat; full sentences in email/docs",
+    "common_apps": {
+      "chat": "Slack with technical teammates",
+      "email": "professional B2B",
+      "code": "Swift, Python, shell"
+    }
+  }
+}
