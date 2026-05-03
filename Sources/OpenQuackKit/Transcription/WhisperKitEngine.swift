@@ -22,6 +22,16 @@ public final class WhisperKitEngine: TranscriptionEngine {
     /// Reset by WhisperKit at the start of each transcribe.
     public var progress: Progress { pipe.progress }
 
+    /// Vend a `StreamingTranscriber` bound to this engine's pipe (SPEC-012).
+    /// The streamer reuses the loaded model — the expensive part — and pays
+    /// no extra cold-start cost. Caller owns the lifetime; one streamer can
+    /// be reused across many recordings (call `begin` before each).
+    public func makeStreamingTranscriber(
+        config: StreamingTranscriber.Config = .init()
+    ) -> StreamingTranscriber {
+        StreamingTranscriber(pipe: pipe, config: config)
+    }
+
     public init(model: String, downloadBase: URL? = nil) async throws {
         self.modelID = model
 

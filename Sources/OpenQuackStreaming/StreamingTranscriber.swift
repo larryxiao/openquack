@@ -85,12 +85,20 @@ public actor StreamingTranscriber {
         )
     }
 
-    public func begin(language: String?, customWords: String?) {
+    public func begin(language: String?, customWords: String?) async {
+        // If a prior session's drain is still in flight, fully tear it down
+        // before resetting state. Otherwise the old drain can re-check
+        // `cancelled` after we reset it to false and write its outcome into
+        // the new session's `chunkOutcomes`, mixing two recordings.
+        if let prior = drainTask {
+            cancelled = true
+            prior.cancel()
+            await prior.value
+        }
         buffer.removeAll(keepingCapacity: true)
         bufferStartSample = 0
         chunkOutcomes.removeAll()
         queue.removeAll()
-        drainTask?.cancel()
         drainTask = nil
         ended = false
         cancelled = false
