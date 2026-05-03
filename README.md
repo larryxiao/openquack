@@ -16,7 +16,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
-> **Latest — [v2.0.0-alpha.9](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.9):** streaming transcription for long recordings — post-stop wait on a 5-minute clip drops from ~32 s to ~3 s, with quality within 0.5 pp WER of the offline path. Builds on a recent design refresh — new duck mark, redesigned popover / Settings / About, split left-click popover / right-click menu.
+> 📢 **What's new — [v2.0.0-alpha.9](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.9):** blazing-fast dictation, even on long clips. Plus a fresh new look. Hope you like it!
 
 ## What it is
 
