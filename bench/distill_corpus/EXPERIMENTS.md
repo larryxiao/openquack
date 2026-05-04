@@ -156,6 +156,16 @@ The headline finding: off-policy distillation on synthetic-only data is the
 exact failure mode in Thinking Machines' *On-Policy Distillation* (Oct 2025) —
 three rounds of the same recipe was three rounds of the same bug.
 
+A third doc, [`docs/research/realtime-voice-product-findings.md`](../../docs/research/realtime-voice-product-findings.md),
+pulls engineering findings from the realtime-voice products (GPT-4o Realtime,
+Gemini Live, Doubao Realtime Voice, Phi-4-MM, Apple SpeechAnalyzer / WhisperKit)
+and adjacent research (NVIDIA NeMo, Mistral Voxtral, Kyutai Moshi, LiveKit,
+Modal+Pipecat). Headline findings most relevant to OpenQuack: cascade beats
+native S2S on reasoning by 26 points (Big Bench Audio); OpenAI's 8-section
+realtime-prompt structure is directly liftable for our polish prompt;
+Apple SpeechAnalyzer (macOS 26) is a real competitive threat — the polish
+layer is the moat, not the ASR.
+
 ## Hypotheses queued for next experiments
 
 Re-ranked 2026-05-04 after the methodology survey. The top three (E1, E2, E4)
