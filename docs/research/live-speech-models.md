@@ -45,24 +45,82 @@ instruction-following over the audio path. Intersection is ~12–18 months out.
 
 Refs: [arXiv 2410.00037](https://arxiv.org/html/2410.00037v2), [GitHub](https://github.com/kyutai-labs/moshi).
 
-### 2. GPT-4o Realtime / gpt-realtime
+### 2. GPT-4o Realtime / gpt-realtime / gpt-realtime-1.5
 
-Closed weights. Bidirectional WebSocket / WebRTC, native audio I/O with token
-interleaving (text + audio tokens). Pricing implies a unified token-stream
+Closed weights. Bidirectional WebSocket / WebRTC / SIP (SIP added late 2025),
+native audio I/O with token interleaving. Pricing implies a unified token-stream
 architecture (audio in $100/M tokens, audio out $200/M tokens). System prompts
 work as for any GPT-4o session. **Informative for direction only** — confirms
 unified text+audio token streams are the production-grade pattern.
 
-Refs: [OpenAI realtime](https://openai.com/index/introducing-gpt-realtime/),
+**Naming note.** OpenAI keeps the realtime line decoupled from the GPT-N
+text-frontier line: there is **no `gpt-5-realtime`**. The current model is
+`gpt-realtime-1.5` (released **2026-02-23**), succeeding `gpt-realtime-2025-08-28`.
+The text frontier `gpt-5.5-2026-04-23` is reasoning/text only — no realtime
+variant. Same separation pattern as the transcription line
+(`gpt-4o-mini-transcribe-2025-12-15`). For us this argues against assuming a
+future Gemma-N text release will automatically have a usable voice sibling —
+voice gets its own training run, its own quantization, its own deployment.
+
+**`gpt-realtime-1.5` deltas vs prior snapshot:** +5 % on Big Bench Audio
+reasoning, +10.23 % alphanumeric transcription accuracy, +7 % instruction
+following. Pricing unchanged. **Reported regression**: voice expressiveness
+and accent quality on Dutch, Flemish, French, Hebrew, and Japanese; intonation
+described as "robotic" and "flat"; the model occasionally says "laugh"
+*instead of producing laughter* — a control-mismatch failure where text-anchor
+behaviour leaks back into native audio. *Engineering data point: cross-lingual
+voice quality is hard to non-regress across versions.* For OpenQuack: argues
+strongly for **version-pinning the polish model and bench-validating per
+language before any silent upgrade.**
+
+**A mini-tier exists.** Late-2025 OpenAI shipped `gpt-realtime-mini-2025-12-15`
+(plus `gpt-4o-mini-transcribe`, `gpt-4o-mini-tts`, `gpt-audio-mini`). Mirrors
+the WhisperKit pattern of "ship multiple sizes, let the integrator pick." Bench
+gains in the mini-tier release: **+18.6 pp instruction-following** on
+speech-to-speech, +12.9 pp tool-calling, ~35 % lower TTS WER on Common Voice
+and FLEURS. Failure modes named explicitly: *"long conversations or with edge
+cases like silence, and tool-driven flows."* The persisting "silence ⇒
+hallucination" failure is the most actionable lesson — see §J below.
+
+Refs: [Introducing gpt-realtime](https://openai.com/index/introducing-gpt-realtime/),
+[Updates for developers building with voice (2025-12-22)](https://developers.openai.com/blog/updates-audio-models),
+[gpt-realtime-1.5 announcement (community)](https://community.openai.com/t/gpt-realtime-1-5-is-live-in-realtime-api/1374919),
+[gpt-realtime-1.5 regression report (community)](https://community.openai.com/t/gpt-realtime-1-5-major-regression-in-voice-expressiveness-and-accent-quality/1377222),
 [Latent Space manual](https://www.latent.space/p/realtime-api).
 
 ### 3. Gemini 2.5 / 3.1 Flash Live
 
-Closed weights, native audio-to-audio (no STT→LLM→TTS cascade), 16 kHz PCM I/O,
-full-duplex with barge-in over WSS. 24-language native voice. Confirms Google's
-bet on the same "collapse the cascade" pattern. **Informative only.**
+Closed weights, native audio-to-audio (no STT→LLM→TTS cascade), 16 kHz PCM in /
+24 kHz PCM out, full-duplex with barge-in over WSS. The current GA-preview is
+**Gemini 3.1 Flash Live** (released **2026-03-26**). There is no separate
+"Gemini 3 Pro Live" — only Flash. Naming jumped 2.5 → 3.1 with no 3.0.
 
-Ref: [Gemini 3.1 Flash Live](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-live/).
+Specs worth knowing for OpenQuack:
+
+- **>90 languages** in Gemini 3.1 Flash Live — a 4× expansion over the 24
+  languages quoted for the 2.5 generation. Largest cloud realtime-voice
+  language footprint by a wide margin.
+- **131,072-token input context, 65,536-token output** — ~4× and ~16× the
+  gpt-realtime-1.5 budget (32 k context, 4 k output).
+- **Configurable `thinking` levels** (minimal / low / medium / high) on the
+  Live model — speculative implication: a "transcribe + briefly think + emit"
+  flow gets first-class API support inside Gemini Live before any other
+  vendor exposes it.
+- **No caching, no structured outputs, no batch API, no code execution.**
+  Function calling synchronous-only.
+- **Headline benchmarks Google publishes**: 90.8 % ComplexFuncBench Audio,
+  36.1 % Audio MultiChallenge, "twice as long" conversation thread retention
+  vs Gemini 2.5 Flash Native Audio. Better acoustic-nuance recognition (pitch,
+  pace). All audio is SynthID-watermarked.
+
+For OpenQuack: still **informative only** (cloud, closed). But the >90-language
+footprint changes the answer if we ever add a "Polish via cloud LLM" backend
+for languages where local models lag.
+
+Refs: [Gemini 3.1 Flash Live blog](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-live/),
+[Build real-time conversational agents with Gemini 3.1 Flash Live](https://blog.google/innovation-and-ai/technology/developers-tools/build-with-gemini-3-1-flash-live/),
+[Gemini 3.1 Flash Live model card](https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview),
+[Gemini Live API overview](https://ai.google.dev/gemini-api/docs/live-api).
 
 ### 4. Voxtral (Mistral) — most relevant to OpenQuack
 
