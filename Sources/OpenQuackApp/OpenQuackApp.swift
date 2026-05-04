@@ -40,6 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var customWords: String? {
         UserDefaults.standard.string(forKey: "customWords")
     }
+    private var chineseScript: ChineseScript {
+        let raw = UserDefaults.standard.string(forKey: "chineseScript") ?? ""
+        return ChineseScript(rawValue: raw) ?? .auto
+    }
     private var soundsEnabled: Bool {
         UserDefaults.standard.object(forKey: "playSounds") as? Bool ?? true
     }
@@ -602,12 +606,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                 }
 
+                // Whisper's `zh` output mixes Hant/Hans; honour the user's
+                // script preference before any other text shaping.
+                let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
+
                 // Smart formatting on raw Whisper output (capitalisation,
                 // end-punctuation, fillers). Toggle: Settings → General.
                 let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
                 let polished = polishEnabled
-                    ? TextPolisher.polish(result.text)
-                    : result.text
+                    ? TextPolisher.polish(scripted)
+                    : scripted
 
                 // Hold the progress bar at full briefly so the user sees the
                 // transition land instead of jumping straight to "Pasted".
@@ -812,8 +820,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: entry.language,
                 customWords: customWords
             )
+            let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
             let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
-            let polished = polishEnabled ? TextPolisher.polish(result.text) : result.text
+            let polished = polishEnabled ? TextPolisher.polish(scripted) : scripted
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
                 _ = PasteService.paste(polished)
