@@ -143,20 +143,37 @@ Trade-offs to investigate:
 - Ecosystem is moving fast — what's right today may be dated in
   6 months
 
-A separate research dive (in progress as of 2026-05-04) is documenting
-the live-models landscape: Moshi, Voxtral, Parakeet, Gemini Live,
-GPT-4o Realtime, Qwen2-Audio, etc. Output will land at
-`docs/research/live-speech-models.md`.
+A separate research dive (completed 2026-05-04) documents the live-models
+landscape — Moshi, Voxtral, Parakeet, WhisperKit, Qwen2.5-Omni / Qwen3-ASR,
+Phi-4-Multimodal, Canary-Qwen, MiniCPM-o, GPT-4o Realtime, Gemini Flash Live,
+plus the Chinese ecosystem (Doubao, Step-Audio 2, Hunyuan Voice, Tencent
+Covo-Audio, Baichuan-Audio): see [`docs/research/live-speech-models.md`](../../docs/research/live-speech-models.md).
+
+A companion methodology critique surveys 2024–2026 work on eval methodology,
+synthetic-vs-real data, LoRA hyper-parameters, distillation, and quantization,
+then critiques our pipeline: see [`docs/research/polish-methodology-critique.md`](../../docs/research/polish-methodology-critique.md).
+The headline finding: off-policy distillation on synthetic-only data is the
+exact failure mode in Thinking Machines' *On-Policy Distillation* (Oct 2025) —
+three rounds of the same recipe was three rounds of the same bug.
 
 ## Hypotheses queued for next experiments
 
-- E5: **Improve eval dataset (this section's "Decision" above)** — deepen each category, add real WhisperKit samples, add Claude-judge scoring. **Highest priority — every other experiment needs this first.**
-- E6: TurboQuant DWQ — actual `mlx_lm.dwq` workflow (vs the standard 4-bit). Might give the "4× memory" reduction the docs claim. Cost: ~1 hour.
-- E7: Local capture mechanism in the app — review-mode toggle that logs (raw, your_pasted) pairs locally. Once we have ~100 real pairs, retrain v4 from real data. Cost: 3-4 hours app work + weeks of accumulation.
-- E8: Tier-1 rules in `TextPolisher.swift` — paragraph break rule, list-detection regex, question-mark rule. Replaces some LLM work with deterministic regex. Cost: 1-2 hours.
+Re-ranked 2026-05-04 after the methodology survey. The top three (E1, E2, E4)
+gate everything else — they tell us whether the bench (not the model) is the
+bottleneck. **Don't run distillation again until E1 + E2 confirm the model is
+the real constraint.**
+
+- **E1 (highest priority, ~1 day):** prompt-sensitivity + judge-noise probe — run the current bench × 5 prompt rephrasings × Haiku and Sonnet judges; report 95 % CIs and inter-judge κ. With 18 cases the CI is ±15pp; we cannot tell "good" from "lucky" yet.
+- **E2 (~2 days):** capture 200 real transcripts → re-bench with idempotency (re-polish polished output and check it doesn't drift). Tells us whether the bench/real gap is corpus drift or model failure. Probably makes distillation moot.
+- **E4 (~2 days):** QAT or DWQ-quantize the current 4.6 B teacher. MLX 4-bit DWQ ≈ 2.3 GB at ~BF16 parity per blog benchmarks; if it holds for our task the right "small model" is just a better-quantized teacher.
+- **E3 (~1 week, only if E1+E2 say model is the bottleneck):** on-policy distillation 4.6 B → 4 B (skip 1.3 B until 4 B works — capacity matters per the lottery-ticket trend). Sample student trajectories → query teacher logprobs → reverse-KL loss, ~150–500 steps. The Thinking Machines recipe directly addresses our "drops information" failure.
+- E5: **Improve eval dataset** — deepen each category, add real WhisperKit samples, add Claude-judge scoring. Subsumed by E1 + E2 above; tracked separately for the dataset deliverable.
+- E6: TurboQuant DWQ — actual `mlx_lm.dwq` workflow (vs the standard 4-bit). Folded into E4.
+- E7: Local capture mechanism in the app — review-mode toggle that logs (raw, your_pasted) pairs locally. Required for E2; this is the app-side prerequisite. Cost: 3–4 hours app work + weeks of accumulation.
+- E8: Tier-1 rules in `TextPolisher.swift` — paragraph break rule, list-detection regex, question-mark rule. Replaces some LLM work with deterministic regex. Cost: 1–2 hours.
 - E9: Hardware-tier gate — auto-detect 8 GB / 16 GB / 24 GB+ Macs and pick model accordingly. Currently the toggle is off-by-default at all tiers; should be smart. Cost: 1 hour.
 - E10: Invocation gate — only call the LLM when input matches self-correction patterns OR exceeds N words; pass through clean short inputs. Reduces compute, reduces damage surface. Cost: 1 hour.
-- E11: **Multimodal streaming model integration** — try Voxtral / Moshi / Parakeet on Mac and compare end-to-end latency + quality vs Whisper + polish. Cost: 1-2 days.
+- E11: **Multimodal streaming model integration** — try Voxtral Realtime / Parakeet-TDT-0.6B-v3 on Mac and compare end-to-end latency + quality vs Whisper + polish. Per the live-models survey, Voxtral Realtime is closest single-model fit but **doesn't yet support system prompts** (only context biasing); Parakeet-TDT is a drop-in WhisperKit replacement that frees memory headroom for the polish LLM. Cost: 1–2 days.
 
 ## Reproducing the corpus run (research only)
 
