@@ -97,6 +97,18 @@ hotkey in Settings → Shortcut. Default ⌃⇧Space.
 
 More options (uninstall, build-from-source, what's downloaded on first run): [`docs/INSTALL.md`](docs/INSTALL.md).
 
+## Acknowledgements
+
+OpenQuack stands on the shoulders of generous open-source work. Huge thanks to:
+
+- [**OpenAI Whisper**](https://github.com/openai/whisper) — the speech model that makes any of this possible.
+- [**WhisperKit**](https://github.com/argmaxinc/WhisperKit) by Argmax — Whisper, fast and native on Apple Silicon.
+- [**KeyboardShortcuts**](https://github.com/sindresorhus/KeyboardShortcuts) by Sindre Sorhus — the hotkey machinery you press every day.
+- [**voxt**](https://github.com/hehehai/voxt) — a kindred project we learned a lot from on the technical side.
+- [**Typeless**](https://www.typeless.com/) and [**Wispr Flow**](https://wisprflow.ai/) — the closed-source apps that proved how delightful voice-first input can feel; we're aiming for the same feel, locally and openly.
+
+And to everyone filing issues, opening PRs, and telling friends: thank you. The duck quacks because of you.
+
 ## Contribute
 
 OpenQuack is **AI-native open source** — every PR cites a SPEC, atomic tasks come from the roadmap, the workflow is friendly to coding agents at scale (and humans on the same path).
