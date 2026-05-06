@@ -69,6 +69,29 @@ public enum PolishEngineKind: String, CaseIterable, Sendable {
 }
 ```
 
+## Atomic PR breakdown
+
+To stay within `AGENTS.md` "atomic PRs," ship M2.5 as the following ordered
+PRs. Each is small enough to review in 10 minutes and reverse cleanly.
+
+| # | Title | Branch | Effort | Depends on | Files |
+|---|---|---|---|---|---|
+| 1 | `TextPolishEngine` protocol + types | `feat/spec-007-protocol` | S | — | `Sources/OpenQuackKit/Polish/PolishEngine.swift` (new), `Tests/OpenQuackKitTests/PolishEngineTests.swift` (new) |
+| 2 | `OllamaPolishEngine` impl | `feat/spec-007-ollama-engine` | S | #1 | `Sources/OpenQuackKit/Polish/OllamaPolishEngine.swift` (new), tests with `URLProtocol` mock |
+| 3 | Pipeline integration in `AppState` (off by default) | `feat/spec-007-app-integration` | S | #2 | `Sources/OpenQuackApp/AppState.swift` (edit), UserDefaults flag, fall-back to regex on `throws` |
+| 4 | Settings → Polish pane (Off / Ollama only; MLX-LM disabled) | `feat/spec-007-settings-ui` | S | #3 | `Sources/OpenQuackApp/SettingsView.swift` (edit), engine picker, model field, URL field, "test connection" button |
+| 5 | `MLXLMPolishEngine` impl | `feat/spec-007-mlx-engine` | M | #4 | `Package.swift` (add `mlx-swift-lm` dep), `Sources/OpenQuackKit/Polish/MLXLMPolishEngine.swift` (new), tests, enable MLX-LM in Settings picker |
+| 6 | `openquack-polish-bench` wires both engines + reports | `feat/spec-007-bench-integration` | S | #5 | `Sources/OpenQuackPolishBench/PolishBenchRunner.swift` (edit) |
+| 7 | Domain-term + send-confidence corpus seed | `feat/spec-007-corpus-seed` | S | #6 | `bench/polish_corpus/cases.jsonl` (new), `docs/BENCHMARKS-polish.md` (update) |
+
+PRs ship in order. PR 1 has no behaviour change — it's protocol-only — so
+it lands as soon as it builds and tests pass. Each subsequent PR is
+non-breaking (the polish step stays opt-in with `.off` as the default
+`PolishEngineKind`) until PR 4 ships the user-facing toggle.
+
+A future PR set covers `WhisperKitLLMPolishEngine` if argmax-oss-swift's
+text-models stack matures; that's not in M2.5.
+
 ## Engines (implementation order)
 
 ### 1. `OllamaPolishEngine` — fastest path to a working feature
