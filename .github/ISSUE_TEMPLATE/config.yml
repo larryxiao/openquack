@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Discussions — questions, feedback, ideas
+    url: https://github.com/larryxiao/openquack/discussions
+    about: Quick questions, "is this normal?", or anything that's more conversation than report.
+  - name: Bench results from your Mac
+    url: https://github.com/larryxiao/openquack/blob/main/docs/BENCHMARKS.md
+    about: Have an M1 / M2 / M3 / 8 GB / 24 GB+ Mac? See BENCHMARKS.md for how to contribute a row.

@@ -1,0 +1,94 @@
+name: Bug report
+description: Something in OpenQuack isn't working — crash, wrong transcript, hotkey misfire, paste failure, etc.
+title: "[bug] <one-line summary>"
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this. Audio and transcripts never
+        leave your Mac — same goes for this issue: don't paste anything you
+        wouldn't put on a public website. Redact personal text in any
+        screenshot.
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: One or two sentences. What did you do, and what went wrong?
+      placeholder: |
+        Pressed ⌃⇧Space, said "open the PR", and OpenQuack pasted "open the
+        peer" instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: Optional — only if it's not obvious from the above.
+      placeholder: The transcript should match what I said.
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimum steps so we can repeat it. "Always / sometimes / once" is fine if you can't pin it down.
+      placeholder: |
+        1. Launch OpenQuack
+        2. Press ⌃⇧Space
+        3. Say "..."
+        4. Press ⌃⇧Space again
+        Result: ...
+    validations:
+      required: true
+
+  - type: input
+    id: openquack_version
+    attributes:
+      label: OpenQuack version
+      description: Menu bar → right-click → Show app → About. Or `cat /Applications/OpenQuack.app/Contents/Info.plist | grep -A1 CFBundleShortVersionString`.
+      placeholder: "v2.0.0-alpha.9"
+    validations:
+      required: true
+
+  - type: input
+    id: macos_version
+    attributes:
+      label: macOS version
+      description: Apple menu → About This Mac.
+      placeholder: "macOS 15.2 (24C101)"
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: Mac model + memory
+      description: e.g. "M4 / 16 GB", "M1 Pro / 32 GB", "Intel i7 / 16 GB".
+      placeholder: "M4 / 16 GB"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Whisper model
+      description: Settings → Models → which one is selected.
+      options:
+        - "default for my hardware (auto)"
+        - "tiny"
+        - "base"
+        - "small"
+        - "medium"
+        - "large-v3"
+        - "distil-large-v3"
+        - "other / not sure"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Logs, screenshots, recordings — drag in here. If you can attach a short audio sample that triggers it, that's gold (only if the audio doesn't contain anything sensitive).

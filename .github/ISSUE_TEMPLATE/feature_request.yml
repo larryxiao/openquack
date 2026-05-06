@@ -1,0 +1,61 @@
+name: Feature request
+description: Something OpenQuack should do that it doesn't yet.
+title: "[feature] <one-line summary>"
+labels: ["feature-request", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing — skim [`docs/ROADMAP.md`](https://github.com/larryxiao/openquack/blob/main/docs/ROADMAP.md)
+        and [`docs/VISION.md`](https://github.com/larryxiao/openquack/blob/main/docs/VISION.md)
+        in case it's already on the list. If it is and you want to vote it
+        up, comment on the existing issue instead of opening a new one.
+
+        OpenQuack is privacy-first and local-only. Feature requests that
+        involve cloud calls in the dictation hot path won't ship — that's
+        the [privacy contract](https://github.com/larryxiao/openquack/blob/main/docs/VISION.md#privacy-contract).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem
+      description: What you're trying to do that OpenQuack makes harder than it should.
+      placeholder: |
+        I dictate Slack replies all day, and the transcript almost always
+        gets the project name "Quokka" wrong as "Quaker" or "kokka".
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What you'd want instead
+      description: One sentence is fine. Don't worry about whether it's the right design — that's our job.
+      placeholder: A way to teach OpenQuack a list of project names so it stops mishearing them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds you've tried
+      description: Optional. Helps us understand what's missing about the existing options.
+
+  - type: dropdown
+    id: importance
+    attributes:
+      label: How blocking is this for you
+      options:
+        - "I can live without it"
+        - "It would meaningfully improve my use of OpenQuack"
+        - "I'd use OpenQuack a lot more if this existed"
+        - "I want this but use a different tool today because of it"
+    validations:
+      required: true
+
+  - type: input
+    id: usage_context
+    attributes:
+      label: How you use OpenQuack
+      description: One line. e.g. "Mostly dictating prompts to Claude Code", "writing email", "Chinese messaging".
+      placeholder: "Mostly dictating prompts to Claude Code in a terminal."
