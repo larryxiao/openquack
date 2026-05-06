@@ -278,9 +278,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Right-click context menu — minimal: Show app + Quit. Settings still
-    /// reachable via the popover; `showApp` opens it directly so power users
-    /// can skip the popover entirely.
+    /// Right-click context menu — Show app, Send feedback, Quit. Settings
+    /// is still reachable via the popover; `showApp` opens it directly so
+    /// power users can skip the popover entirely. SPEC-018 adds "Send
+    /// feedback" to give users a one-click path to file issues without
+    /// navigating to GitHub manually.
     @MainActor
     private func showStatusItemMenu() {
         let menu = NSMenu()
@@ -288,6 +290,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let show = NSMenuItem(title: "Show app", action: #selector(menuShowApp), keyEquivalent: ",")
         show.target = self
         menu.addItem(show)
+
+        let feedback = NSMenuItem(title: "Send feedback…", action: #selector(menuSendFeedback), keyEquivalent: "")
+        feedback.target = self
+        menu.addItem(feedback)
 
         menu.addItem(.separator())
 
@@ -306,6 +312,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     @objc private func menuShowApp() {
         SettingsWindowController.show(appState: appState)
+    }
+
+    @MainActor
+    @objc private func menuSendFeedback() {
+        // SPEC-018. Opens the GitHub issue chooser; user picks bug report
+        // or feature request from there. No app-side network IO.
+        guard let url = URL(string: "https://github.com/larryxiao/openquack/issues/new/choose") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
     }
 
     @MainActor

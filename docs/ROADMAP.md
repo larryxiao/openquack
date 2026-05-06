@@ -84,6 +84,7 @@ SPEC-006 (agent dispatch) builds on.
 | ⚪ | Live partial transcripts in the pill/popover while speaking — UX-facing (lets the user see what's being captured, catch mistakes early). Distinct from the perf streaming above; could share infra. | new SPEC | M |
 | 🔵 | Usage stats pane: words dictated via OpenQuack, time saved (vs. typing baseline), total audio processed. Local-only, opt-in display. | SPEC-013 | S |
 | 🔵 | Local audio + transcript history: keep recent recordings on disk so a crash/failure mid-long-utterance doesn't force the user to repeat 1–2 minutes of speech. Local-only, retention cap, easy purge. Privacy selling point — works offline, nothing leaves the device. | SPEC-014 | M |
+| 🟡 | Send-feedback menu item — one click from status item to GitHub issue chooser. Closes the user → repo feedback loop. | SPEC-018 | S |
 | ⚪ | Code signing + notarisation | — | S |
 | ⚪ | Sparkle auto-update | — | S |
 | ⚪ | Demo gif + landing page (GitHub Pages) | — | S |
