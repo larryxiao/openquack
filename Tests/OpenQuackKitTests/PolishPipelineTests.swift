@@ -42,6 +42,26 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertNil(engine)
     }
 
+    func testMakeEngineOllamaWithNonLoopbackURLReturnsNil() {
+        // Privacy contract: non-loopback URLs are blocked at engine
+        // construction, not just at the Settings UI surface.
+        let engine = PolishPipeline.makeEngine(
+            kind: .ollama,
+            ollamaURL: URL(string: "http://192.168.1.5:11434/api/chat")!,
+            ollamaModel: "gemma3:1b"
+        )
+        XCTAssertNil(engine, "non-loopback URL must not produce an engine even with a valid model")
+    }
+
+    func testMakeEngineOllamaWithPublicURLReturnsNil() {
+        let engine = PolishPipeline.makeEngine(
+            kind: .ollama,
+            ollamaURL: URL(string: "https://api.openai.com/v1/chat/completions")!,
+            ollamaModel: "gpt-4"
+        )
+        XCTAssertNil(engine)
+    }
+
     func testMakeEngineMlxLMReturnsNilUntilPR5() {
         let engine = PolishPipeline.makeEngine(
             kind: .mlxLM,

@@ -31,6 +31,12 @@ public enum PolishPipeline {
             guard !ollamaModel.trimmingCharacters(in: .whitespaces).isEmpty else {
                 return nil
             }
+            // Privacy contract: the engine self-reports
+            // `requiresNetwork = false`, so the URL has to be validated at
+            // the construction boundary. Non-loopback URLs would silently
+            // leak transcript text off-device. Settings → Polish blocks
+            // them visually; this check is the load-bearing enforcement.
+            guard isLoopback(ollamaURL) else { return nil }
             return OllamaPolishEngine(
                 endpoint: ollamaURL,
                 model: ollamaModel,
