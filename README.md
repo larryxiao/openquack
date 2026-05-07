@@ -40,7 +40,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 **Local.** Everything runs on your device — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction. And because there's no API call in the loop, it just keeps working — offline, on a plane, behind a corporate firewall.
 
-**Fast.** Whisper on Apple Silicon transcribes in roughly a fifth of the time you spent speaking. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB. Faster than typing in most cases. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+**Fast.** Whisper on Apple Silicon transcribes in roughly a fifth of the time you spent speaking. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB. Faster than typing in most cases. Especially fast on long dictations: a 5-minute clip finishes in about 3 seconds after you stop, regardless of length, because we stream chunks while you speak. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
 **Open.** MIT-licensed. Every line is auditable; every change happens in public. The version running in your menu bar is the version in this repo.
 
