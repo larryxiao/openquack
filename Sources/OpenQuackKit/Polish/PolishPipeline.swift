@@ -44,6 +44,29 @@ public enum PolishPipeline {
         }
     }
 
+    /// Whether a URL's host is a loopback address. Used by Settings UI to
+    /// block non-loopback Ollama endpoints — the privacy contract is "no
+    /// off-device traffic from the polish path", and the engine itself
+    /// claims `requiresNetwork = false` regardless of URL, so the URL has
+    /// to be validated up front.
+    ///
+    /// Recognised loopback forms: `localhost`, `127.0.0.1`, `::1`,
+    /// `[::1]`. LAN IPs (192.168.*, 10.*, 172.16-31.*) are deliberately
+    /// rejected — RFC-1918 ranges still leak transcript text to other
+    /// machines on the network.
+    public static func isLoopback(_ urlString: String) -> Bool {
+        guard let url = URL(string: urlString) else { return false }
+        return isLoopback(url)
+    }
+
+    public static func isLoopback(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return host == "localhost"
+            || host == "127.0.0.1"
+            || host == "::1"
+            || host == "[::1]"
+    }
+
     /// Apply LLM polish if the engine is configured. On any throw or `nil`
     /// engine, return the input unchanged so the caller's regex polish
     /// (`TextPolisher.polish`) can still run as the safety net.

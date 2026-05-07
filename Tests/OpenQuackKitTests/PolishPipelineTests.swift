@@ -96,6 +96,39 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertEqual(result, "raw text", "engine throw must fall back to raw")
     }
 
+    // MARK: - isLoopback (URL validation for the Settings UI)
+
+    func testIsLoopbackAcceptsCanonicalForms() {
+        XCTAssertTrue(PolishPipeline.isLoopback("http://localhost:11434/api/chat"))
+        XCTAssertTrue(PolishPipeline.isLoopback("http://127.0.0.1:11434/api/chat"))
+        XCTAssertTrue(PolishPipeline.isLoopback("http://[::1]:11434/api/chat"))
+        XCTAssertTrue(PolishPipeline.isLoopback("https://localhost/api/chat"))
+    }
+
+    func testIsLoopbackCaseInsensitive() {
+        XCTAssertTrue(PolishPipeline.isLoopback("http://LOCALHOST:11434/api/chat"))
+        XCTAssertTrue(PolishPipeline.isLoopback("http://LocalHost:11434/api/chat"))
+    }
+
+    func testIsLoopbackRejectsLANIPs() {
+        XCTAssertFalse(PolishPipeline.isLoopback("http://192.168.1.5:11434/api/chat"),
+                       "LAN IPs leak transcript to other machines on the network")
+        XCTAssertFalse(PolishPipeline.isLoopback("http://10.0.0.1:11434/api/chat"))
+        XCTAssertFalse(PolishPipeline.isLoopback("http://172.16.0.1:11434/api/chat"))
+    }
+
+    func testIsLoopbackRejectsPublicHosts() {
+        XCTAssertFalse(PolishPipeline.isLoopback("https://api.openai.com/v1/chat/completions"))
+        XCTAssertFalse(PolishPipeline.isLoopback("http://example.com:11434/api/chat"))
+    }
+
+    func testIsLoopbackRejectsMalformedURLs() {
+        XCTAssertFalse(PolishPipeline.isLoopback("not a url"))
+        XCTAssertFalse(PolishPipeline.isLoopback(""))
+        // Schemeless host doesn't parse as a host with URL(string:) — must reject.
+        XCTAssertFalse(PolishPipeline.isLoopback("localhost:11434"))
+    }
+
     func testApplyLLMPolishPassesContextToEngine() async {
         final class CapturingEngine: TextPolishEngine, @unchecked Sendable {
             static let engineName = "stub-capture"

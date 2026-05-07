@@ -12,7 +12,7 @@ import OpenQuackKit
 // "reception" pane and uses CreamSurface + serif titles.
 
 struct SettingsView: View {
-    enum Tab: Hashable { case general, shortcut, stats, history, about }
+    enum Tab: Hashable { case general, shortcut, polish, stats, history, about }
     @State private var selection: Tab = .general
     @ObservedObject var appState: AppState
 
@@ -24,6 +24,9 @@ struct SettingsView: View {
             ShortcutPane()
                 .tabItem { Label("Shortcut", systemImage: "command") }
                 .tag(Tab.shortcut)
+            PolishPane()
+                .tabItem { Label("Polish", systemImage: "wand.and.stars") }
+                .tag(Tab.polish)
             StatsPane()
                 .tabItem { Label("Stats", systemImage: "chart.bar") }
                 .tag(Tab.stats)
@@ -181,6 +184,162 @@ private struct ShortcutPane: View {
         .padding()
         .creamSettingsBackground()
     }
+}
+
+// MARK: - Polish
+
+/// SPEC-007 PR #4 — Settings → Polish pane. Picks the LLM polish engine,
+/// configures it, and runs a one-shot test against a fixed string so the
+/// user can verify the local daemon is reachable before relying on it
+/// during dictation.
+///
+/// Default engine is Off; turning it on routes transcripts through the
+/// chosen engine before the existing regex polish step. The engine
+/// `requiresNetwork = false` claim is enforced here by validating the
+/// URL is loopback — non-loopback URLs are blocked with a red message.
+private struct PolishPane: View {
+    @AppStorage("polishEngine")      private var polishEngine: String = "off"
+    @AppStorage("polishOllamaURL")   private var polishOllamaURL: String = "http://localhost:11434/api/chat"
+    @AppStorage("polishOllamaModel") private var polishOllamaModel: String = ""
+
+    @State private var isTesting = false
+    @State private var testOutput: String? = nil
+    @State private var testError: String? = nil
+
+    private static let testInput = "um so this is a test of the local polish engine yeah it should clean up the fillers"
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("Engine", selection: $polishEngine) {
+                    Text("Off — regex polish only").tag("off")
+                    Text("Ollama — local HTTP daemon").tag("ollama")
+                    Text("MLX-LM — in-process (coming soon)").tag("mlx-lm")
+                }
+                .help("Off is the default. Picking Ollama or MLX-LM routes the transcript through a small local LLM before paste, on top of the existing regex polish (Settings → General).")
+                if polishEngine == "mlx-lm" {
+                    Text("MLX-LM lands in a later release. For now, falls back to regex polish only.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.amber)
+                }
+                Text("Polish runs locally. Audio still never leaves your Mac. Transcript text is sent only to the engine you pick — Ollama on `localhost`, or MLX-LM in-process.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Engine")
+            }
+
+            if polishEngine == "ollama" {
+                Section {
+                    LabeledContent("Endpoint URL") {
+                        TextField("http://localhost:11434/api/chat", text: $polishOllamaURL)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    if !polishOllamaURL.isEmpty && !PolishPipeline.isLoopback(polishOllamaURL) {
+                        Label(
+                            "Endpoint must be loopback (localhost / 127.0.0.1 / ::1). Non-loopback URLs would send transcript text off-device — blocked by the privacy contract.",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    }
+                    LabeledContent("Model") {
+                        TextField("e.g. gemma3:1b", text: $polishOllamaModel)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    Text("List installed models with `ollama list` in Terminal. The model stays warm between calls (`keep_alive=-1`).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    SectionHeader("Ollama")
+                }
+
+                Section {
+                    HStack {
+                        Button(isTesting ? "Testing…" : "Test connection") {
+                            Task { await runTest() }
+                        }
+                        .disabled(!canTest)
+                        if isTesting {
+                            ProgressView().controlSize(.small)
+                        }
+                        Spacer()
+                    }
+                    if let testOutput {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Polished:", systemImage: "checkmark.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Theme.moss)
+                            Text(testOutput)
+                                .font(.caption)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(Theme.moss.opacity(0.08))
+                                .cornerRadius(6)
+                        }
+                    }
+                    if let testError {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Failed:", systemImage: "xmark.circle.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.red)
+                            Text(testError)
+                                .font(.caption)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(8)
+                                .background(Color.red.opacity(0.08))
+                                .cornerRadius(6)
+                        }
+                    }
+                    Text("Sends a fixed test string to the engine. The result is shown above. Failures here mean Ollama isn't running, the model isn't pulled, or the URL is wrong — the dictation pipeline silently falls back to regex polish in that case.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    SectionHeader("Test")
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .creamSettingsBackground()
+    }
+
+    private var canTest: Bool {
+        !isTesting
+            && !polishOllamaModel.trimmingCharacters(in: .whitespaces).isEmpty
+            && PolishPipeline.isLoopback(polishOllamaURL)
+    }
+
+    private func runTest() async {
+        isTesting = true
+        testOutput = nil
+        testError = nil
+        defer { isTesting = false }
+
+        guard let url = URL(string: polishOllamaURL) else {
+            testError = "Invalid URL."
+            return
+        }
+        let engine = OllamaPolishEngine(
+            endpoint: url,
+            model: polishOllamaModel,
+            timeoutSeconds: 12  // generous on first call when Ollama loads the model
+        )
+        do {
+            let polished = try await engine.polish(
+                Self.testInput,
+                context: PolishContext(language: "en")
+            )
+            testOutput = polished
+        } catch let err as PolishError {
+            testError = err.errorDescription ?? "\(err)"
+        } catch {
+            testError = "\(error.localizedDescription)"
+        }
+    }
+
 }
 
 // MARK: - About
