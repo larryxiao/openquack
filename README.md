@@ -14,6 +14,18 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 </div>
 
+<p align="center">
+  <strong>English</strong> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.ja.md">日本語</a> ·
+  <a href="README.ko.md">한국어</a> ·
+  <a href="README.fr.md">Français</a> ·
+  <a href="README.es.md">Español</a> ·
+  <a href="README.de.md">Deutsch</a>
+</p>
+
+> 🌐 Translations are machine-translated stubs. Native-speaker contributions very welcome — open a PR or see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ---
 
 > 📢 **What's new — [v2.0.0-alpha.9](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.9):** blazing-fast dictation, even on long clips. Plus a fresh new look. Hope you like it!
