@@ -65,6 +65,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.bool(forKey: "saveAudio")
     }
 
+    // SPEC-007 PR #3 — optional LLM polish before the regex pass.
+    // Default `polishEngine = "off"` so behaviour is unchanged for users
+    // who don't opt in; Settings → Polish (PR #4) surfaces the toggle.
+    private var polishEngineKind: PolishEngineKind {
+        let raw = UserDefaults.standard.string(forKey: "polishEngine") ?? "off"
+        return PolishEngineKind(rawValue: raw) ?? .off
+    }
+    private var polishOllamaURLValue: URL {
+        let raw = UserDefaults.standard.string(forKey: "polishOllamaURL") ?? ""
+        return URL(string: raw) ?? OllamaPolishEngine.defaultEndpoint
+    }
+    private var polishOllamaModel: String {
+        UserDefaults.standard.string(forKey: "polishOllamaModel") ?? ""
+    }
+
+    /// Resolve current settings into a `TextPolishEngine`. Returns `nil`
+    /// when polish is off or unconfigured — the dictation pipeline treats
+    /// `nil` exactly like a throwing engine and runs only the regex pass.
+    /// Cheap to call per dictation: the engine init does not load weights;
+    /// `keep_alive: -1` keeps Ollama warm server-side.
+    private func currentPolishEngine() -> TextPolishEngine? {
+        PolishPipeline.makeEngine(
+            kind: polishEngineKind,
+            ollamaURL: polishOllamaURLValue,
+            ollamaModel: polishOllamaModel
+        )
+    }
+
     private var lastVoiceAt: Date?
     private static let voiceThreshold: Float = 0.06
     private static let vadMinDuration: Double = 0.8
@@ -610,12 +638,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // script preference before any other text shaping.
                 let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
 
+                // SPEC-007 PR #3: optional LLM polish before the regex
+                // pass. `nil` engine or any throw → fall back to `scripted`
+                // so the regex pass below is the unconditional safety net.
+                let llmPolished = await PolishPipeline.applyLLMPolish(
+                    scripted,
+                    engine: currentPolishEngine(),
+                    context: PolishContext(
+                        language: result.detectedLanguage,
+                        foregroundApp: nil,
+                        timestamp: Date()
+                    )
+                )
+
                 // Smart formatting on raw Whisper output (capitalisation,
                 // end-punctuation, fillers). Toggle: Settings → General.
                 let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
                 let polished = polishEnabled
-                    ? TextPolisher.polish(scripted)
-                    : scripted
+                    ? TextPolisher.polish(llmPolished)
+                    : llmPolished
 
                 // Hold the progress bar at full briefly so the user sees the
                 // transition land instead of jumping straight to "Pasted".
@@ -821,8 +862,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 customWords: customWords
             )
             let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
+            // SPEC-007 PR #3: same LLM-polish-then-regex chain as the main
+            // path; recovery is best-effort, errors silently fall through.
+            let llmPolished = await PolishPipeline.applyLLMPolish(
+                scripted,
+                engine: currentPolishEngine(),
+                context: PolishContext(
+                    language: result.detectedLanguage,
+                    foregroundApp: nil,
+                    timestamp: Date()
+                )
+            )
             let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
-            let polished = polishEnabled ? TextPolisher.polish(scripted) : scripted
+            let polished = polishEnabled ? TextPolisher.polish(llmPolished) : llmPolished
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
                 _ = PasteService.paste(polished)
