@@ -169,7 +169,7 @@ struct MenuBarContent: View {
     private var transcriptSection: some View {
         if let transcript = state.lastTranscript, !transcript.isEmpty {
             VStack(alignment: .leading, spacing: Theme.s8) {
-                HStack {
+                HStack(spacing: Theme.s8) {
                     SectionHeader("Last transcript")
                     Spacer()
                     if let dur = state.lastAudioSeconds, let wall = state.lastWallSeconds {
@@ -178,6 +178,7 @@ struct MenuBarContent: View {
                             .font(.caption2.monospacedDigit())
                             .foregroundStyle(.tertiary)
                     }
+                    CopyTranscriptButton(text: transcript)
                 }
                 Text(transcript)
                     .font(.body)
@@ -262,5 +263,38 @@ private struct PopoverLevelMeter: View {
         let total = max(1, history.count - 1)
         let position = Double(index) / Double(total)
         return 0.45 + 0.45 * position
+    }
+}
+
+// MARK: - Copy-to-clipboard button (SPEC-020)
+
+/// One-click copy of the last transcript. Lives next to the dur·rtf metric
+/// in the "Last transcript" section header. Label flips to "Copied" for
+/// 1.5s after a tap; tapping again before that resets the timer cleanly.
+private struct CopyTranscriptButton: View {
+    let text: String
+    @State private var copied = false
+    @State private var resetTask: Task<Void, Never>?
+
+    var body: some View {
+        Button(action: handleTap) {
+            Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                .font(.caption2)
+                .labelStyle(.titleAndIcon)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .accessibilityLabel(copied ? "Transcript copied to clipboard" : "Copy transcript to clipboard")
+    }
+
+    private func handleTap() {
+        PasteService.copyToClipboard(text)
+        resetTask?.cancel()
+        copied = true
+        resetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            copied = false
+        }
     }
 }
