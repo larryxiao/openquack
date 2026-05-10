@@ -1,7 +1,6 @@
 # SPEC-022 — Custom dictionary auto-learn from user corrections
 
 **Status:** draft  
-**Milestone:** M3  
 
 ---
 
@@ -37,33 +36,41 @@ a candidate for the dictionary.
 
 ### 2.1 Committed-text capture
 
-OpenQuack already knows the raw transcript (`state.lastTranscript`). To capture
-what the user actually sent we need to observe one of two commit events:
+OpenQuack already knows the raw transcript (`state.lastTranscript`). The
+highest-value signal is **paste-at-cursor + subsequent in-field editing**: the user
+pastes, sees "cloud code", and fixes it to "Claude Code" without leaving the app
+they're working in. Capturing this requires observing the focused text field after
+the paste — which OpenQuack can already do, because Accessibility permission is
+granted at onboarding for paste-at-cursor itself.
+
+Capture happens in two paths:
 
 | Commit path | How to capture |
 |---|---|
-| Paste-at-cursor succeeds | Already happens immediately — snapshot `state.lastTranscript` as `rawTranscript` before CGEvent fires. The clipboard content at that point is the raw transcript, so no new signal is needed *unless* the user edits it after paste. |
-| User copies via the Copy button | Transcript text at button-tap time is the candidate raw string. |
-| User edits the popover transcript field (future) | Not yet a supported interaction; out of scope. |
+| Paste-at-cursor succeeds | After `CGEvent` paste fires, attach an `AXObserver` to the focused element. Read the initial field value to establish a baseline. When focus leaves the element (or 60 s elapses), read the final value. Diff final vs. the pasted transcript to extract corrections. |
+| User copies via the Copy button | Transcript text at button-tap time is snapshotted as `rawTranscript`. No field observation needed; the copy path is recorded as-is (no correction signal, but the word is logged for future diff if re-used). |
 
-The highest-value commit path: **paste-at-cursor + subsequent keystroke correction**.
-The user pastes the raw transcript into their target field, sees "cloud code" instead
-of "Claude Code", deletes and retypes. OpenQuack cannot observe that edit directly
-without Accessibility capture of arbitrary apps (privacy non-starter).
+### 2.2 Post-paste field observer
 
-**Practical approach:** treat the committed text as the *clipboard content at
-copy-button-tap or first paste*, and rely on a separate **manual correction flow**
-(§2.2) for cases where the user edits after paste.
+Immediately after a successful paste:
 
-### 2.2 Manual correction pairing (lightweight)
+1. **Snapshot** the focused element's current value via
+   `AXUIElementCopyAttributeValue(focusedElement, kAXValueAttribute, ...)`.
+   This is the field content including the pasted transcript.
+2. **Register** an `AXObserver` callback on `kAXValueChangedNotification` for that
+   element. This fires on every keystroke in the field — no polling needed.
+3. **On focus-change or 60 s timeout**, read the element's value one final time.
+   Unregister the observer.
+4. **Extract the edited segment**: the transcript was appended at a known cursor
+   position (or replaced a selection). Locate the start offset by finding the
+   longest common prefix of the pasted transcript and the captured text. Run
+   the token-level diff (§2.3) on that segment only — ignore pre-existing text in
+   the field.
+5. Feed any substitution pairs into the `CorrectionCandidate` store (§2.4).
 
-After a transcript appears in the popover, add a small `✎` icon next to the Copy
-button. Tapping it opens a one-field sheet: "What did you say?" pre-filled with the
-raw transcript, editable. When the user submits, the corrected text is diffed
-against the raw transcript. This is opt-in and low-interruption.
-
-The `✎` button appears only when `state.lastTranscript` is non-empty, same guard
-as the Copy button.
+The observer is scoped to a single element and a single paste event — it does not
+persist across focus changes or new transcriptions. No continuous surveillance of
+the user's typing.
 
 ### 2.3 Diff algorithm
 
@@ -164,8 +171,10 @@ submission. A one-sentence disclaimer appears above the Settings button:
 
 - Fully automatic dictionary updates without user confirmation (too aggressive;
   Whisper errors can be intentional slang or code-switching).
-- Observing post-paste edits in third-party apps (Accessibility capture of
-  arbitrary fields — privacy non-starter).
+- Continuous or cross-session keylogging — the observer is per-paste, per-element,
+  and unregistered on focus-change. No ambient text capture.
+- Fields that do not expose `kAXValueAttribute` (password fields, some Electron
+  apps): the observer silently no-ops; no fallback needed.
 - ML-based candidate ranking (overkill at current correction volume; simple count
   threshold is sufficient).
 - Sending correction data to any server (privacy contract: nothing leaves the
@@ -179,7 +188,7 @@ submission. A one-sentence disclaimer appears above the Settings button:
 
 | PR | Title | SPEC cite | Effort | CI gate |
 |---|---|---|---|---|
-| PR-A | `feat: correction candidate detection + persistence` | SPEC-022 | S | swift build + swift test |
+| PR-A | `feat: post-paste AXObserver + correction candidate persistence` | SPEC-022 | S | swift build + swift test |
 | PR-B | `feat: "Add to dictionary" nudge (≥3 occurrences threshold)` | SPEC-022 | S | swift build + swift test |
 | PR-C | `feat: Settings — correction feedback export to GitHub issue` | SPEC-022 | S | swift build |
 
