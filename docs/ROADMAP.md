@@ -26,6 +26,7 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | 🔵 | "Send-confidence" bench: % of utterances clean enough to ship as-is | SPEC-007 | S |
 | 🔵 | Usage stats pane: words dictated, time saved, audio processed — local-only | SPEC-013 | S |
 | 🔵 | Local audio + transcript history — local-only, retention cap | SPEC-014 | M |
+| 🔵 | Custom dictionary auto-learn: diff transcript vs. committed text, surface candidates with ≥3 occurrences as "Add to dictionary" nudge; export correction log as pre-filled GitHub issue template | SPEC-022 | M |
 | ⚪ | `OllamaAgent` (local HTTP) | SPEC-006 ext | S |
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
 | ⚪ | Active-app context: feed foreground app + focused field text into Whisper prompt bias and polish/agent prompt | — | M |
