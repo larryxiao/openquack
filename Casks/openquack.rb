@@ -1,9 +1,9 @@
 cask "openquack" do
-  version "2.0.0-alpha.9"
+  version "2.0.0-alpha.10"
   # Set per-release by scripts/make_dmg.sh — paste the printed value in
   # before each tag is pushed. `:no_check` is the placeholder while no
   # release has been tagged yet.
-  sha256 "dddabbbb34c5fde2eaddbc624b2e3445e6a53f676441e203c4f9bd2c38edba66"
+  sha256 "7071ee95544e2cef14747192b21430113e558d7cd1b5a48b7f4b4d3ba733d80a"
 
   url "https://github.com/larryxiao/openquack/releases/download/v#{version}/OpenQuack-#{version}.dmg"
   name "OpenQuack"
