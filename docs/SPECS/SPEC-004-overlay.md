@@ -65,6 +65,7 @@ public final class OverlayController {
 - Level meter (`recording.level`) updates at 30 fps; the overlay subscribes to `AudioRecorder.currentLevel` (SPEC-001).
 - The overlay window does NOT steal focus. Don't call `makeKeyAndOrderFront`; use `orderFront(nil)`.
 - Click-through except on the cancel button area, which acts as cancel.
+- On multi-monitor setups the pill appears on the screen that contains the mouse cursor at show-time, falling back to `NSScreen.main`. This puts the indicator where the user's attention already is when they trigger the hotkey.
 
 ## Open questions
 

@@ -71,7 +71,9 @@ final class RecordingOverlay {
     }
 
     private func positionTopCentre(panel: NSPanel) {
-        guard let screen = NSScreen.main else { return }
+        let cursor = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(cursor) } ?? NSScreen.main
+        guard let screen else { return }
         let visible = screen.visibleFrame
         let x = visible.midX - panel.frame.width / 2
         let y = visible.maxY - panel.frame.height - Theme.s24
