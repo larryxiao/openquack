@@ -27,6 +27,7 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | 🔵 | Usage stats pane: words dictated, time saved, audio processed — local-only | SPEC-013 | S |
 | 🔵 | Local audio + transcript history — local-only, retention cap | SPEC-014 | M |
 | 🔵 | Custom dictionary auto-learn: diff transcript vs. committed text, surface candidates with ≥3 occurrences as "Add to dictionary" nudge; export correction log as pre-filled GitHub issue template | SPEC-022 | M |
+| 🔵 | `fn` / Globe key as a bindable hotkey: bare `fn` or `fn`+key, opt-in alongside existing `⌃⇧Space`; fixes onboarding picker silently ignoring `fn` (#23) | SPEC-003a | S |
 | ⚪ | `OllamaAgent` (local HTTP) | SPEC-006 ext | S |
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
 | ⚪ | Active-app context: feed foreground app + focused field text into Whisper prompt bias and polish/agent prompt | — | M |

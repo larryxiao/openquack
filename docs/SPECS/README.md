@@ -15,6 +15,7 @@ Conventions:
 | [SPEC-001](SPEC-001-voice-capture.md) | Voice capture | draft | M2 |
 | [SPEC-002](SPEC-002-transcription.md) | Transcription | ratified | M1 |
 | [SPEC-003](SPEC-003-hotkey.md) | Global hotkey | draft | M2 |
+| [SPEC-003a](SPEC-003a-fn-key.md) | `fn` / Globe key as a bindable hotkey | draft | M2 |
 | [SPEC-004](SPEC-004-overlay.md) | Recording overlay | draft | M2 |
 | [SPEC-005](SPEC-005-paste.md) | Paste at cursor | draft | M2 |
 | [SPEC-006](SPEC-006-agent-dispatch.md) | Agent dispatch | draft | M2 |
