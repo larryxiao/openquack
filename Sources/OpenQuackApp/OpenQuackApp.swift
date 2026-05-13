@@ -78,6 +78,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updater = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
     let historyStore = HistoryStore()    // SPEC-014
+    let correctionStore = CorrectionCandidateStore()  // SPEC-022 PR-A
+    private var pasteObserver: PostPasteCorrectionObserver?
 
     /// Persist the last recording so the user can verify capture quality
     /// independent of model output. `open ~/Library/Application Support/OpenQuack/last-recording.wav`.
@@ -652,6 +654,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     PasteService.copyToClipboard(polished)
                     pasted = false
+                }
+
+                // SPEC-022 PR-A: after a successful paste-at-cursor, attach a
+                // one-shot AX observer to the focused field. Captures the
+                // user's in-place edits over the next 60 s (or until focus
+                // leaves), diffs them against the pasted transcript, and
+                // appends correction candidates to the store. Silent no-op
+                // if AX isn't trusted or the field doesn't expose a value.
+                if pasted {
+                    let store = self.correctionStore
+                    let transcript = polished
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        let observer = PostPasteCorrectionObserver(store: store)
+                        if observer.start(transcript: transcript) {
+                            self.pasteObserver = observer
+                        }
+                    }
                 }
 
                 await MainActor.run {
