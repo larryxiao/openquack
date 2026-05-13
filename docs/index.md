@@ -1,6 +1,10 @@
 ---
 title: OpenQuack — Local-only voice dictation for macOS
 description: Free, open-source Mac dictation app. Press a hotkey, speak, transcript appears at your cursor. WhisperKit on Apple Silicon, 99 languages, no cloud, no telemetry, MIT licensed.
+image: https://github.com/larryxiao/openquack/raw/main/docs/images/banner.png
+twitter:
+  card: summary_large_image
+  image: https://github.com/larryxiao/openquack/raw/main/docs/images/banner.png
 ---
 
 # OpenQuack
