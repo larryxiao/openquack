@@ -32,7 +32,7 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
 | ⚪ | Active-app context: feed foreground app + focused field text into Whisper prompt bias and polish/agent prompt | — | M |
 | ⚪ | Per-app tone profiles: bundle-ID → preset (technical / formal / casual / neutral) with custom prompt field; auto-switches on hotkey fire — issue #24 | — | M; needs SPEC-007 first |
-| ⚪ | Launch at login (SMAppService toggle in Settings → General) — issue #29 | — | S |
+| 🔵 | Launch at login (SMAppService toggle in Settings → General) — issue #29 | SPEC-023 | S |
 | ⚪ | Investigate streaming for medium-length (15–30s) audio: bench WER vs. wall-time at lower `targetChunkSeconds` | SPEC-012 ext | S |
 | ⚪ | Live partial transcripts in pill/popover while speaking | — | M |
 | ⚪ | System-audio capture (meeting mode) | — | ScreenCaptureKit |
