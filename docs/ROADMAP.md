@@ -13,7 +13,6 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 
 | | Task | Spec | Notes |
 |---|---|---|---|
-| 🟡 | Send-feedback menu item — one click from status item to GitHub issue chooser | SPEC-018 | S |
 | 🔵 | Agent session protocol + `PassthroughAgent` + conversation panel | SPEC-006 | M |
 | 🔵 | `ClaudeCodeAgent` — long-lived subprocess, streaming events | SPEC-006 | M |
 | 🔵 | Approval prompt UX (overlay morph + buttons) | SPEC-006 | S |
@@ -28,9 +27,12 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | 🔵 | Local audio + transcript history — local-only, retention cap | SPEC-014 | M |
 | 🔵 | Custom dictionary auto-learn: diff transcript vs. committed text, surface candidates with ≥3 occurrences as "Add to dictionary" nudge; export correction log as pre-filled GitHub issue template | SPEC-022 | M |
 | 🔵 | `fn` / Globe key as a bindable hotkey: bare `fn` or `fn`+key, opt-in alongside existing `⌃⇧Space`; fixes onboarding picker silently ignoring `fn` (#23) | SPEC-003a | S |
+| 🟡 | Mandarin auto-detect fix: categorical failure-mode metrics + zh corpus expansion (PR-A); token suppression + script-match retry (PR-B) — issue #17 | SPEC-021 | S |
 | ⚪ | `OllamaAgent` (local HTTP) | SPEC-006 ext | S |
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
 | ⚪ | Active-app context: feed foreground app + focused field text into Whisper prompt bias and polish/agent prompt | — | M |
+| ⚪ | Per-app tone profiles: bundle-ID → preset (technical / formal / casual / neutral) with custom prompt field; auto-switches on hotkey fire — issue #24 | — | M; needs SPEC-007 first |
+| ⚪ | Launch at login (SMAppService toggle in Settings → General) — issue #29 | — | S |
 | ⚪ | Investigate streaming for medium-length (15–30s) audio: bench WER vs. wall-time at lower `targetChunkSeconds` | SPEC-012 ext | S |
 | ⚪ | Live partial transcripts in pill/popover while speaking | — | M |
 | ⚪ | System-audio capture (meeting mode) | — | ScreenCaptureKit |
@@ -41,6 +43,7 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | ⚪ | Sparkle auto-update | — | S |
 | ⚪ | Demo gif + landing page (GitHub Pages) | — | S |
 | ⚪ | Linux / Windows ports | — | post-2.0 |
+| 🟢 | Send-feedback menu item — one click from status item to GitHub issue chooser | SPEC-018 | merged in #5 |
 | 🟢 | Stream transcription for long audio (>~30s) — chunk while recording | SPEC-012 | perf; user never sees partials |
 | 🟢 | App shell — SwiftPM target, menu bar, About panel | SPEC-010 | — |
 | 🟢 | Audio capture — AVAudioEngine → 16 kHz mono WAV | SPEC-001 | — |
