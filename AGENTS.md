@@ -19,13 +19,15 @@ How AI agents (and humans) should contribute to OpenQuack. Most rules apply equa
 ## Workflow
 
 1. Open a **draft PR early** — even with just a one-line description and a stub change. Push small, test often.
-2. Run before pushing:
+2. Run before pushing (use Xcode's toolchain; the system `swift 6.1.x` lacks the `PreviewsMacros` plugin that `KeyboardShortcuts` depends on, so a bare `swift build` fails on a clean checkout):
    ```sh
-   swift build && swift test
+   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift build
+   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
    ```
+   CI uses the same toolchain, so the override matches reality.
 3. If your change might affect transcription quality or latency, also:
    ```sh
-   swift run openquack-bench --models tiny --corpus bench/corpus/short
+   DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift run openquack-bench --models tiny --corpus bench/corpus/short
    ```
    and report the delta in the PR.
 4. Mark the PR ready for review when CI is green and your tests cover the change.
