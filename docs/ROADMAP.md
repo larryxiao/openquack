@@ -23,8 +23,6 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | 🔵 | Bench polish WER delta + latency on `openquack-bench` | SPEC-007 | S |
 | 🔵 | Domain-term accuracy bench (e.g. "Claude Code" not "cloud code") | SPEC-007 | S |
 | 🔵 | "Send-confidence" bench: % of utterances clean enough to ship as-is | SPEC-007 | S |
-| 🔵 | Usage stats pane: words dictated, time saved, audio processed — local-only | SPEC-013 | S |
-| 🔵 | Local audio + transcript history — local-only, retention cap | SPEC-014 | M |
 | 🔵 | Custom dictionary auto-learn: diff transcript vs. committed text, surface candidates with ≥3 occurrences as "Add to dictionary" nudge; export correction log as pre-filled GitHub issue template | SPEC-022 | M |
 | 🔵 | `fn` / Globe key as a bindable hotkey: bare `fn` or `fn`+key, opt-in alongside existing `⌃⇧Space`; fixes onboarding picker silently ignoring `fn` (#23) | SPEC-003a | S |
 | 🟡 | Mandarin auto-detect fix: categorical failure-mode metrics + zh corpus expansion (PR-A); token suppression + script-match retry (PR-B) — issue #17 | SPEC-021 | S |
@@ -44,6 +42,8 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | ⚪ | Demo gif + landing page (GitHub Pages) | — | S |
 | ⚪ | Linux / Windows ports | — | post-2.0 |
 | 🟢 | Send-feedback menu item — one click from status item to GitHub issue chooser | SPEC-018 | merged in #5 |
+| 🟢 | Usage stats pane: words dictated, time saved, audio processed — local-only | SPEC-013 | merged in c91da06 |
+| 🟢 | Local audio + transcript history — local-only, retention cap | SPEC-014 | merged in c91da06 |
 | 🟢 | Stream transcription for long audio (>~30s) — chunk while recording | SPEC-012 | perf; user never sees partials |
 | 🟢 | App shell — SwiftPM target, menu bar, About panel | SPEC-010 | — |
 | 🟢 | Audio capture — AVAudioEngine → 16 kHz mono WAV | SPEC-001 | — |
