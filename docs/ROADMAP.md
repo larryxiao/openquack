@@ -11,8 +11,28 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 
 ---
 
+## Adoption focus (current priority)
+
+The product has a working foundation. The current cycle is about removing first-launch friction, fixing visible quality issues, and improving the surfaces new users land on — **not building more features**. Pick from this band first.
+
 | | Task | Spec | Notes |
 |---|---|---|---|
+| 🔵 | Code signing + notarisation — kill first-launch Gatekeeper "right-click → Open" dance | SPEC-025 | S; biggest install-success unlock |
+| 🔵 | Sparkle auto-update — existing users stay on latest without reinstalling | SPEC-026 | S; pairs with the brew cask path |
+| 🔵 | README demo gif + landing-page polish — strong first-impression artifact | SPEC-027 | S |
+| 🟡 | Mandarin auto-detect fix: visible quality bug surfaced by issue #17 | SPEC-021 | PR #20 (bench) draft |
+| 🔵 | `fn` / Globe key as a bindable hotkey — meets a common new-user expectation (#23) | SPEC-003a | PR #28 draft |
+| 🔵 | Launch at login (SMAppService toggle) — basic menu-bar UX (#29) | SPEC-023 | reconcile in main; PR-B wires UI |
+| ⚪ | Submission tracking for awesome-mac / awesome-llm / awesome-swift lists | — | quiet but durable inbound |
+| ⚪ | Quarterly bench refresh — durable artifact + monthly relaunch hook | — | leverages existing 5×2×177 bench |
+
+## Feature backlog (deferred until adoption signal improves)
+
+These have SPECs and are ready to claim, but we're **holding new feature scope** until install + retention pipelines are strong enough to justify the surface area. Pick from here only when Adoption focus is empty.
+
+| | Task | Spec | Notes |
+|---|---|---|---|
+| 🟡 | Custom dictionary auto-learn (PR-A in flight as #32; PR-B/C deferred) | SPEC-022 | M |
 | 🔵 | Agent session protocol + `PassthroughAgent` + conversation panel | SPEC-006 | M |
 | 🔵 | `ClaudeCodeAgent` — long-lived subprocess, streaming events | SPEC-006 | M |
 | 🔵 | Approval prompt UX (overlay morph + buttons) | SPEC-006 | S |
@@ -23,24 +43,22 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 | 🔵 | Bench polish WER delta + latency on `openquack-bench` | SPEC-007 | S |
 | 🔵 | Domain-term accuracy bench (e.g. "Claude Code" not "cloud code") | SPEC-007 | S |
 | 🔵 | "Send-confidence" bench: % of utterances clean enough to ship as-is | SPEC-007 | S |
-| 🔵 | Custom dictionary auto-learn: diff transcript vs. committed text, surface candidates with ≥3 occurrences as "Add to dictionary" nudge; export correction log as pre-filled GitHub issue template | SPEC-022 | M |
-| 🔵 | `fn` / Globe key as a bindable hotkey: bare `fn` or `fn`+key, opt-in alongside existing `⌃⇧Space`; fixes onboarding picker silently ignoring `fn` (#23) | SPEC-003a | S |
-| 🟡 | Mandarin auto-detect fix: categorical failure-mode metrics + zh corpus expansion (PR-A); token suppression + script-match retry (PR-B) — issue #17 | SPEC-021 | S |
+| 🔵 | Per-app tone profiles | SPEC-024 | M; needs SPEC-007 first |
 | ⚪ | `OllamaAgent` (local HTTP) | SPEC-006 ext | S |
 | ⚪ | `MLXLMAgent` (in-process via mlx-swift-lm) | SPEC-006 ext | M |
 | ⚪ | Active-app context: feed foreground app + focused field text into Whisper prompt bias and polish/agent prompt | — | M |
-| 🔵 | Per-app tone profiles: bundle-ID → preset (technical / formal / casual / neutral) with custom prompt field; auto-switches on hotkey fire — issue #24 | SPEC-024 | M; needs SPEC-007 first |
-| 🔵 | Launch at login (SMAppService toggle in Settings → General) — issue #29 | SPEC-023 | S |
 | ⚪ | Investigate streaming for medium-length (15–30s) audio: bench WER vs. wall-time at lower `targetChunkSeconds` | SPEC-012 ext | S |
 | ⚪ | Live partial transcripts in pill/popover while speaking | — | M |
 | ⚪ | System-audio capture (meeting mode) | — | ScreenCaptureKit |
 | ⚪ | Multilingual UI strings | — | follow Whisper language menu |
 | ⚪ | Action confirmation UI for high-risk agent calls | — | privacy gate |
 | ⚪ | Per-agent transcript history pane (opt-in, local-only) | — | — |
-| ⚪ | Code signing + notarisation | — | S |
-| ⚪ | Sparkle auto-update | — | S |
-| ⚪ | Demo gif + landing page (GitHub Pages) | — | S |
 | ⚪ | Linux / Windows ports | — | post-2.0 |
+
+## Done
+
+| | Task | Spec | Notes |
+|---|---|---|---|
 | 🟢 | Send-feedback menu item — one click from status item to GitHub issue chooser | SPEC-018 | merged in #5 |
 | 🟢 | Usage stats pane: words dictated, time saved, audio processed — local-only | SPEC-013 | merged in c91da06 |
 | 🟢 | Local audio + transcript history — local-only, retention cap | SPEC-014 | merged in c91da06 |
@@ -71,7 +89,7 @@ Atomic tasks — every item cites a SPEC and maps to a PR. Agent contributors sh
 
 ## How to claim a task
 
-1. Pick a 🔵.
+1. **Pick from Adoption focus first.** Move to Feature backlog only if Adoption is empty.
 2. Open an issue using the *Agent Task* template; mark yourself as owner.
 3. Read the cited SPEC.
 4. Open a draft PR within ~24h naming the task in the title.
