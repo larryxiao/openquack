@@ -15,10 +15,11 @@ struct SettingsView: View {
     enum Tab: Hashable { case general, shortcut, stats, history, about }
     @State private var selection: Tab = .general
     @ObservedObject var appState: AppState
+    @ObservedObject var launchAtLoginController: LaunchAtLoginController
 
     var body: some View {
         TabView(selection: $selection) {
-            GeneralPane()
+            GeneralPane(launchAtLoginController: launchAtLoginController)
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(Tab.general)
             ShortcutPane()
@@ -50,6 +51,8 @@ private struct GeneralPane: View {
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
     @AppStorage("customWords")         private var customWords: String = ""
     @AppStorage("model")               private var model: String = "medium"
+    @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
+    @ObservedObject var launchAtLoginController: LaunchAtLoginController
 
     var body: some View {
         Form {
@@ -140,6 +143,21 @@ private struct GeneralPane: View {
                     .foregroundStyle(.secondary)
             } header: {
                 SectionHeader("Custom dictionary")
+            }
+
+            Section {
+                Toggle("Launch OpenQuack at login", isOn: $launchAtLogin)
+                    .help("Start OpenQuack automatically when you sign in to your Mac, so the menu-bar icon and global hotkey are ready without launching the app manually.")
+                    .onChange(of: launchAtLogin) { newValue in
+                        launchAtLoginController.apply(desiredEnabled: newValue)
+                    }
+                if launchAtLoginController.showsApprovalHint {
+                    Text("macOS blocked OpenQuack from auto-starting. Enable it in System Settings → General → Login Items, then toggle this on again.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                SectionHeader("Startup")
             }
         }
         .formStyle(.grouped)

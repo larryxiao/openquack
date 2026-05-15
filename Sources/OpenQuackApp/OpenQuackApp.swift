@@ -76,8 +76,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     private var overlay: RecordingOverlay?
     private let updater = UpdateChecker()
-    let usageStats = UsageStats()        // SPEC-013
-    let historyStore = HistoryStore()    // SPEC-014
+    let usageStats = UsageStats()                                  // SPEC-013
+    let historyStore = HistoryStore()                              // SPEC-014
+    let launchAtLoginController = LaunchAtLoginController()        // SPEC-023
 
     /// Persist the last recording so the user can verify capture quality
     /// independent of model output. `open ~/Library/Application Support/OpenQuack/last-recording.wav`.
@@ -163,6 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await history.enforceRetention()
             await self.offerRecoveryIfNeeded()
         }
+
+        // SPEC-023 — align persisted toggle with OS-side login-item state.
+        launchAtLoginController.reconcileOnLaunch()
     }
 
     /// macOS calls this when the user double-clicks the .app while it's
@@ -311,7 +315,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     @objc private func menuShowApp() {
-        SettingsWindowController.show(appState: appState)
+        SettingsWindowController.show(
+            appState: appState,
+            launchAtLoginController: launchAtLoginController
+        )
     }
 
     @MainActor
