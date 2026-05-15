@@ -20,13 +20,17 @@ import ServiceManagement
 public enum LaunchAtLoginAction: Equatable, Sendable {
     /// State already matches: do nothing.
     case noop
-    /// User wants it on and the OS hasn't registered us yet — `register()`.
+    /// User wants it on and the OS doesn't have a BTM record for us yet —
+    /// `register()`. Covers both `.notRegistered` (legacy) and `.notFound`
+    /// (no BTM record exists at this bundle path, i.e. the bootstrap state
+    /// for `SMAppService.mainApp` before any successful register call).
     case register
     /// User wants it off and the OS has us registered — `unregister()`.
     case unregister
-    /// User wants it on but the OS reports `.requiresApproval` or
-    /// `.notFound`. Write `false` back to UserDefaults so the Settings
-    /// toggle reflects reality, and surface the approval-hint copy.
+    /// User wants it on but the OS reports `.requiresApproval` — the BTM
+    /// record exists but the user has actively disabled us in System
+    /// Settings → Login Items. Write `false` back to UserDefaults so the
+    /// Settings toggle reflects reality, and surface the approval-hint copy.
     case resetToggleOff
 }
 
@@ -37,12 +41,16 @@ public func reconcileLaunchAtLogin(
     currentStatus: SMAppService.Status
 ) -> LaunchAtLoginAction {
     switch (desiredEnabled, currentStatus) {
-    case (true,  .enabled):         return .noop
-    case (true,  .notRegistered):   return .register
-    case (true,  .requiresApproval),
-         (true,  .notFound):        return .resetToggleOff
-    case (false, .enabled):         return .unregister
-    case (false, _):                return .noop
-    @unknown default:               return .noop
+    case (true,  .enabled):          return .noop
+    // `.notFound` is the bootstrap state for `SMAppService.mainApp`: BTM
+    // simply has no record at this bundle path yet. Treat it like
+    // `.notRegistered` and try to register — the system will only build
+    // the record after a successful `register()` call.
+    case (true,  .notRegistered),
+         (true,  .notFound):         return .register
+    case (true,  .requiresApproval): return .resetToggleOff
+    case (false, .enabled):          return .unregister
+    case (false, _):                 return .noop
+    @unknown default:                return .noop
     }
 }

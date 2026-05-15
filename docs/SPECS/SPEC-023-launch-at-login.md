@@ -75,15 +75,24 @@ func reconcile(desiredEnabled: Bool, currentStatus: SMAppService.Status) -> Laun
 |---------|-------------------------|-------------------|
 | true    | `.enabled`              | `noop`            |
 | true    | `.notRegistered`        | `register`        |
+| true    | `.notFound`             | `register`        |
 | true    | `.requiresApproval`     | `resetToggleOff`  |
-| true    | `.notFound`             | `resetToggleOff`  |
 | false   | `.enabled`              | `unregister`      |
 | false   | anything else           | `noop`            |
 
+`.notFound` is the bootstrap state for `SMAppService.mainApp`: until a
+successful `register()` call builds the BTM record at this bundle path,
+`status` returns `.notFound` (BTM error -95, "record not found"). It must
+be treated like `.notRegistered` — try to register. Otherwise the toggle
+can never get out of `.notFound` because we'd refuse to ever call
+`register()`.
+
 `resetToggleOff` writes `false` back to `UserDefaults` so the Settings UI
 reflects reality on next render, and surfaces a single-line hint under the
-toggle (see "Settings UI" below). We do **not** silently retry registration
-when the user has revoked approval — that's the user's stated preference.
+toggle (see "Settings UI" below). It is reserved for the case where the
+user has *actively* revoked us in System Settings → Login Items
+(`.requiresApproval`) — we do not silently retry registration there,
+that's the user's stated preference.
 
 ### Toggle write path
 

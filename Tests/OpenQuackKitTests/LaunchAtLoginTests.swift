@@ -18,8 +18,8 @@ final class LaunchAtLoginTests: XCTestCase {
         XCTAssertEqual(reconcileLaunchAtLogin(desiredEnabled: true,  currentStatus: .requiresApproval), .resetToggleOff)
     }
 
-    func testDesiredTrue_notFound_resetToggleOff() {
-        XCTAssertEqual(reconcileLaunchAtLogin(desiredEnabled: true,  currentStatus: .notFound),       .resetToggleOff)
+    func testDesiredTrue_notFound_register() {
+        XCTAssertEqual(reconcileLaunchAtLogin(desiredEnabled: true,  currentStatus: .notFound),       .register)
     }
 
     func testDesiredFalse_enabled_unregister() {
