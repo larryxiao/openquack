@@ -130,6 +130,38 @@ Start with [`AGENTS.md`](AGENTS.md), pick a 🔵 task in [`docs/ROADMAP.md`](doc
 
 Under the hood: [`TUTORIAL`](docs/TUTORIAL.md) · [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`DESIGN`](docs/DESIGN.md) · [`INSTALL`](docs/INSTALL.md) · [`BLOG`](docs/blog/README.md).
 
+## FAQ
+
+**Is OpenQuack a free alternative to Wispr Flow, SuperWhisper, or MacWhisper?**
+Yes. OpenQuack is MIT-licensed and free. Wispr Flow, SuperWhisper, and MacWhisper require subscriptions or one-time purchases; OpenQuack does not.
+
+**Does it work completely offline?**
+Yes, after the first run. On first launch, the Whisper speech model downloads from Hugging Face (~500 MB on 16 GB Macs, ~250 MB on 8 GB Macs). After that, no internet connection is needed for dictation — ever.
+
+**What Mac do I need?**
+macOS 13 (Ventura) or later on Apple Silicon (M1 or newer). Intel Macs are not supported — WhisperKit requires Apple Silicon's Neural Engine.
+
+**How accurate is it?**
+On real human speech: ~2.6% word-error rate with the default model on an M4 / 16 GB Mac. In realistic office noise: ~6.3% WER. Full benchmark matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
+**Does it send my audio or transcripts anywhere?**
+No. Audio is recorded, transcribed, and discarded entirely on your Mac. No analytics, no telemetry, no account, no API calls in the dictation path. The source is MIT-licensed and auditable.
+
+**How is this different from the built-in macOS Dictation?**
+macOS Dictation sends audio to Apple's servers by default. OpenQuack runs fully local, supports 99 languages with no toggle, uses Whisper rather than Apple's proprietary model, and is open source.
+
+**How do I use it for typeless coding workflows?**
+OpenQuack pastes at wherever your cursor is — including the prompt bars of Claude Code, Cursor, Windsurf, or any terminal. Press the hotkey, speak the prompt, press again, and it appears.
+
+**What languages does it support?**
+99 Whisper languages. English is the default; to switch, open Settings → Language. Auto-detect works best on clips longer than 3 seconds and is most reliable when paired with a configured fallback language.
+
+**Why does the first launch take a long time?**
+The speech model downloads once on first run and is cached permanently in `~/Library/Application Support/OpenQuack/models/`. Every subsequent launch is instant.
+
+**Is there a Windows or Linux version?**
+Not currently. OpenQuack uses WhisperKit and CoreML, which are Apple-platform technologies.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
