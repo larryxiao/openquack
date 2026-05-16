@@ -21,8 +21,6 @@ The product has a working foundation. The current cycle is about removing first-
 | 🔵 | Sparkle auto-update — existing users stay on latest without reinstalling | SPEC-026 | S; pairs with the brew cask path |
 | 🔵 | README demo gif + landing-page polish — strong first-impression artifact | SPEC-027 | S |
 | 🟡 | Mandarin auto-detect fix: visible quality bug surfaced by issue #17 | SPEC-021 | PR #20 (bench) draft |
-| 🔵 | `fn` / Globe key as a bindable hotkey — meets a common new-user expectation (#23) | SPEC-003a | PR #28 draft |
-| 🔵 | Launch at login (SMAppService toggle) — basic menu-bar UX (#29) | SPEC-023 | reconcile in main; PR-B wires UI |
 | ⚪ | Submission tracking for awesome-mac / awesome-llm / awesome-swift lists | — | quiet but durable inbound |
 | ⚪ | Quarterly bench refresh — durable artifact + monthly relaunch hook | — | leverages existing 5×2×177 bench |
 
@@ -59,6 +57,9 @@ These have SPECs and are ready to claim, but we're **holding new feature scope**
 
 | | Task | Spec | Notes |
 |---|---|---|---|
+| 🟢 | `fn` / Globe key as a bindable hotkey (bare fn or fn+key) — closes #23 | SPEC-003a | merged in #28 |
+| 🟢 | Launch at login (SMAppService toggle in Settings → General) — closes #29 | SPEC-023 | merged in #33 (reconcile) + #39 (UI) |
+| 🟢 | Recording overlay follows the cursor across monitors — closes #25 | SPEC-004 | merged in #27 |
 | 🟢 | Send-feedback menu item — one click from status item to GitHub issue chooser | SPEC-018 | merged in #5 |
 | 🟢 | Usage stats pane: words dictated, time saved, audio processed — local-only | SPEC-013 | merged in c91da06 |
 | 🟢 | Local audio + transcript history — local-only, retention cap | SPEC-014 | merged in c91da06 |
