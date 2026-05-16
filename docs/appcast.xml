@@ -1,0 +1,36 @@
+<?xml version="1.0" standalone="yes"?>
+<!--
+    SPEC-026 — Stable-channel appcast for OpenQuack.
+
+    PR-A (this commit) lands an empty channel. No <item> blocks yet:
+    alpha.11 isn't a Sparkle release — Sparkle starts fetching this feed
+    on the next signed release built with SUPublicEDKey populated.
+
+    PR-C adds a release-script step that, for each new signed DMG:
+      1. reads the DMG's byte length
+      2. runs Sparkle's `sign_update` against the maintainer's EdDSA key
+      3. prepends a new <item> to this file
+      4. commits + pushes (GitHub Pages serves /docs)
+
+    Item shape (per Sparkle docs):
+        <item>
+          <title>v2.0.0-alpha.12</title>
+          <sparkle:version>2.0.0.12</sparkle:version>
+          <sparkle:shortVersionString>2.0.0-alpha.12</sparkle:shortVersionString>
+          <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+          <enclosure url="…/OpenQuack-2.0.0-alpha.12.dmg"
+            length="9123456" type="application/octet-stream"
+            sparkle:edSignature="…base64…" />
+        </item>
+
+    `sparkle:version` is the dotted build number Sparkle orders by;
+    `sparkle:shortVersionString` carries the human tag.
+-->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>OpenQuack — Stable</title>
+        <link>https://larryxiao.github.io/openquack/appcast.xml</link>
+        <description>In-app updates for stable OpenQuack releases (DMG path). Brew users upgrade via `brew upgrade --cask openquack`.</description>
+        <language>en</language>
+    </channel>
+</rss>

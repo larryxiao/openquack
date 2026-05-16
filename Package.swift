@@ -45,6 +45,11 @@ let package = Package(
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "0.18.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.4.0"),
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts.git", from: "2.4.0"),
+        // SPEC-026 — Sparkle 2.x for in-app updates on the DMG path.
+        // Kept off OpenQuackKit (kit stays Sparkle-free); linked only into
+        // OpenQuackApp. `from: "2.6.0"` floats up through 2.x; do not pin a
+        // branch.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
     ],
     targets: [
         .target(
@@ -115,7 +120,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "OpenQuackApp",
-            dependencies: ["OpenQuackKit"],
+            dependencies: [
+                "OpenQuackKit",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/OpenQuackApp",
             resources: [
                 .process("Resources"),
