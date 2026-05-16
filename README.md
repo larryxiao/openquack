@@ -28,6 +28,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
+> 📢 **What's new — [v2.0.0-alpha.10](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.10):** User experiences improvements such as copy transcription, easier to send feedback in app, and improved docs. Hope you like it!
 > 📢 **What's new — [v2.0.0-alpha.9](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.9):** blazing-fast dictation, even on long clips. Plus a fresh new look. Hope you like it!
 
 ## What it is
