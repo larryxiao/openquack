@@ -28,6 +28,10 @@ brew install --cask openquack
 
 Or [download the DMG](https://github.com/larryxiao/openquack/releases) and drag into Applications. macOS 13+ on Apple Silicon (M1 or newer).
 
+## Got stuck? Want a feature?
+
+Drop a comment in **[Discussions](https://github.com/larryxiao/openquack/discussions/43)** — it's the lowest-friction way to reach me. Bugs, feature ideas, "I'm using it for X" workflow stories, or quick questions about Whisper / model choice all welcome.
+
 ## Documentation
 
 - [Install guide](INSTALL.md)
