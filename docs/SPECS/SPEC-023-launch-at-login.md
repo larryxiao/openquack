@@ -76,7 +76,7 @@ func reconcile(desiredEnabled: Bool, currentStatus: SMAppService.Status) -> Laun
 | true    | `.enabled`              | `noop`            |
 | true    | `.notRegistered`        | `register`        |
 | true    | `.requiresApproval`     | `resetToggleOff`  |
-| true    | `.notFound`             | `resetToggleOff`  |
+| true    | `.notFound`             | `register`        |
 | false   | `.enabled`              | `unregister`      |
 | false   | anything else           | `noop`            |
 

@@ -39,8 +39,13 @@ public func reconcileLaunchAtLogin(
     switch (desiredEnabled, currentStatus) {
     case (true,  .enabled):         return .noop
     case (true,  .notRegistered):   return .register
-    case (true,  .requiresApproval),
-         (true,  .notFound):        return .resetToggleOff
+    // .notFound is the bootstrap / lost-bundle state, not a revocation —
+    // verified via backgroundtaskmanagementd logs (BTMErrorDomain -95
+    // "record not found"). Try to (re-)register; the IO caller still
+    // catches throws and falls back to resetToggleOff. .requiresApproval
+    // IS the genuine revocation case.
+    case (true,  .notFound):        return .register
+    case (true,  .requiresApproval): return .resetToggleOff
     case (false, .enabled):         return .unregister
     case (false, _):                return .noop
     @unknown default:               return .noop
