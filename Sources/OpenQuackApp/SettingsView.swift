@@ -434,6 +434,9 @@ private struct StatsPane: View {
     @AppStorage("trackUsageStats") private var trackUsageStats: Bool = true
     @AppStorage("typingWPM")       private var typingWPM: Int = 50
     @State private var snapshot: UsageStatsSnapshot?
+    // SPEC-028 — recomputed when the pane appears or `showUsageStats` flips.
+    // Not persisted; recomputing over ≤50 entries is microseconds.
+    @State private var performance: PerformanceSummary?
 
     var body: some View {
         Form {
@@ -451,6 +454,12 @@ private struct StatsPane: View {
                         statRow("Words dictated",        value: snap.wordsDictated.formatted())
                         statRow("Audio processed",       value: Self.formatDuration(snap.audioSeconds))
                         statRow("Dictations",            value: snap.dictationCount.formatted())
+                        // SPEC-028 — personal performance rows. Render between
+                        // "Audio processed" and "Time saved vs. typing" so the
+                        // headline-friendly numbers sit with the rest of the
+                        // aggregates rather than orphaned below.
+                        longestDictationRow
+                        processingSpeedRow
                         statRow("Time saved vs. typing", value: Self.formatDuration(snap.timeSaved(typingWordsPerMinute: typingWPM)))
                         if let since = snap.firstRecordedAt {
                             statRow("Since", value: since.formatted(date: .abbreviated, time: .omitted))
@@ -460,6 +469,16 @@ private struct StatsPane: View {
                     }
                 } header: {
                     SectionHeader("This Mac")
+                }
+
+                // SPEC-028 — length distribution. Only rendered when there's
+                // at least one bucketed entry so an empty pane stays quiet.
+                if let perf = performance, Self.totalBucketCount(perf) > 0 {
+                    Section {
+                        durationHistogram(perf)
+                    } header: {
+                        SectionHeader("Sessions by length")
+                    }
                 }
             }
 
@@ -500,8 +519,19 @@ private struct StatsPane: View {
         (NSApp.delegate as? AppDelegate)?.usageStats
     }
 
+    /// SPEC-028 — mirror the `stats` accessor so the pane reads from the
+    /// same singleton the rest of the app uses.
+    private static var history: HistoryStore? {
+        (NSApp.delegate as? AppDelegate)?.historyStore
+    }
+
     private func refresh() async {
         snapshot = await Self.stats?.snapshot()
+        // SPEC-028 — pull the same 50-entry window the History pane shows
+        // (also the SPEC-014 default retention cap) and recompute. No
+        // caching: the summariser is pure and microseconds.
+        let entries = await Self.history?.list(limit: 50) ?? []
+        performance = PerformanceSummariser.summarise(entries)
     }
 
     private static func formatDuration(_ seconds: TimeInterval) -> String {
@@ -514,11 +544,105 @@ private struct StatsPane: View {
         return "\(s)s"
     }
 
+    /// SPEC-028 — duration formatter for the Longest-dictation row.
+    /// Matches the spec's "6 min 12 s" / "45 s" / "1h 30m" shape (the
+    /// 6 min form uses "m " + "s" to read like prose; the existing
+    /// `formatDuration` writes "6m 12s" for terse aggregate rows).
+    private static func formatLongestDuration(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if total >= 60 { return "\(m) min \(s) s" }
+        return "\(s) s"
+    }
+
+    /// SPEC-028 — one-decimal seconds, e.g. "3.4 s".
+    private static func formatProcessSeconds(_ seconds: TimeInterval) -> String {
+        String(format: "%.1f s", seconds)
+    }
+
+    /// SPEC-028 — "3.4×" under 10, "110×" at or above. Integer-round at
+    /// the high end so the headline number reads cleanly.
+    private static func formatRealtimeMultiple(_ rtm: Double) -> String {
+        if rtm >= 10 { return "\(Int(rtm.rounded()))×" }
+        return String(format: "%.1f×", rtm)
+    }
+
     private func statRow(_ label: String, value: String) -> some View {
         HStack {
             Text(label)
             Spacer()
             Text(value).font(.body.monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - SPEC-028 rows + histogram
+
+    /// "Longest dictation  6 min 12 s · processed in 3.4 s · 110× realtime".
+    /// Renders an em-dash when there is no eligible entry. The process-time
+    /// tail is appended only when `processSeconds != nil`, so a mid-transcribe
+    /// or recovery-flow entry still shows its duration honestly.
+    private var longestDictationRow: some View {
+        statRow("Longest dictation", value: longestDictationValue)
+    }
+
+    private var longestDictationValue: String {
+        guard let longest = performance?.longestEntry else { return "—" }
+        var pieces: [String] = [Self.formatLongestDuration(longest.durationSeconds)]
+        if let proc = longest.processSeconds {
+            pieces.append("processed in \(Self.formatProcessSeconds(proc))")
+        }
+        if let rtm = longest.realtimeMultiple {
+            pieces.append("\(Self.formatRealtimeMultiple(rtm)) realtime")
+        }
+        return pieces.joined(separator: " · ")
+    }
+
+    /// "Processing speed  avg 47× realtime". Em-dash when no entries
+    /// have a non-nil RTM yet.
+    private var processingSpeedRow: some View {
+        statRow("Processing speed", value: processingSpeedValue)
+    }
+
+    private var processingSpeedValue: String {
+        guard let avg = performance?.averageRealtimeMultiple else { return "—" }
+        return "avg \(Self.formatRealtimeMultiple(avg)) realtime"
+    }
+
+    private static func totalBucketCount(_ perf: PerformanceSummary) -> Int {
+        perf.bucketCounts.values.reduce(0, +)
+    }
+
+    /// SPEC-028 — bar chart bucketed by `DurationBucket`. A fixed
+    /// `maxBarWidth` (220 pt) avoids `GeometryReader` overhead inside the
+    /// `Form` and keeps the bar lengths visually consistent with the rest
+    /// of the pane. Zero-count rows render a 1pt-floor capsule so the row
+    /// alignment stays stable even when a bucket is empty.
+    private func durationHistogram(_ perf: PerformanceSummary) -> some View {
+        let maxCount = max(1, perf.bucketCounts.values.max() ?? 1)
+        let maxBarWidth: CGFloat = 220
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(DurationBucket.allCases, id: \.self) { bucket in
+                let count = perf.bucketCounts[bucket] ?? 0
+                let proportion = CGFloat(count) / CGFloat(maxCount)
+                let width = max(1, maxBarWidth * proportion)
+                HStack(spacing: Theme.s8) {
+                    Text(bucket.rawValue)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 56, alignment: .leading)
+                    Capsule()
+                        .fill(Theme.amber.opacity(0.6))
+                        .frame(width: width, height: 8)
+                    Spacer(minLength: Theme.s8)
+                    Text(count.formatted())
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 28, alignment: .trailing)
+                }
+            }
         }
     }
 
