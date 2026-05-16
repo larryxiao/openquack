@@ -21,7 +21,6 @@ The product has a working foundation. The current cycle is about removing first-
 | 🔵 | Sparkle auto-update — existing users stay on latest without reinstalling | SPEC-026 | S; pairs with the brew cask path |
 | 🔵 | README demo gif + landing-page polish — strong first-impression artifact | SPEC-027 | S |
 | 🟡 | Mandarin auto-detect fix: visible quality bug surfaced by issue #17 | SPEC-021 | PR #20 (bench) draft |
-| 🔵 | Dictation distribution + personal performance stats — surfaces long-form + speed USPs as shareable numbers | SPEC-028 | S |
 | ⚪ | Submission tracking for awesome-mac / awesome-llm / awesome-swift lists | — | quiet but durable inbound |
 | ⚪ | Quarterly bench refresh — durable artifact + monthly relaunch hook | — | leverages existing 5×2×177 bench |
 
@@ -58,6 +57,7 @@ These have SPECs and are ready to claim, but we're **holding new feature scope**
 
 | | Task | Spec | Notes |
 |---|---|---|---|
+| 🟢 | Dictation distribution + personal performance stats (Longest dictation, avg realtime ×, length histogram) | SPEC-028 | merged in #45 |
 | 🟢 | `fn` / Globe key as a bindable hotkey (bare fn or fn+key) — closes #23 | SPEC-003a | merged in #28 |
 | 🟢 | Launch at login (SMAppService toggle in Settings → General) — closes #29 | SPEC-023 | merged in #33 (reconcile) + #39 (UI) |
 | 🟢 | Recording overlay follows the cursor across monitors — closes #25 | SPEC-004 | merged in #27 |
