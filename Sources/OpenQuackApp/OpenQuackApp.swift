@@ -4,6 +4,7 @@ import SwiftUI
 import Combine
 import os
 import ServiceManagement
+import Sparkle
 import OpenQuackKit
 
 // SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
@@ -77,9 +78,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     private var overlay: RecordingOverlay?
-    private let updater = UpdateChecker()
+    private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
     let historyStore = HistoryStore()    // SPEC-014
+
+    /// SPEC-026 — Sparkle updater. Optional + initialized inside
+    /// `applicationDidFinishLaunching` (after `installMethod` detection)
+    /// so we can configure `automaticallyChecksForUpdates` before the
+    /// updater's first scheduled poll. Declared as `var` rather than
+    /// `lazy` because `SPUStandardUpdaterController` is `@MainActor`
+    /// isolated; a stored-property initializer would need to run on the
+    /// main actor at AppDelegate-init time, which isn't guaranteed.
+    /// Held for the app's lifetime so scheduled checks keep running and
+    /// so PR-B's Settings toggle / "Check now" button have a stable
+    /// handle. NOTE: SUPublicEDKey in the bundled Info.plist is still a
+    /// placeholder; until the user runs `generate_keys` and swaps it,
+    /// Sparkle will refuse to install any downloaded update.
+    private var sparkleUpdater: SPUStandardUpdaterController?
 
     /// SPEC-023 — set true when reconcile returns `.resetToggleOff` (user
     /// revoked us in System Settings → Login Items while we weren't
@@ -115,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         appState.installMethod = InstallMethodDetector.detect()
+        installSparkleUpdater()
         installStatusItem()
         installPopover()
         installHotkey()
@@ -250,6 +266,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await pollForUpdate(force: true) }
     }
 
+    /// SPEC-026 — Brew-cask coexistence is the hard rule: two installers
+    /// must never fight over the same `.app` bundle. Sparkle is registered
+    /// for everyone so PR-B's channel toggle keeps working if the user
+    /// later switches install methods, but for `.homebrew` we disable
+    /// scheduled checks so it polls nothing and shows nothing on its own.
+    /// The popover banner (driven by `UpdateChecker` → `pollForUpdate`)
+    /// stays the primary CTA; for brew users it remains the *only* update
+    /// surface. Until the user fills `SUPublicEDKey` in the bundled
+    /// Info.plist, Sparkle will fetch the appcast but refuse to install
+    /// any downloaded update — the wiring is intentionally a no-op in
+    /// PR-A's shipped binary.
+    @MainActor
+    private func installSparkleUpdater() {
+        let controller = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+        switch appState.installMethod {
+        case .homebrew:
+            // Brew owns the bundle. Sparkle stays registered (so PR-B's
+            // channel toggle and "Check now" button still resolve) but
+            // its scheduler is muted.
+            controller.updater.automaticallyChecksForUpdates = false
+        case .manual:
+            // DMG / drag-installed. Let Sparkle's daily scheduler run;
+            // the interval is governed by `SUScheduledCheckInterval` in
+            // the bundled Info.plist.
+            controller.updater.automaticallyChecksForUpdates = true
+        }
+        sparkleUpdater = controller
+    }
+
     private func pollForUpdate(force: Bool = false) async {
         if !force, let last = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date,
            Date().timeIntervalSince(last) < 24 * 60 * 60 {
@@ -257,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         await MainActor.run { appState.updateStatus = .checking }
         do {
-            let release = try await updater.checkForUpdate(currentVersion: OpenQuackKit.version)
+            let release = try await updateChecker.checkForUpdate(currentVersion: OpenQuackKit.version)
             let now = Date()
             await MainActor.run {
                 if let release {

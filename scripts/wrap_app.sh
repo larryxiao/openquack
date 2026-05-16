@@ -74,6 +74,14 @@ done
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    SPEC-026 — SUPublicEDKey is intentionally a placeholder. The user
+    runs Sparkle's bundled `generate_keys` once locally; the public half
+    lands here as a follow-up commit, the private half stays in the
+    maintainer's Keychain + a GH Actions secret. Until that swap lands,
+    Sparkle fetches the appcast but refuses to install any update — by
+    design.
+-->
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>            <string>org.openquack.OpenQuack</string>
@@ -92,6 +100,15 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>NSMicrophoneUsageDescription</key>  <string>OpenQuack transcribes your voice locally to dispatch commands to your AI agent. Audio never leaves the machine.</string>
     <key>NSAppleEventsUsageDescription</key> <string>OpenQuack uses Terminal to run "brew upgrade --cask openquack" when you click Upgrade.</string>
     <key>NSHumanReadableCopyright</key>      <string>MIT — github.com/larryxiao</string>
+
+    <!-- SPEC-026 — Sparkle 2.x auto-update. Stable channel by default;
+         PR-B's Settings toggle will re-point feedURL to the alpha appcast
+         at runtime. -->
+    <key>SUFeedURL</key>                     <string>https://larryxiao.github.io/openquack/appcast.xml</string>
+    <key>SUEnableAutomaticChecks</key>       <true/>
+    <key>SUScheduledCheckInterval</key>      <integer>86400</integer>
+    <key>SUAutomaticallyUpdate</key>         <false/>
+    <key>SUPublicEDKey</key>                 <string>PLACEHOLDER_EDDSA_PUBLIC_KEY_BASE64_REPLACE_ME</string>
 </dict>
 </plist>
 PLIST
