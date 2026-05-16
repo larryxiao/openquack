@@ -2,6 +2,8 @@ import AppKit
 import AVFoundation
 import SwiftUI
 import Combine
+import os
+import ServiceManagement
 import OpenQuackKit
 
 // SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
@@ -78,6 +80,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updater = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
     let historyStore = HistoryStore()    // SPEC-014
+
+    /// SPEC-023 — set true when reconcile returns `.resetToggleOff` (user
+    /// revoked us in System Settings → Login Items while we weren't
+    /// running). Settings → General reads this on appear to surface the
+    /// approval hint. Session-scoped; cleared on next successful register.
+    @MainActor var showsLaunchAtLoginApprovalHint: Bool = false
+
+    private static let launchAtLoginLogger = Logger(
+        subsystem: "org.openquack.OpenQuack",
+        category: "LaunchAtLogin"
+    )
 
     /// Persist the last recording so the user can verify capture quality
     /// independent of model output. `open ~/Library/Application Support/OpenQuack/last-recording.wav`.
@@ -162,6 +175,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             await history.enforceRetention()
             await self.offerRecoveryIfNeeded()
+        }
+
+        // SPEC-023 — align the persisted launchAtLogin toggle with the OS
+        // state. Catches the case where the user revoked us in System
+        // Settings → Login Items while OpenQuack wasn't running.
+        reconcileLaunchAtLoginOnLaunch()
+    }
+
+    /// SPEC-023 §Reconciliation — synchronous on the main actor, runs once
+    /// at launch. `SMAppService` calls are cheap; no Task wrapper needed.
+    @MainActor
+    private func reconcileLaunchAtLoginOnLaunch() {
+        let desired = UserDefaults.standard.bool(forKey: "launchAtLogin")
+        let action = reconcileLaunchAtLogin(
+            desiredEnabled: desired,
+            currentStatus: SMAppService.mainApp.status
+        )
+        switch action {
+        case .noop:
+            return
+        case .register:
+            do {
+                try SMAppService.mainApp.register()
+            } catch {
+                // register can throw on `.requiresApproval`; reverting matches
+                // the SPEC-023 toggle-write contract.
+                UserDefaults.standard.set(false, forKey: "launchAtLogin")
+                showsLaunchAtLoginApprovalHint = true
+                Self.launchAtLoginLogger.error("register() failed on launch: \(error.localizedDescription, privacy: .public)")
+            }
+        case .unregister:
+            do {
+                try SMAppService.mainApp.unregister()
+            } catch {
+                Self.launchAtLoginLogger.error("unregister() failed on launch: \(error.localizedDescription, privacy: .public)")
+            }
+        case .resetToggleOff:
+            UserDefaults.standard.set(false, forKey: "launchAtLogin")
+            showsLaunchAtLoginApprovalHint = true
         }
     }
 

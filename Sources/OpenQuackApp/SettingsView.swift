@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 import KeyboardShortcuts
+import os
+import ServiceManagement
 import OpenQuackKit
 
 // Settings scene. SwiftUI TabView in an NSWindow (managed by
@@ -50,6 +52,19 @@ private struct GeneralPane: View {
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
     @AppStorage("customWords")         private var customWords: String = ""
     @AppStorage("model")               private var model: String = "medium"
+    @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
+
+    // SPEC-023 — session-only hint, seeded from AppDelegate so reconcile
+    // results from app launch propagate the first time Settings opens.
+    @State private var showsApprovalHint: Bool = false
+    // Suppresses the .onChange-triggered SMAppService call when the toggle
+    // is reverted programmatically after a failed register().
+    @State private var isRevertingToggle: Bool = false
+
+    private static let logger = Logger(
+        subsystem: "org.openquack.OpenQuack",
+        category: "LaunchAtLogin"
+    )
 
     var body: some View {
         Form {
@@ -141,10 +156,66 @@ private struct GeneralPane: View {
             } header: {
                 SectionHeader("Custom dictionary")
             }
+
+            // SPEC-023 — Launch at login.
+            Section {
+                Toggle("Launch OpenQuack at login", isOn: $launchAtLogin)
+                    .help("Start OpenQuack automatically when you sign in to your Mac, so the menu-bar icon and global hotkey are ready without launching the app manually.")
+                if showsApprovalHint {
+                    Text("macOS blocked OpenQuack from auto-starting. Enable it in System Settings → General → Login Items, then toggle this on again.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                SectionHeader("Startup")
+            }
         }
         .formStyle(.grouped)
         .padding()
         .creamSettingsBackground()
+        .onAppear {
+            // Pick up the session-flag if reconcile flipped the toggle at
+            // launch (user revoked us in System Settings while away).
+            if let delegate = NSApp.delegate as? AppDelegate,
+               delegate.showsLaunchAtLoginApprovalHint {
+                showsApprovalHint = true
+            }
+        }
+        .onChange(of: launchAtLogin) { newValue in
+            handleLaunchAtLoginChange(newValue)
+        }
+    }
+
+    /// SPEC-023 §Toggle write path. Synchronous SMAppService IO on the
+    /// main actor; on register-throw we revert the toggle and show the hint.
+    @MainActor
+    private func handleLaunchAtLoginChange(_ newValue: Bool) {
+        if isRevertingToggle {
+            isRevertingToggle = false
+            return
+        }
+        if newValue {
+            do {
+                try SMAppService.mainApp.register()
+                showsApprovalHint = false
+                if let delegate = NSApp.delegate as? AppDelegate {
+                    delegate.showsLaunchAtLoginApprovalHint = false
+                }
+            } catch {
+                // register can throw on `.requiresApproval`; reverting matches
+                // the SPEC-023 toggle-write contract.
+                isRevertingToggle = true
+                launchAtLogin = false
+                showsApprovalHint = true
+                Self.logger.error("register() failed: \(error.localizedDescription, privacy: .public)")
+            }
+        } else {
+            do {
+                try SMAppService.mainApp.unregister()
+            } catch {
+                Self.logger.error("unregister() failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 }
 
