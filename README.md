@@ -110,6 +110,10 @@ hotkey in Settings → Shortcut. Default ⌃⇧Space.
 
 More options (uninstall, build-from-source, what's downloaded on first run): [`docs/INSTALL.md`](docs/INSTALL.md).
 
+## Got stuck? Want a feature?
+
+Drop a comment in **[Discussions](https://github.com/larryxiao/openquack/discussions/43)** — it's the lowest-friction way to reach me. Bugs, feature ideas, "I'm using it for X" workflow stories, or quick questions about Whisper / model choice / paste behavior in a specific app all welcome. Issues are fine for structured reports too, but no need to format.
+
 ## Acknowledgements
 
 OpenQuack stands on the shoulders of generous open-source work. Huge thanks to:
