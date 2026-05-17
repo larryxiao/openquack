@@ -20,6 +20,9 @@ xcuserdata/
 .idea/
 *.swp
 
+# Claude Code agent worktrees + run state
+.claude/
+
 # Bench output (per-host reports are under bench/out/<host-tag>/)
 bench/out/
 
