@@ -57,6 +57,7 @@ A model that fails any of these is not the default. `BENCHMARKS.md` is the sourc
 
 - The right model name for `large-v3-turbo` in `argmaxinc/whisperkit-coreml` — current config glob doesn't match. Use `WhisperKit.fetchAvailableModels()` to enumerate.
 - Per-call decode options exposed to user (temperature, fallback retries, language detection). Currently fixed; the Settings → Advanced tab will surface them in a later spec.
+- Can we drop the ~1.5 GB on-disk source weights once CoreML has compiled them, keeping only the ~100 MB e5rt ANE cache? Tracked in [SPEC-029](SPEC-029-ane-cache-only-model.md); volunteer measurement campaign in [SPEC-030](SPEC-030-ane-cache-volunteer-bench.md).
 
 ## References
 

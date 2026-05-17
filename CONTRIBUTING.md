@@ -48,6 +48,49 @@ swift run openquack-bench \
 Output lands in `bench/out/<host-tag>/`. PR that directory; we merge
 quickly.
 
+## Help us size the ANE cache footprint (volunteer measurement campaign)
+
+We're investigating whether OpenQuack can drop the ~1.5 GB on-disk
+Whisper-medium weights once macOS has compiled them for the Neural
+Engine — see [SPEC-029](docs/SPECS/SPEC-029-ane-cache-only-model.md).
+To decide whether that's worth shipping, we need numbers from Macs
+we don't own: M1 / M2 / M3 / M4 across 8 / 16 / 24+ GB tiers, and at
+least one Intel Mac. The full hardware-coverage matrix is in
+[SPEC-030](docs/SPECS/SPEC-030-ane-cache-volunteer-bench.md).
+
+**How to help (≈3 minutes):**
+
+```sh
+bash scripts/bench_ane_cache.sh
+```
+
+That's the whole ask. The script is read-only outside `bench/out/`,
+makes zero network calls, and uploads nothing on its own. It:
+
+1. Locates your installed OpenQuack and its WhisperKit model cache.
+2. Sums on-disk source weights + e5rt (ANE) compiled cache sizes.
+3. Times one cold and one warm transcribe of a short sample clip
+   (or prints copy-pasteable manual instructions if you don't have
+   `openquack-cli` installed).
+4. Writes `bench/out/<host-tag>/cache-report.json` and prints a
+   one-screen markdown summary.
+
+**Where to send the result:**
+
+- **Casual** — paste the printed summary block into the
+  [#cache-footprint Discussion](https://github.com/larryxiao/openquack/discussions).
+- **Power-user** — PR `bench/out/<host-tag>/cache-report.json`.
+
+No audio, no transcripts, no identifiers beyond chip / RAM / macOS
+build leave your Mac. The data feeds directly into SPEC-029's
+go/no-go decision — your one report meaningfully moves a real call.
+
+If you happen to update macOS, running the script **once before** and
+**once after** is the single highest-value contribution: it tells us
+whether the ANE cache survives OS updates or has to be rebuilt from
+scratch. We're not asking you to update on our behalf — only to
+re-run if you were updating anyway.
+
 ## Help us translate the app and docs
 
 OpenQuack supports 99 Whisper languages for dictation, but the UI
@@ -120,6 +163,11 @@ in the "Show and tell" category. We'll read everything.
 
 ## Where to start if you have 30 minutes
 
+- **Cache-footprint contributor (3 min)**: run
+  `bash scripts/bench_ane_cache.sh` and paste the summary into the
+  [#cache-footprint Discussion](https://github.com/larryxiao/openquack/discussions).
+  See [SPEC-030](docs/SPECS/SPEC-030-ane-cache-volunteer-bench.md) for the
+  hardware we still need.
 - **Bench contributor**: run the bench on your Mac, PR the output
   directory.
 - **Translator**: fix a section in any of the `README.<lang>.md`

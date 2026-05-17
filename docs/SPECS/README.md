@@ -29,6 +29,8 @@ Conventions:
 | [SPEC-013](SPEC-013-usage-stats.md) | Usage stats pane | draft | M3 |
 | [SPEC-014](SPEC-014-local-history.md) | Local audio + transcript history | draft | M3 |
 | [SPEC-016](SPEC-016-distilled-polish-model.md) | Distilled polish model (1B from Gemma 4) | draft | M2.5 |
+| [SPEC-029](SPEC-029-ane-cache-only-model.md) | ANE-cache-only model footprint (investigation) | draft | M3 |
+| [SPEC-030](SPEC-030-ane-cache-volunteer-bench.md) | ANE cache footprint: volunteer measurement campaign | draft | M3 |
 
 ## Spec lifecycle
 
