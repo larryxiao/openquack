@@ -28,9 +28,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
-> 📢 **What's new — [v2.0.0-alpha.11](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.11):** Bind the fn / Globe key as your hotkey, toggle launch at login, and see your personal dictation stats (longest session, processing speed, length histogram) in Settings. The recording pill also follows your cursor across multiple displays now. Hope you like it!
-> 📢 **What's new — [v2.0.0-alpha.10](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.10):** User experiences improvements such as copy transcription, easier to send feedback in app, and improved docs. Hope you like it!
-> 📢 **What's new — [v2.0.0-alpha.9](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.9):** blazing-fast dictation, even on long clips. Plus a fresh new look. Hope you like it!
+> 📢 **What's new — [v2.0.0-alpha.11](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.11):** Bind the fn / Globe key as your hotkey, toggle launch at login, and see your personal dictation stats (longest session, processing speed, length histogram) in Settings. The recording pill also follows your cursor across multiple displays now. Hope you like it! ([past releases](https://github.com/larryxiao/openquack/releases))
 
 ## What it is
 
@@ -67,9 +65,10 @@ The full privacy contract is in [`docs/VISION.md`](docs/VISION.md#privacy-contra
 
 ## Coming next
 
-In-context transcription (read the surrounding text before transcribing) and an opt-in LLM polish pass (Ollama or MLX-LM, your pick). Both deferred while the adoption foundations land — see [`docs/ROADMAP.md`](docs/ROADMAP.md).
+- **In-context transcription** — OpenQuack reads the surrounding text before transcribing, so domain terms get disambiguated by what you're actually doing.
+- **Thinking mode** — an opt-in second pass through a small local LLM (Ollama or MLX-LM, your pick) that turns a raw spoken sentence into one you'd press send on.
 
-Where this is going: [`docs/VISION.md`](docs/VISION.md).
+Both deferred while the adoption foundations land. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's queued; [`docs/VISION.md`](docs/VISION.md) for where this is going overall.
 
 ## Install
 
