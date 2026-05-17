@@ -773,7 +773,7 @@ private struct HistoryPane: View {
             Spacer()
             Menu {
                 if entry.transcript != nil {
-                    Button("Re-paste") { rePaste(entry) }
+                    Button("Copy") { copyTranscript(entry) }
                 }
                 if entry.audioURL != nil {
                     Button("Reveal in Finder") { revealInFinder(entry) }
@@ -787,13 +787,9 @@ private struct HistoryPane: View {
         }
     }
 
-    private func rePaste(_ entry: HistoryEntry) {
+    private func copyTranscript(_ entry: HistoryEntry) {
         guard let text = entry.transcript else { return }
-        if UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true {
-            _ = PasteService.paste(text)
-        } else {
-            PasteService.copyToClipboard(text)
-        }
+        PasteService.copyToClipboard(text)
     }
 
     private func revealInFinder(_ entry: HistoryEntry) {
