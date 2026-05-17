@@ -112,15 +112,17 @@ private struct GeneralPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Picker("Chinese script", selection: $chineseScript) {
-                    Text("Auto (Whisper default — often Traditional)").tag("auto")
-                    Text("Simplified (zh-Hans)").tag("simplified")
-                    Text("Traditional (zh-Hant)").tag("traditional")
+                if language == "zh" {
+                    Picker("Chinese script", selection: $chineseScript) {
+                        Text("Auto (Whisper default — often Traditional)").tag("auto")
+                        Text("Simplified (zh-Hans)").tag("simplified")
+                        Text("Traditional (zh-Hant)").tag("traditional")
+                    }
+                    .help("Whisper's Chinese output mixes Simplified and Traditional. Pick one to force a script.")
+                    Text("Character-level conversion only — region-specific vocabulary (e.g. 软件 vs. 軟體) isn't rewritten.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .help("Whisper's Chinese output mixes Simplified and Traditional. Pick one to force a script. Applies only when transcribed language is Chinese.")
-                Text("Character-level conversion only — region-specific vocabulary (e.g. 软件 vs. 軟體) isn't rewritten.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             } header: {
                 SectionHeader("Language")
             }
