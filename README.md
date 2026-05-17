@@ -28,7 +28,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
-> 📢 **What's new — [v2.0.0-alpha.11](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.11):** Bind the fn / Globe key as your hotkey, toggle launch at login, and see your personal dictation stats (longest session, processing speed, length histogram) in Settings. The recording pill also follows your cursor across multiple displays now. Hope you like it! ([past releases](https://github.com/larryxiao/openquack/releases))
+> 📢 **What's new — [v2.0.0-alpha.12](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.12):** Settings polish round — push-to-talk dropped (toggle only), FAQ rows fully clickable, History menu's "Re-paste" simplified to "Copy", and the Chinese-script picker only shows when you've set the transcription language to Chinese. Hope you like it! ([past releases](https://github.com/larryxiao/openquack/releases))
 
 ## What it is
 
