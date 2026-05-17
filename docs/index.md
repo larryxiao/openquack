@@ -69,6 +69,12 @@ macOS Dictation sends audio to Apple's servers by default. OpenQuack runs fully 
 **How do I use it for typeless coding workflows?**
 OpenQuack pastes at wherever your cursor is — including the prompt bars of Claude Code, Cursor, Windsurf, or any terminal. Press the hotkey, speak the prompt, press again, and it appears.
 
+**What languages does it support?**
+99 Whisper languages. English is the default; to switch, open Settings → Language. Auto-detect works best on clips longer than 3 seconds and is most reliable when paired with a configured fallback language.
+
+**Why does the first launch take a long time?**
+The speech model downloads once on first run and is cached permanently in `~/Library/Application Support/OpenQuack/models/`. Every subsequent launch is instant.
+
 **Is there a Windows or Linux version?**
 Not currently. OpenQuack uses WhisperKit and CoreML, which are Apple-platform technologies.
 

@@ -34,7 +34,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ## What it is
 
-OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript appears at the cursor. Wherever you can type, you can talk.
+OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript appears at the cursor. Ramble for a few seconds or a few minutes; the wait after you stop barely changes with length. Wherever you can type, you can talk — including into the prompt bars of Claude Code, Codex, Cursor, or any terminal.
 
 Speech recognition happens on your Mac. No cloud, no account, no signup, no telemetry.
 
@@ -42,23 +42,21 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 **Local.** Everything runs on your device — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction. And because there's no API call in the loop, it just keeps working — offline, on a plane, behind a corporate firewall.
 
-**Fast.** Whisper on Apple Silicon transcribes in roughly a fifth of the time you spent speaking. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB. Faster than typing in most cases. Especially fast on long dictations: a 5-minute clip finishes in about 3 seconds after you stop, regardless of length, because we stream chunks while you speak. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+**Fast, especially on long clips.** Whisper streams while you speak, so a 5-minute dictation finishes in about 3 seconds after you stop — the wait doesn't grow with length. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB, ~6.3% in realistic office noise. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+
+**Quiet on resources.** ~120 MB of RAM while idle. ~8 MB app bundle. The Whisper model lives on disk and only loads when you press the hotkey.
 
 **Open.** MIT-licensed. Every line is auditable; every change happens in public. The version running in your menu bar is the version in this repo.
 
 ## What you get
 
-- **One-key dictation.** Pick a hotkey (default ⌃⇧Space). Toggle or push-to-talk.
-- **All local.** Speech recognition runs on your Mac. No internet needed for dictation — works offline, on a plane, in a tunnel, behind a corporate firewall. No API keys, no rate limits, no service outages. Same dictation in personal or business settings.
-- **Multi-language.** Whisper handles 99 languages — English, Chinese, Japanese, Korean, Spanish, French, German, Italian, and Portuguese are right in Settings; auto-detect on by default.
-- **Auto-paste at the cursor** in any app. (Falls back to your clipboard if you'd rather paste yourself.)
+- **One-key dictation.** Pick a hotkey (default ⌃⇧Space, or bind `fn` / Globe). Toggle or push-to-talk.
+- **Auto-paste at the cursor** in any app. Falls back to your clipboard if you'd rather paste yourself.
+- **99 languages.** English, Chinese, Japanese, Korean, Spanish, French, German, Italian, and Portuguese are right in Settings; auto-detect on by default.
 - **Smart formatting** — capitalisation, end-punctuation, "um/uh" cleanup.
 - **Custom dictionary** — teach it the proper nouns and project names you actually use.
 - **Auto-stop after silence.** Finish speaking, OpenQuack wraps up on its own.
-- **Live mic-level overlay** so you can see it's listening.
-- **Quick first-launch setup** — permissions, hotkey, done in a minute.
-- **Tiny.** An 8 MB menu-bar app, plus the speech model on first run.
-- **Open source**, MIT.
+- **Launch at login** — show up in the menu bar after every restart with one toggle.
 
 ## Privacy, in one screen
 
@@ -69,15 +67,9 @@ The full privacy contract is in [`docs/VISION.md`](docs/VISION.md#privacy-contra
 
 ## Coming next
 
-A peek at what's queued up. Both build on the dictation foundation that ships today.
+In-context transcription (read the surrounding text before transcribing) and an opt-in LLM polish pass (Ollama or MLX-LM, your pick). Both deferred while the adoption foundations land — see [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-**In-context transcription.** OpenQuack will read the surrounding text where you're about to paste — the line above the cursor, the function you're inside, the chat thread you're replying to — and feed it to the speech model as context. Domain terms get disambiguated by what you're actually doing ("cloud code" turns into "Claude Code" when you're in a terminal, not the other way around). Less custom-dictionary tinkering needed.
-
-**Thinking mode.** A second pass after transcription, run through a small local LLM, that turns a raw spoken sentence into a written one you'd actually press send on. Filler trimmed, structure tightened, the right capitalisation on words that matter. Off by default, one-toggle opt-in. Fully local — Ollama or MLX-LM, your pick.
-
-Schedule and SPEC details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
-The duck has bigger plans. Where this is going: [`docs/VISION.md`](docs/VISION.md).
+Where this is going: [`docs/VISION.md`](docs/VISION.md).
 
 ## Install
 
@@ -115,6 +107,8 @@ More options (uninstall, build-from-source, what's downloaded on first run): [`d
 
 Drop a comment in **[Discussions](https://github.com/larryxiao/openquack/discussions/43)** — it's the lowest-friction way to reach me. Bugs, feature ideas, "I'm using it for X" workflow stories, or quick questions about Whisper / model choice / paste behavior in a specific app all welcome. Issues are fine for structured reports too, but no need to format.
 
+Common questions (install, accuracy, languages, offline behaviour, Mac requirements) live in the [**FAQ on the docs site**](https://larryxiao.github.io/openquack/#faq).
+
 ## Acknowledgements
 
 OpenQuack stands on the shoulders of generous open-source work. Huge thanks to:
@@ -134,38 +128,6 @@ OpenQuack is **AI-native open source** — every PR cites a SPEC, atomic tasks c
 Start with [`AGENTS.md`](AGENTS.md), pick a 🔵 task in [`docs/ROADMAP.md`](docs/ROADMAP.md), open a draft PR.
 
 Under the hood: [`TUTORIAL`](docs/TUTORIAL.md) · [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`DESIGN`](docs/DESIGN.md) · [`INSTALL`](docs/INSTALL.md) · [`BLOG`](docs/blog/README.md).
-
-## FAQ
-
-**Is OpenQuack a free alternative to Wispr Flow, SuperWhisper, or MacWhisper?**
-Yes. OpenQuack is MIT-licensed and free. Wispr Flow, SuperWhisper, and MacWhisper require subscriptions or one-time purchases; OpenQuack does not.
-
-**Does it work completely offline?**
-Yes, after the first run. On first launch, the Whisper speech model downloads from Hugging Face (~500 MB on 16 GB Macs, ~250 MB on 8 GB Macs). After that, no internet connection is needed for dictation — ever.
-
-**What Mac do I need?**
-macOS 13 (Ventura) or later on Apple Silicon (M1 or newer). Intel Macs are not supported — WhisperKit requires Apple Silicon's Neural Engine.
-
-**How accurate is it?**
-On real human speech: ~2.6% word-error rate with the default model on an M4 / 16 GB Mac. In realistic office noise: ~6.3% WER. Full benchmark matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
-
-**Does it send my audio or transcripts anywhere?**
-No. Audio is recorded, transcribed, and discarded entirely on your Mac. No analytics, no telemetry, no account, no API calls in the dictation path. The source is MIT-licensed and auditable.
-
-**How is this different from the built-in macOS Dictation?**
-macOS Dictation sends audio to Apple's servers by default. OpenQuack runs fully local, supports 99 languages with no toggle, uses Whisper rather than Apple's proprietary model, and is open source.
-
-**How do I use it for typeless coding workflows?**
-OpenQuack pastes at wherever your cursor is — including the prompt bars of Claude Code, Cursor, Windsurf, or any terminal. Press the hotkey, speak the prompt, press again, and it appears.
-
-**What languages does it support?**
-99 Whisper languages. English is the default; to switch, open Settings → Language. Auto-detect works best on clips longer than 3 seconds and is most reliable when paired with a configured fallback language.
-
-**Why does the first launch take a long time?**
-The speech model downloads once on first run and is cached permanently in `~/Library/Application Support/OpenQuack/models/`. Every subsequent launch is instant.
-
-**Is there a Windows or Linux version?**
-Not currently. OpenQuack uses WhisperKit and CoreML, which are Apple-platform technologies.
 
 ## License
 
