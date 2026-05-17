@@ -369,7 +369,9 @@ private struct AboutPane: View {
         .font(.callout)
     }
 
-    // MARK: faq — collapsible disclosure groups
+    // MARK: faq — collapsible rows (whole row is the hit-target, not just the chevron)
+
+    @State private var expandedFAQs: Set<Int> = []
 
     private var faqSection: some View {
         VStack(alignment: .leading, spacing: Theme.s8) {
@@ -378,19 +380,37 @@ private struct AboutPane: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(Self.faqs.enumerated()), id: \.offset) { idx, item in
                     if idx > 0 { Divider().opacity(0.25) }
-                    DisclosureGroup {
-                        Text(item.a)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, Theme.s8)
-                            .padding(.bottom, Theme.s8)
-                    } label: {
-                        Text(item.q)
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(Theme.ink.opacity(0.85))
+                    let isOpen = expandedFAQs.contains(idx)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                if isOpen { expandedFAQs.remove(idx) } else { expandedFAQs.insert(idx) }
+                            }
+                        } label: {
+                            HStack {
+                                Text(item.q)
+                                    .font(.callout.weight(.medium))
+                                    .foregroundStyle(Theme.ink.opacity(0.85))
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: Theme.s8)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                                    .rotationEffect(.degrees(isOpen ? 90 : 0))
+                            }
+                            .padding(.vertical, Theme.s8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        if isOpen {
+                            Text(item.a)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.bottom, Theme.s8)
+                        }
                     }
-                    .padding(.vertical, Theme.s8)
                 }
             }
             .padding(.horizontal, Theme.s12)
