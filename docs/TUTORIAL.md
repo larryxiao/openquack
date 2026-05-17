@@ -41,7 +41,7 @@ Open **Settings** from the menu-bar duck → **gear icon**.
 - **General → Speech model.** `medium` is the default; `large-v3` is the most accurate (slower, more memory). `tiny` and `base` are fast but less reliable on accents and proper nouns.
 - **General → Language.** Auto-detect by default. Set to your primary language for short utterances where auto-detect can be unreliable.
 - **General → Custom dictionary.** One word or phrase per line — proper nouns, jargon, project names. Whisper biases toward these.
-- **Shortcut.** Toggle (press once to start, press again to stop) or push-to-talk (hold to record, release to transcribe).
+- **Shortcut.** Press once to start dictating; press again to stop.
 - **Stats.** Words dictated, audio processed, time saved versus typing — local-only, opt-in display.
 - **History.** Recent transcripts kept on disk so you can re-paste yesterday's dictation. Audio storage is a separate opt-in (privacy posture — voice carries biometrics).
 

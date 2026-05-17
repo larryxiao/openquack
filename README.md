@@ -48,7 +48,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 ## What you get
 
-- **One-key dictation.** Pick a hotkey (default ⌃⇧Space, or bind `fn` / Globe). Toggle or push-to-talk.
+- **One-key dictation.** Pick a hotkey (default ⌃⇧Space, or bind `fn` / Globe). Press once to start, press again to stop.
 - **Auto-paste at the cursor** in any app. Falls back to your clipboard if you'd rather paste yourself.
 - **99 languages.** English, Chinese, Japanese, Korean, Spanish, French, German, Italian, and Portuguese are right in Settings; auto-detect on by default.
 - **Smart formatting** — capitalisation, end-punctuation, "um/uh" cleanup.

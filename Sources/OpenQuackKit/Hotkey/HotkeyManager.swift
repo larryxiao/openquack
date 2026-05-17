@@ -30,8 +30,6 @@ public enum HotkeyDisplay {
 public enum HotkeyMode: String, Sendable, CaseIterable {
     /// Press to start; press again to stop.
     case toggle
-    /// Hold to record; release to transcribe. Better for short utterances.
-    case pushToTalk
 }
 
 public final class HotkeyManager {

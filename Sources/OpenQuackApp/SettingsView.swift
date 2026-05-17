@@ -129,7 +129,7 @@ private struct GeneralPane: View {
 
             Section {
                 Toggle("Auto-stop after silence", isOn: $vadAutoStop)
-                    .help("When you stop speaking, OpenQuack finishes the recording automatically. Only applies in toggle mode — push-to-talk is already user-controlled.")
+                    .help("When you stop speaking, OpenQuack finishes the recording automatically.")
                 if vadAutoStop {
                     HStack {
                         Text("Silence threshold")
@@ -224,8 +224,6 @@ private struct GeneralPane: View {
 // MARK: - Shortcut
 
 private struct ShortcutPane: View {
-    @AppStorage("hotkeyMode") private var hotkeyMode: String = "toggle"
-
     var body: some View {
         Form {
             Section {
@@ -235,19 +233,6 @@ private struct ShortcutPane: View {
                     .foregroundStyle(.secondary)
             } header: {
                 SectionHeader("Global hotkey")
-            }
-
-            Section {
-                Picker("Behaviour", selection: $hotkeyMode) {
-                    Text("Toggle").tag("toggle")
-                    Text("Push-to-talk").tag("pushToTalk")
-                }
-                .pickerStyle(.segmented)
-                Text("Toggle: press to start, press to stop. Push-to-talk: hold to record, release to transcribe — best for short utterances.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                SectionHeader("Mode")
             }
         }
         .formStyle(.grouped)

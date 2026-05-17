@@ -528,39 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - hotkey
 
     private func installHotkey() {
-        hotkey.register(
-            onKeyDown: { [weak self] in self?.handleKeyDown() },
-            onKeyUp:   { [weak self] in self?.handleKeyUp() }
-        )
-    }
-
-    private var hotkeyMode: HotkeyMode {
-        let raw = UserDefaults.standard.string(forKey: "hotkeyMode") ?? HotkeyMode.toggle.rawValue
-        return HotkeyMode(rawValue: raw) ?? .toggle
-    }
-
-    @MainActor
-    private func handleKeyDown() {
-        switch hotkeyMode {
-        case .toggle:
-            toggleRecording()
-        case .pushToTalk:
-            // Start on key-down; stop on key-up. Ignore key repeats.
-            if case .recording = appState.phase { return }
-            startRecording()
-        }
-    }
-
-    @MainActor
-    private func handleKeyUp() {
-        switch hotkeyMode {
-        case .toggle:
-            return
-        case .pushToTalk:
-            if case .recording = appState.phase {
-                stopAndTranscribe()
-            }
-        }
+        hotkey.registerToggle { [weak self] in self?.toggleRecording() }
     }
 
     @MainActor
@@ -833,8 +801,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let elapsed = self.recorder.elapsedSeconds
             self.appState.elapsedSeconds = elapsed
 
-            // VAD auto-stop (toggle mode only — push-to-talk is user-controlled).
-            guard self.hotkeyMode == .toggle, self.vadEnabled,
+            // VAD auto-stop while recording.
+            guard self.vadEnabled,
                   case .recording = self.appState.phase
             else { return }
 
