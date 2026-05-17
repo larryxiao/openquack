@@ -32,7 +32,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ## What it is
 
-OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript appears at the cursor. Ramble for a few seconds or a few minutes — short or long, you barely wait. Wherever you can type, you can talk — including into the prompt bars of Claude Code, Codex, Cursor, or any terminal.
+OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript appears at the cursor. Wherever you can type, you can talk.
 
 Speech recognition happens on your Mac. No cloud, no account, no signup, no telemetry.
 
