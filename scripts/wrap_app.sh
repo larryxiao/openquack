@@ -71,6 +71,26 @@ for bundle in "$BIN_DIR"/*.bundle; do
     cp -R "$bundle" "$BUNDLE/Contents/Resources/"
 done
 
+# Copy SwiftPM-resolved frameworks (e.g. Sparkle.framework, a
+# .binaryTarget xcframework that lands in the release/ dir alongside the
+# binary). They link against `@rpath/<Framework>.framework/...`; the
+# binary's default rpath set by SwiftPM (`@loader_path`) finds them in
+# the release/ dir but breaks once we move the binary into
+# `Contents/MacOS/`. So: copy the framework AND patch the binary's rpath
+# to look in `../Frameworks/`.
+for fw in "$BIN_DIR"/*.framework; do
+    [[ -d "$fw" ]] || continue
+    mkdir -p "$BUNDLE/Contents/Frameworks"
+    cp -R "$fw" "$BUNDLE/Contents/Frameworks/"
+done
+if [[ -d "$BUNDLE/Contents/Frameworks" ]]; then
+    # `|| true` because install_name_tool errors out on repeat invocations
+    # (re-adding an existing rpath). The bundle is rm -rf'd above so this
+    # is the first add, but be defensive against future refactors.
+    install_name_tool -add_rpath @executable_path/../Frameworks \
+        "$BUNDLE/Contents/MacOS/openquack" 2>/dev/null || true
+fi
+
 cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
