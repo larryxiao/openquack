@@ -128,7 +128,16 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>SUEnableAutomaticChecks</key>       <true/>
     <key>SUScheduledCheckInterval</key>      <integer>86400</integer>
     <key>SUAutomaticallyUpdate</key>         <false/>
-    <key>SUPublicEDKey</key>                 <string>PLACEHOLDER_EDDSA_PUBLIC_KEY_BASE64_REPLACE_ME</string>
+    <!-- SUPublicEDKey: REQUIRED for PR-C to enable real update install.
+         Run \`generate_keys\` (Sparkle-bundled), commit the public half
+         back here as <key>SUPublicEDKey</key><string>...44-char base64...</string>;
+         the private half stays in the maintainer's Keychain + a GH
+         Actions secret. Intentionally omitted (rather than a
+         "PLACEHOLDER_..." string) until PR-C lands — Sparkle starts
+         cleanly without it and refuses to install any update, matching
+         the "by design" intent. The previous placeholder string was
+         invalid base64, which made Sparkle bail at startup with
+         "Updater Failed to Start". -->
 </dict>
 </plist>
 PLIST
