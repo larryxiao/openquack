@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// handle. NOTE: SUPublicEDKey in the bundled Info.plist is still a
     /// placeholder; until the user runs `generate_keys` and swaps it,
     /// Sparkle will refuse to install any downloaded update.
-    private var sparkleUpdater: SPUStandardUpdaterController?
+    var sparkleUpdater: SPUStandardUpdaterController?
 
     /// SPEC-023 — set true when reconcile returns `.resetToggleOff` (user
     /// revoked us in System Settings → Login Items while we weren't
@@ -131,6 +131,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         appState.installMethod = InstallMethodDetector.detect()
         installSparkleUpdater()
+        // SPEC-026 PR-B — seed the prerelease default once. The
+        // delegate's `feedURLString(for:)` reads this key on every
+        // check, so no explicit `feedURL` set is needed at launch.
+        let persistedPrereleases = UserDefaults.standard.object(forKey: "receivePrereleases") as? Bool
+        UserDefaults.standard.set(
+            defaultReceivePrereleases(version: OpenQuackKit.version, persistedValue: persistedPrereleases),
+            forKey: "receivePrereleases"
+        )
         installStatusItem()
         installPopover()
         installHotkey()
@@ -281,7 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installSparkleUpdater() {
         let controller = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: self,
             userDriverDelegate: nil
         )
         switch appState.installMethod {

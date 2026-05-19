@@ -37,4 +37,40 @@ final class UpdateChannelTests: XCTestCase {
             XCTAssertEqual(url.host, "larryxiao.github.io", "\(channel)")
         }
     }
+
+    // MARK: - defaultReceivePrereleases (SPEC-026 PR-B)
+
+    func testDefaultReceivePrereleases_alphaBuild_unset_isTrue() {
+        XCTAssertTrue(
+            defaultReceivePrereleases(version: "2.0.0-alpha.12", persistedValue: nil)
+        )
+    }
+
+    func testDefaultReceivePrereleases_betaBuild_unset_isTrue() {
+        XCTAssertTrue(
+            defaultReceivePrereleases(version: "2.0.0-beta.1", persistedValue: nil)
+        )
+    }
+
+    func testDefaultReceivePrereleases_stableBuild_unset_isFalse() {
+        XCTAssertFalse(
+            defaultReceivePrereleases(version: "2.0.0", persistedValue: nil)
+        )
+    }
+
+    /// Persisted choice MUST win over the alpha-build default, otherwise
+    /// users who opted out on an alpha would silently get re-opted-in.
+    func testDefaultReceivePrereleases_alphaBuild_userOptedOut_isFalse() {
+        XCTAssertFalse(
+            defaultReceivePrereleases(version: "2.0.0-alpha.12", persistedValue: false)
+        )
+    }
+
+    /// Persisted choice MUST win over the stable-build default, otherwise
+    /// users who opted in on a stable build would silently get reverted.
+    func testDefaultReceivePrereleases_stableBuild_userOptedIn_isTrue() {
+        XCTAssertTrue(
+            defaultReceivePrereleases(version: "2.0.0", persistedValue: true)
+        )
+    }
 }

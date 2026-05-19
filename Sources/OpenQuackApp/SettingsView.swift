@@ -20,7 +20,7 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $selection) {
-            GeneralPane()
+            GeneralPane(appState: appState)
                 .tabItem { Label("General", systemImage: "gearshape") }
                 .tag(Tab.general)
             ShortcutPane()
@@ -43,6 +43,7 @@ struct SettingsView: View {
 // MARK: - General
 
 private struct GeneralPane: View {
+    @ObservedObject var appState: AppState
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("language")            private var language: String = "en"
@@ -53,6 +54,20 @@ private struct GeneralPane: View {
     @AppStorage("customWords")         private var customWords: String = ""
     @AppStorage("model")               private var model: String = "medium"
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
+
+    // SPEC-026 PR-B — Updates section state.
+    @AppStorage("receivePrereleases") private var receivePrereleases: Bool = false
+    /// Mirror of `SPUUpdater.automaticallyChecksForUpdates`. Sparkle is
+    /// the source of truth (it persists to UserDefaults `SUEnableAutomaticChecks`);
+    /// the mirror seeds `.onAppear` and writes back through the public
+    /// setter on `.onChange` so Sparkle's internal `resetUpdateCycle`
+    /// fires. A direct `@AppStorage` on `SUEnableAutomaticChecks` would
+    /// bypass that setter.
+    @State private var sparkleAutoChecks: Bool = false
+    /// Snapshot of `SPUUpdater.lastUpdateCheckDate`, refreshed `.onAppear`
+    /// and 1.5 s after a Check-now tap. `nil` means "never checked";
+    /// the "Last checked" line is suppressed in that case.
+    @State private var lastChecked: Date?
 
     // SPEC-023 — session-only hint, seeded from AppDelegate so reconcile
     // results from app launch propagate the first time Settings opens.
@@ -171,6 +186,37 @@ private struct GeneralPane: View {
             } header: {
                 SectionHeader("Startup")
             }
+
+            // SPEC-026 PR-B — Updates (Sparkle controls; brew-aware).
+            //
+            // brew install: every Sparkle-side control is functionally a
+            // no-op. Surface that honestly with a single line telling
+            // brew users exactly how to update, with the command typeset
+            // monospaced.
+            Section {
+                if appState.installMethod.isBrew {
+                    Text(brewUpdateInstructions)
+                        .font(.callout)
+                } else {
+                    Toggle("Check for updates automatically", isOn: $sparkleAutoChecks)
+                        .help("Let OpenQuack check for new versions in the background.")
+
+                    if let date = lastChecked {
+                        Text("Last checked: \(date.formatted(.relative(presentation: .named)))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Toggle("Include pre-release builds (alpha/beta)", isOn: $receivePrereleases)
+                        .help("Receive alpha and beta builds in addition to stable releases. Useful if you want fixes before they reach the stable channel.")
+
+                    Button("Check now") {
+                        handleCheckNowTap()
+                    }
+                }
+            } header: {
+                SectionHeader("Updates")
+            }
         }
         .formStyle(.grouped)
         .padding()
@@ -182,9 +228,60 @@ private struct GeneralPane: View {
                delegate.showsLaunchAtLoginApprovalHint {
                 showsApprovalHint = true
             }
+            // SPEC-026 PR-B — seed Sparkle state mirrors.
+            if let updater = (NSApp.delegate as? AppDelegate)?.sparkleUpdater?.updater {
+                sparkleAutoChecks = updater.automaticallyChecksForUpdates
+                lastChecked = updater.lastUpdateCheckDate
+            }
         }
         .onChange(of: launchAtLogin) { newValue in
             handleLaunchAtLoginChange(newValue)
+        }
+        // SPEC-026 PR-B — write the auto-check toggle through Sparkle's
+        // setter so `resetUpdateCycle` fires.
+        .onChange(of: sparkleAutoChecks) { newValue in
+            (NSApp.delegate as? AppDelegate)?.sparkleUpdater?.updater
+                .automaticallyChecksForUpdates = newValue
+        }
+        // SPEC-026 PR-B — flipping the prerelease toggle re-runs a check
+        // immediately so the user sees the result of the new channel
+        // without waiting for the next scheduled one. `@AppStorage`
+        // already persisted the value; the delegate's `feedURLString(for:)`
+        // reads it on the next check and routes to the right appcast.
+        // Goes through `handleCheckNowTap()` (same path as the "Check now"
+        // button) so "Last checked" stays in sync.
+        .onChange(of: receivePrereleases) { _ in
+            handleCheckNowTap()
+        }
+    }
+
+    /// SPEC-026 PR-B — brew-mode hint with the upgrade command typeset
+    /// as monospaced primary text inline.
+    private var brewUpdateInstructions: AttributedString {
+        var s = AttributedString()
+        var prefix = AttributedString("OpenQuack is managed by Homebrew on this Mac. Run ")
+        prefix.foregroundColor = .secondary
+        s += prefix
+        var cmd = AttributedString("brew upgrade --cask openquack")
+        cmd.font = .system(.body, design: .monospaced)
+        cmd.foregroundColor = .primary
+        s += cmd
+        var suffix = AttributedString(" to update.")
+        suffix.foregroundColor = .secondary
+        s += suffix
+        return s
+    }
+
+    /// SPEC-026 PR-B — `Check now` button action. Triggers Sparkle's
+    /// own check + dialog flow; we re-snapshot `lastUpdateCheckDate`
+    /// after a short delay because the check is async.
+    @MainActor
+    private func handleCheckNowTap() {
+        guard let controller = (NSApp.delegate as? AppDelegate)?.sparkleUpdater else { return }
+        controller.checkForUpdates(nil)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 s
+            lastChecked = controller.updater.lastUpdateCheckDate
         }
     }
 

@@ -34,3 +34,21 @@ public func chooseAppcastURL(channel: UpdateChannel) -> URL {
     }
     return URL(string: "\(base)/\(filename)")!
 }
+
+/// SPEC-026 PR-B — Seed default for the `receivePrereleases` toggle on
+/// first launch. ON if the binary is itself a pre-release build (a
+/// `-alpha` or `-beta` tag in the version string); OFF otherwise.
+/// One-shot: once UserDefaults has a value, the user's persisted choice
+/// wins.
+///
+/// `persistedValue` is the current `receivePrereleases` UserDefaults
+/// value, or `nil` if the key has never been written. Passed in
+/// explicitly rather than read inside the function so callers can unit-
+/// test without touching `UserDefaults.standard` global state.
+public func defaultReceivePrereleases(
+    version: String,
+    persistedValue: Bool?
+) -> Bool {
+    if let persisted = persistedValue { return persisted }
+    return version.contains("-alpha") || version.contains("-beta")
+}
