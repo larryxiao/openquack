@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="OpenQuack — 말하면. 입력된다. 비공개로. 녹음 오버레이에 'Listening' 과 실시간 음량 미터, 메뉴바 팝오버에 'Pasted at cursor' 와 최근 받아쓰기 결과, 푸터에 Settings / Quit 버튼이 표시된다.">
+  <img src="../images/banner.png" alt="OpenQuack — 말하면. 입력된다. 비공개로. 녹음 오버레이에 'Listening' 과 실시간 음량 미터, 메뉴바 팝오버에 'Pasted at cursor' 와 최근 받아쓰기 결과, 푸터에 Settings / Quit 버튼이 표시된다.">
 </p>
 
 <div align="center">
@@ -8,14 +8,14 @@
 
 macOS 용 음성 받아쓰기. 무엇도 기기를 떠나지 않는다 —— 오디오도, 텍스트도, 아무것도.
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](docs/INSTALL.md)
-[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](docs/ROADMAP.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](../INSTALL.md)
+[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](../ROADMAP.md)
 
 </div>
 
 <p align="center">
-  <a href="README.md">English</a> ·
+  <a href="../../README.md">English</a> ·
   <a href="README.zh-CN.md">简体中文</a> ·
   <a href="README.ja.md">日本語</a> ·
   <strong>한국어</strong> ·
@@ -24,7 +24,7 @@ macOS 용 음성 받아쓰기. 무엇도 기기를 떠나지 않는다 —— �
   <a href="README.de.md">Deutsch</a>
 </p>
 
-> 🌐 **기계 번역입니다.** 원어민의 기여를 환영합니다 —— PR 을 열어주시거나 [`CONTRIBUTING.md`](CONTRIBUTING.md) 를 참고하세요.
+> 🌐 **기계 번역입니다.** 원어민의 기여를 환영합니다 —— PR 을 열어주시거나 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) 를 참고하세요.
 
 ---
 
@@ -40,7 +40,7 @@ OpenQuack 은 macOS 메뉴바에 사는 작은 앱이에요. 단축키를 누르
 
 **로컬.** 모든 게 기기 위에서 돌아가요 —— 녹음, 받아쓰기, 선택적 다듬기까지. 아무것도 외부로 나가지 않아요: 오디오, 텍스트, 텔레메트리, 가입, 전부 없음. 기밀 작업은 설계 단계부터 기밀로 유지돼요. 그리고 흐름 안에 API 호출이 없으니 계속 작동해요 —— 오프라인에서도, 비행기 안에서도, 사내 방화벽 뒤에서도.
 
-**빠릅니다.** Apple Silicon 위의 Whisper 는 말한 시간의 약 1/5 만에 받아쓰기를 끝내요. 베이스라인 M4 / 16 GB 에서 실제 사람 음성에 대한 단어 오류율은 약 ~2.6%. 대부분의 경우 타이핑보다 빠릅니다. 전체 벤치 매트릭스는 [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md) 참고.
+**빠릅니다.** Apple Silicon 위의 Whisper 는 말한 시간의 약 1/5 만에 받아쓰기를 끝내요. 베이스라인 M4 / 16 GB 에서 실제 사람 음성에 대한 단어 오류율은 약 ~2.6%. 대부분의 경우 타이핑보다 빠릅니다. 전체 벤치 매트릭스는 [`docs/BENCHMARKS.md`](../BENCHMARKS.md) 참고.
 
 **오픈.** MIT 라이선스. 모든 줄이 감사 가능하고, 모든 변경은 공개로 일어납니다. 메뉴바에서 도는 버전이 곧 이 저장소의 버전이에요.
 
@@ -63,7 +63,7 @@ OpenQuack 은 macOS 메뉴바에 사는 작은 앱이에요. 단축키를 누르
 1. **무엇도 기기를 떠나지 않아요 —— 오디오, 텍스트, 아무것도.** 녹음과 받아쓰기는 완전히 로컬. 언제나.
 2. **분석 없음, 텔레메트리 없음, 가입 없음.**
 
-전체 프라이버시 계약은 [`docs/VISION.md`](docs/VISION.md#privacy-contract) 에 있어요.
+전체 프라이버시 계약은 [`docs/VISION.md`](../VISION.md#privacy-contract) 에 있어요.
 
 ## 다음에 올 것
 
@@ -73,9 +73,9 @@ OpenQuack 은 macOS 메뉴바에 사는 작은 앱이에요. 단축키를 누르
 
 **씽킹 모드.** 받아쓰기 후 한 번 더, 작은 로컬 LLM 을 거쳐서, 말로 뱉은 원문을 실제로 보내기 버튼을 누를 수 있는 글로 바꿔줘요. 군말 잘라내고, 구조 다듬고, 중요한 단어에 알맞은 대문자. 기본은 꺼짐, 토글 한 번으로 켜짐. 완전 로컬 —— Ollama 또는 MLX-LM, 원하는 쪽으로.
 
-일정과 SPEC 상세는 [`docs/ROADMAP.md`](docs/ROADMAP.md).
+일정과 SPEC 상세는 [`docs/ROADMAP.md`](../ROADMAP.md).
 
-이 오리는 더 큰 계획이 있어요. 향하는 곳: [`docs/VISION.md`](docs/VISION.md).
+이 오리는 더 큰 계획이 있어요. 향하는 곳: [`docs/VISION.md`](../VISION.md).
 
 ## 설치
 
@@ -88,7 +88,7 @@ brew install --cask openquack
 
 macOS 가 물어보면 **마이크** 권한을 주고, **설정 → 단축키** 에서 단축키를 골라요 (기본값 ⌃⇧Space).
 
-가이드 투어가 필요하다면? [`docs/TUTORIAL.md`](docs/TUTORIAL.md) 참고 —— 설치부터 첫 받아쓰기까지 5 분.
+가이드 투어가 필요하다면? [`docs/TUTORIAL.md`](../TUTORIAL.md) 참고 —— 설치부터 첫 받아쓰기까지 5 분.
 
 ### 또는 AI 에이전트에게 시키기
 
@@ -107,7 +107,7 @@ Then launch /Applications/OpenQuack.app, grant Microphone, and pick a
 hotkey in Settings → Shortcut. Default ⌃⇧Space.
 ```
 
-추가 옵션 (제거, 소스 빌드, 첫 실행 시 받는 것): [`docs/INSTALL.md`](docs/INSTALL.md).
+추가 옵션 (제거, 소스 빌드, 첫 실행 시 받는 것): [`docs/INSTALL.md`](../INSTALL.md).
 
 ## 감사의 말
 
@@ -125,12 +125,12 @@ OpenQuack 은 너그러운 오픈소스 작업의 어깨 위에 서 있습니다
 
 OpenQuack 은 **AI 네이티브 오픈소스** —— 모든 PR 이 SPEC 을 인용하고, 원자적 작업은 로드맵에서 옵니다. 워크플로는 코딩 에이전트에게도 (같은 길을 가는 사람에게도) 친화적이에요.
 
-[`AGENTS.md`](AGENTS.md) 에서 시작해서, [`docs/ROADMAP.md`](docs/ROADMAP.md) 에서 🔵 작업을 골라, 드래프트 PR 을 열어주세요.
+[`AGENTS.md`](../../AGENTS.md) 에서 시작해서, [`docs/ROADMAP.md`](../ROADMAP.md) 에서 🔵 작업을 골라, 드래프트 PR 을 열어주세요.
 
-내부:[`TUTORIAL`](docs/TUTORIAL.md) · [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`DESIGN`](docs/DESIGN.md) · [`INSTALL`](docs/INSTALL.md) · [`BLOG`](docs/blog/README.md).
+내부:[`TUTORIAL`](../TUTORIAL.md) · [`DEVELOPMENT`](../DEVELOPMENT.md) · [`ARCHITECTURE`](../ARCHITECTURE.md) · [`BENCHMARKS`](../BENCHMARKS.md) · [`DESIGN`](../DESIGN.md) · [`INSTALL`](../INSTALL.md) · [`BLOG`](../blog/README.md).
 
 ## 라이선스
 
-MIT —— [LICENSE](LICENSE) 참고.
+MIT —— [LICENSE](../../LICENSE) 참고.
 
 (번역 피드백은 PR 또는 [GitHub Discussions](https://github.com/larryxiao/openquack/discussions) 로 환영합니다.)

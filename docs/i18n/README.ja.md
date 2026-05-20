@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="OpenQuack — 話す。送る。プライベートに。録音オーバーレイには 'Listening' とライブレベルメーター、メニューバーのポップオーバーには 'Pasted at cursor' と直近の文字起こし、フッターに Settings / Quit ボタンが表示されている。">
+  <img src="../images/banner.png" alt="OpenQuack — 話す。送る。プライベートに。録音オーバーレイには 'Listening' とライブレベルメーター、メニューバーのポップオーバーには 'Pasted at cursor' と直近の文字起こし、フッターに Settings / Quit ボタンが表示されている。">
 </p>
 
 <div align="center">
@@ -8,14 +8,14 @@
 
 macOS 向けの音声入力。何もデバイスから出ない —— 音声もテキストも、何も。
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](docs/INSTALL.md)
-[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](docs/ROADMAP.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](../INSTALL.md)
+[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](../ROADMAP.md)
 
 </div>
 
 <p align="center">
-  <a href="README.md">English</a> ·
+  <a href="../../README.md">English</a> ·
   <a href="README.zh-CN.md">简体中文</a> ·
   <strong>日本語</strong> ·
   <a href="README.ko.md">한국어</a> ·
@@ -24,7 +24,7 @@ macOS 向けの音声入力。何もデバイスから出ない —— 音声も
   <a href="README.de.md">Deutsch</a>
 </p>
 
-> 🌐 **機械翻訳です。** ネイティブの方からの貢献を歓迎します —— PR を送るか、[`CONTRIBUTING.md`](CONTRIBUTING.md) を参照してください。
+> 🌐 **機械翻訳です。** ネイティブの方からの貢献を歓迎します —— PR を送るか、[`CONTRIBUTING.md`](../../CONTRIBUTING.md) を参照してください。
 
 ---
 
@@ -40,7 +40,7 @@ OpenQuack は macOS 向けの小さなメニューバーアプリ。ホットキ
 
 **ローカル。** すべてがデバイス上で動く —— 録音、文字起こし、オプションの整形まで。何も外に出ない:音声、テキスト、テレメトリ、サインアップ、すべてなし。機密の作業は、設計レベルで機密のまま。フローに API コールがないので、ずっと動き続ける —— オフラインでも、飛行機の中でも、企業ファイアウォールの後ろでも。
 
-**速い。** Apple Silicon 上の Whisper は、話した時間のおよそ 5 分の 1 で文字起こしする。ベースラインの M4 / 16 GB で、リアルな人間の音声に対する単語誤り率はおよそ 2.6%。多くの場合、タイプより速い。フルベンチマークは [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)。
+**速い。** Apple Silicon 上の Whisper は、話した時間のおよそ 5 分の 1 で文字起こしする。ベースラインの M4 / 16 GB で、リアルな人間の音声に対する単語誤り率はおよそ 2.6%。多くの場合、タイプより速い。フルベンチマークは [`docs/BENCHMARKS.md`](../BENCHMARKS.md)。
 
 **オープン。** MIT ライセンス。すべての行が監査可能で、すべての変更は公開で行われる。メニューバーで動いているバージョンが、このリポジトリにあるバージョン。
 
@@ -63,7 +63,7 @@ OpenQuack は macOS 向けの小さなメニューバーアプリ。ホットキ
 1. **何もデバイスから出ない —— 音声、テキスト、何も。** 録音と文字起こしは完全にローカル。常に。
 2. **アナリティクスなし、テレメトリなし、サインアップなし。**
 
-プライバシーの完全な契約は [`docs/VISION.md`](docs/VISION.md#privacy-contract)。
+プライバシーの完全な契約は [`docs/VISION.md`](../VISION.md#privacy-contract)。
 
 ## 次に来るもの
 
@@ -73,9 +73,9 @@ OpenQuack は macOS 向けの小さなメニューバーアプリ。ホットキ
 
 **シンキングモード。** 文字起こしの後にもう一段、小さなローカル LLM を通して、話した生の文を、実際に送信ボタンを押せる書き言葉に変える。フィラーをカット、構造を引き締め、大事な言葉に正しい大文字化。デフォルトはオフ、ワンクリックで有効化。完全ローカル —— Ollama または MLX-LM、お好みで。
 
-スケジュールと SPEC の詳細は [`docs/ROADMAP.md`](docs/ROADMAP.md)。
+スケジュールと SPEC の詳細は [`docs/ROADMAP.md`](../ROADMAP.md)。
 
-このアヒルにはもっと大きな計画がある。向かう先は [`docs/VISION.md`](docs/VISION.md)。
+このアヒルにはもっと大きな計画がある。向かう先は [`docs/VISION.md`](../VISION.md)。
 
 ## インストール
 
@@ -88,7 +88,7 @@ brew install --cask openquack
 
 macOS が聞いてきたら **マイク** を許可、**設定 → ショートカット** でホットキーを選ぶ(デフォルトは ⌃⇧Space)。
 
-ガイド付きの手順がほしい? [`docs/TUTORIAL.md`](docs/TUTORIAL.md) を見てください —— インストールから最初の音声入力まで 5 分。
+ガイド付きの手順がほしい? [`docs/TUTORIAL.md`](../TUTORIAL.md) を見てください —— インストールから最初の音声入力まで 5 分。
 
 ### または AI エージェントに任せる
 
@@ -107,7 +107,7 @@ Then launch /Applications/OpenQuack.app, grant Microphone, and pick a
 hotkey in Settings → Shortcut. Default ⌃⇧Space.
 ```
 
-その他のオプション(アンインストール、ソースからのビルド、初回起動でダウンロードされるもの):[`docs/INSTALL.md`](docs/INSTALL.md)。
+その他のオプション(アンインストール、ソースからのビルド、初回起動でダウンロードされるもの):[`docs/INSTALL.md`](../INSTALL.md)。
 
 ## 謝辞
 
@@ -125,12 +125,12 @@ OpenQuack は、寛大なオープンソースの仕事の肩の上に立って�
 
 OpenQuack は **AI ネイティブのオープンソース** —— すべての PR が SPEC を参照し、アトミックなタスクはロードマップから来る。ワークフローはコーディングエージェントにも(同じ道を行く人間にも)優しい設計。
 
-[`AGENTS.md`](AGENTS.md) から始めて、[`docs/ROADMAP.md`](docs/ROADMAP.md) で 🔵 のタスクを選び、ドラフト PR を開く。
+[`AGENTS.md`](../../AGENTS.md) から始めて、[`docs/ROADMAP.md`](../ROADMAP.md) で 🔵 のタスクを選び、ドラフト PR を開く。
 
-裏側:[`TUTORIAL`](docs/TUTORIAL.md) · [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`DESIGN`](docs/DESIGN.md) · [`INSTALL`](docs/INSTALL.md) · [`BLOG`](docs/blog/README.md)。
+裏側:[`TUTORIAL`](../TUTORIAL.md) · [`DEVELOPMENT`](../DEVELOPMENT.md) · [`ARCHITECTURE`](../ARCHITECTURE.md) · [`BENCHMARKS`](../BENCHMARKS.md) · [`DESIGN`](../DESIGN.md) · [`INSTALL`](../INSTALL.md) · [`BLOG`](../blog/README.md)。
 
 ## ライセンス
 
-MIT —— [LICENSE](LICENSE) を参照。
+MIT —— [LICENSE](../../LICENSE) を参照。
 
 (翻訳のフィードバックは PR か [GitHub Discussions](https://github.com/larryxiao/openquack/discussions) で歓迎。)

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/banner.png" alt="OpenQuack — Sprich. Schick. Privat. Das Aufnahme-Overlay zeigt 'Listening' mit einer Live-Pegelanzeige; das Menüleisten-Popover zeigt 'Pasted at cursor' mit dem letzten Transkript und einer Settings / Quit-Fußzeile.">
+  <img src="../images/banner.png" alt="OpenQuack — Sprich. Schick. Privat. Das Aufnahme-Overlay zeigt 'Listening' mit einer Live-Pegelanzeige; das Menüleisten-Popover zeigt 'Pasted at cursor' mit dem letzten Transkript und einer Settings / Quit-Fußzeile.">
 </p>
 
 <div align="center">
@@ -8,14 +8,14 @@
 
 Sprachdiktat für macOS. Nichts verlässt dein Gerät — kein Audio, kein Text, nichts.
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](docs/INSTALL.md)
-[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](docs/ROADMAP.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](../INSTALL.md)
+[![Status](https://img.shields.io/badge/status-alpha-yellow.svg)](../ROADMAP.md)
 
 </div>
 
 <p align="center">
-  <a href="README.md">English</a> ·
+  <a href="../../README.md">English</a> ·
   <a href="README.zh-CN.md">简体中文</a> ·
   <a href="README.ja.md">日本語</a> ·
   <a href="README.ko.md">한국어</a> ·
@@ -24,7 +24,7 @@ Sprachdiktat für macOS. Nichts verlässt dein Gerät — kein Audio, kein Text,
   <strong>Deutsch</strong>
 </p>
 
-> 🌐 **Maschinell übersetzt.** Beiträge von Muttersprachler:innen sind willkommen — öffne einen PR oder schau in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+> 🌐 **Maschinell übersetzt.** Beiträge von Muttersprachler:innen sind willkommen — öffne einen PR oder schau in [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
 
 ---
 
@@ -40,7 +40,7 @@ Spracherkennung läuft auf deinem Mac. Keine Cloud, kein Account, keine Anmeldun
 
 **Lokal.** Alles läuft auf deinem Gerät — Aufnahme, Transkription, optionales Polieren. Nichts geht raus: kein Audio, kein Text, keine Telemetrie, keine Anmeldung. Vertrauliche Arbeit bleibt vertraulich, von der Bauart her. Und weil im Loop kein API-Aufruf ist, läuft es einfach weiter — offline, im Flugzeug, hinter einer Firmen-Firewall.
 
-**Schnell.** Whisper auf Apple Silicon transkribiert in etwa einem Fünftel der Zeit, die du fürs Sprechen gebraucht hast. ~2,6 % Wortfehlerrate auf echter menschlicher Sprache auf einem Basis-M4 / 16 GB. In den meisten Fällen schneller als Tippen. Volle Bench-Matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
+**Schnell.** Whisper auf Apple Silicon transkribiert in etwa einem Fünftel der Zeit, die du fürs Sprechen gebraucht hast. ~2,6 % Wortfehlerrate auf echter menschlicher Sprache auf einem Basis-M4 / 16 GB. In den meisten Fällen schneller als Tippen. Volle Bench-Matrix in [`docs/BENCHMARKS.md`](../BENCHMARKS.md).
 
 **Offen.** MIT-lizenziert. Jede Zeile ist auditierbar; jede Änderung passiert öffentlich. Die Version, die in deiner Menüleiste läuft, ist die Version aus diesem Repo.
 
@@ -63,7 +63,7 @@ Spracherkennung läuft auf deinem Mac. Keine Cloud, kein Account, keine Anmeldun
 1. **Nichts verlässt dein Gerät — kein Audio, kein Text, nichts.** Aufnahme und Transkription sind komplett lokal. Immer.
 2. **Keine Analytik, keine Telemetrie, keine Anmeldung.**
 
-Der vollständige Datenschutz-Vertrag steht in [`docs/VISION.md`](docs/VISION.md#privacy-contract).
+Der vollständige Datenschutz-Vertrag steht in [`docs/VISION.md`](../VISION.md#privacy-contract).
 
 ## Was als Nächstes kommt
 
@@ -73,9 +73,9 @@ Ein Blick auf das, was in der Pipeline ist. Beides baut auf der Diktat-Grundlage
 
 **Denk-Modus.** Ein zweiter Durchgang nach der Transkription, durch ein kleines lokales LLM, der einen rohen gesprochenen Satz in einen geschriebenen verwandelt, bei dem du wirklich auf Senden drücken würdest. Füllwörter raus, Struktur gestrafft, richtige Großschreibung bei den Wörtern, die zählen. Standardmäßig aus, mit einem Toggle einschaltbar. Vollständig lokal — Ollama oder MLX-LM, deine Wahl.
 
-Zeitplan und SPEC-Details in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Zeitplan und SPEC-Details in [`docs/ROADMAP.md`](../ROADMAP.md).
 
-Die Ente hat größere Pläne. Wohin das geht: [`docs/VISION.md`](docs/VISION.md).
+Die Ente hat größere Pläne. Wohin das geht: [`docs/VISION.md`](../VISION.md).
 
 ## Installation
 
@@ -88,7 +88,7 @@ Oder [DMG laden](https://github.com/larryxiao/openquack/releases) und in den Pro
 
 Erlaube **Mikrofon**, wenn macOS fragt, und such dir einen Hotkey unter **Einstellungen → Kurzbefehl** aus (Standard ⌃⇧Space).
 
-Lieber ein geführter Rundgang? Schau in [`docs/TUTORIAL.md`](docs/TUTORIAL.md) — fünf Minuten von der Installation bis zum ersten Diktat.
+Lieber ein geführter Rundgang? Schau in [`docs/TUTORIAL.md`](../TUTORIAL.md) — fünf Minuten von der Installation bis zum ersten Diktat.
 
 ### Oder lass deinen KI-Agenten ran
 
@@ -107,7 +107,7 @@ Then launch /Applications/OpenQuack.app, grant Microphone, and pick a
 hotkey in Settings → Shortcut. Default ⌃⇧Space.
 ```
 
-Mehr Optionen (Deinstallation, Build aus dem Quellcode, was beim ersten Start heruntergeladen wird): [`docs/INSTALL.md`](docs/INSTALL.md).
+Mehr Optionen (Deinstallation, Build aus dem Quellcode, was beim ersten Start heruntergeladen wird): [`docs/INSTALL.md`](../INSTALL.md).
 
 ## Danksagung
 
@@ -125,12 +125,12 @@ Und an alle, die Issues schreiben, PRs öffnen und Freund:innen davon erzählen:
 
 OpenQuack ist **AI-native Open Source** — jeder PR zitiert ein SPEC, atomare Aufgaben kommen aus der Roadmap, der Workflow ist freundlich zu Coding-Agenten in großem Maßstab (und zu Menschen auf demselben Weg).
 
-Fang mit [`AGENTS.md`](AGENTS.md) an, schnapp dir eine 🔵-Aufgabe in [`docs/ROADMAP.md`](docs/ROADMAP.md), öffne einen Draft-PR.
+Fang mit [`AGENTS.md`](../../AGENTS.md) an, schnapp dir eine 🔵-Aufgabe in [`docs/ROADMAP.md`](../ROADMAP.md), öffne einen Draft-PR.
 
-Unter der Haube: [`TUTORIAL`](docs/TUTORIAL.md) · [`DEVELOPMENT`](docs/DEVELOPMENT.md) · [`ARCHITECTURE`](docs/ARCHITECTURE.md) · [`BENCHMARKS`](docs/BENCHMARKS.md) · [`DESIGN`](docs/DESIGN.md) · [`INSTALL`](docs/INSTALL.md) · [`BLOG`](docs/blog/README.md).
+Unter der Haube: [`TUTORIAL`](../TUTORIAL.md) · [`DEVELOPMENT`](../DEVELOPMENT.md) · [`ARCHITECTURE`](../ARCHITECTURE.md) · [`BENCHMARKS`](../BENCHMARKS.md) · [`DESIGN`](../DESIGN.md) · [`INSTALL`](../INSTALL.md) · [`BLOG`](../blog/README.md).
 
 ## Lizenz
 
-MIT — siehe [LICENSE](LICENSE).
+MIT — siehe [LICENSE](../../LICENSE).
 
 (Übersetzungs-Feedback gerne per PR oder über [GitHub Discussions](https://github.com/larryxiao/openquack/discussions).)

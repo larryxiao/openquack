@@ -16,12 +16,12 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 <p align="center">
   <strong>English</strong> ·
-  <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="README.ja.md">日本語</a> ·
-  <a href="README.ko.md">한국어</a> ·
-  <a href="README.fr.md">Français</a> ·
-  <a href="README.es.md">Español</a> ·
-  <a href="README.de.md">Deutsch</a>
+  <a href="docs/i18n/README.zh-CN.md">简体中文</a> ·
+  <a href="docs/i18n/README.ja.md">日本語</a> ·
+  <a href="docs/i18n/README.ko.md">한국어</a> ·
+  <a href="docs/i18n/README.fr.md">Français</a> ·
+  <a href="docs/i18n/README.es.md">Español</a> ·
+  <a href="docs/i18n/README.de.md">Deutsch</a>
 </p>
 
 > 🌐 Translations are machine-translated stubs. Native-speaker contributions very welcome — open a PR or see [`CONTRIBUTING.md`](CONTRIBUTING.md).
