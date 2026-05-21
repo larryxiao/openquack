@@ -7,6 +7,7 @@ Conventions:
 - File names: `SPEC-<NNN>-<kebab-name>.md`.
 - IDs are global, monotonic, and stable. Renumbering is forbidden once a spec is referenced by a PR.
 - New spec? File the `Spec proposal` issue first; merging the spec is a separate PR from any implementation.
+- **Every spec must include an `## Acceptance criteria` section** that states the clear goal and how to validate it — a user-visible behaviour ("pastes within 200 ms of hotkey release"), a measurable metric ("WER ≤ 6.5 % on `bench/corpus/noisy`"), or explicit manual steps a reviewer can follow. If neither the goal nor the validation method can be written down, the spec is still a proposal, not a contract.
 
 ## Index
 

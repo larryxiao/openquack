@@ -5,6 +5,7 @@ How AI agents (and humans) should contribute to OpenQuack. Most rules apply equa
 ## Posture
 
 - **Specs are the contract.** Every PR cites a `SPEC-XXX`. If no spec covers your change, write the spec first (one PR adds the spec; a follow-up PR implements).
+- **Specs must include clear goals and how to validate them.** Every spec's `## Acceptance criteria` section states what the feature is trying to achieve and exactly how to confirm it — a user-visible behaviour ("pastes within 200 ms of hotkey release"), a measurable metric ("WER ≤ 6.5 % on the noisy corpus"), or explicit manual steps a reviewer can follow. A spec without this is still a proposal; don't start implementation until the goal and its validation method are written down.
 - **Atomic PRs.** One spec, one milestone task. If your work touches multiple concerns, split it.
 - **Tests are non-optional.** Touch a metric → bench delta documented in the PR. Touch logic → unit test added. Touch UX → the PR describes how to repro manually.
 - **Cite primary sources, not memory.** When you need WhisperKit specifics, read `.build/checkouts/argmax-oss-swift/Sources/WhisperKit/Core/...`. When you need bench math, read `Sources/OpenQuackKit/Metrics/`.

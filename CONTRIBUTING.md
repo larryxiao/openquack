@@ -135,6 +135,14 @@ The hardest parts of the codebase — Streaming transcription
 all have detailed SPECs. Reading the SPEC before opening a PR
 prevents most rework.
 
+### Start via Claude Code (a fun on-ramp)
+
+Open the repo in your terminal, run `claude`, and tell it:
+
+> "Read AGENTS.md and ROADMAP.md, pick a 🔵 task that looks ready to implement, and open a draft PR."
+
+It will orient itself from the SPECs and propose a starting point. If you'd rather write a spec than implement one, say so — there are open areas (see the roadmap's `proposal` column) where a well-scoped spec is the whole contribution. Running benchmarks on your Mac is also fair game: tell Claude to read `bench/CONTRIBUTING.md` and walk you through it.
+
 ## Spread the word — only if it works for you
 
 If OpenQuack genuinely fits your workflow, telling others helps.
@@ -163,6 +171,10 @@ in the "Show and tell" category. We'll read everything.
 
 ## Where to start if you have 30 minutes
 
+- **Claude Code contributor**: run `claude` in the repo root and tell
+  it to read `AGENTS.md` + `ROADMAP.md` and pick a 🔵 task. Or ask it
+  to draft a new spec for a roadmap proposal. A fast on-ramp if you
+  want to see AI-assisted open-source development end-to-end.
 - **Cache-footprint contributor (3 min)**: run
   `bash scripts/bench_ane_cache.sh` and paste the summary into the
   [#cache-footprint Discussion](https://github.com/larryxiao/openquack/discussions).
