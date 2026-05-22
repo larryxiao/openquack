@@ -21,6 +21,7 @@ The product has a working foundation. The current cycle is about removing first-
 | 🔵 | Sparkle auto-update — existing users stay on latest without reinstalling | SPEC-026 | S; pairs with the brew cask path |
 | 🔵 | README demo gif + landing-page polish — strong first-impression artifact | SPEC-027 | S |
 | 🟡 | Mandarin auto-detect fix: visible quality bug surfaced by issue #17 | SPEC-021 | PR #20 (bench) draft |
+| 🔵 | Agent kickoff: voice-launched Claude Code session via separate hotkey — adoption-band demo feature | SPEC-031 | S; needs Larry OK on AGENTS.md network hard rule before impl PR |
 | ⚪ | Submission tracking for awesome-mac / awesome-llm / awesome-swift lists | — | quiet but durable inbound |
 | ⚪ | Quarterly bench refresh — durable artifact + monthly relaunch hook | — | leverages existing 5×2×177 bench |
 
