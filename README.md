@@ -85,22 +85,7 @@ Want a guided walkthrough? See [`docs/TUTORIAL.md`](docs/TUTORIAL.md) — five m
 
 ### Or tell your AI agent
 
-Paste this into Claude Code, Codex, opencode, Hermes, or similar:
-
-```text
-Install OpenQuack on this Mac:
-
-  brew tap larryxiao/openquack https://github.com/larryxiao/openquack
-  brew install --cask openquack
-
-(Or grab the DMG from https://github.com/larryxiao/openquack/releases
-and drag it into /Applications; first open right-click → Open → Open.)
-
-Then launch /Applications/OpenQuack.app, grant Microphone, and pick a
-hotkey in Settings → Shortcut. Default ⌃⇧Space.
-```
-
-More options (uninstall, build-from-source, what's downloaded on first run): [`docs/INSTALL.md`](docs/INSTALL.md).
+Point it at this repo and ask it to follow [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Got stuck? Want a feature?
 
