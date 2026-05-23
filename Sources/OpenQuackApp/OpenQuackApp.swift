@@ -5,6 +5,7 @@ import Combine
 import os
 import ServiceManagement
 import Sparkle
+import UserNotifications
 import OpenQuackKit
 
 // SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
@@ -75,6 +76,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let appState = AppState()
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyManager()
+
+    /// SPEC-031 — tracks live + completed agent-kickoff sessions and
+    /// posts notifications. Created lazily on the main actor because
+    /// AgentSessionManager is @MainActor.
+    @MainActor lazy var agentSessions = AgentSessionManager()
+    /// SPEC-031 — opens on notification click.
+    @MainActor lazy var responseWindow = ResponseWindowController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     private var overlay: RecordingOverlay?
@@ -144,6 +152,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
+
+        // SPEC-031 — kickoff notification plumbing. Set the delegate
+        // BEFORE any notification is posted so first-press clicks are
+        // routed correctly; register the category so the action
+        // button shows in Notification Center.
+        UNUserNotificationCenter.current().delegate = self
+        AgentSessionManager.registerNotificationCategory()
 
         // Defensive: switching activation policy back to .accessory can hide
         // the menu-bar status item on macOS 15. Re-assert visibility on every
@@ -701,6 +716,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "Transcript contains an invalid character"
         case .workspaceUnavailable:
             return "Couldn't access ~/OpenQuackAgent/"
+        case .launchFailed:
+            return "Couldn't start claude — transcript on clipboard"
         case .scriptWriteFailed:
             return "Couldn't write launch script — transcript on clipboard"
         case .terminalDispatchFailed:
@@ -826,7 +843,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // The dictated text becomes the agent's seed prompt.
                     // Never paste at the user's cursor in this mode.
                     do {
-                        try await AgentKickoffService.dispatchClaudeCode(prompt: polished)
+                        let session = try AgentKickoffService.startClaudeCode(prompt: polished)
+                        await MainActor.run { [agentSessions] in
+                            agentSessions.track(session)
+                        }
                         kickoffSucceeded = true
                         kickoffErrorMessage = nil
                         pasted = false
@@ -1038,6 +1058,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await usageStats.record(transcript: polished, audioSeconds: result.audioSeconds)
         } catch {
             // Best-effort — leave the entry recoverable for next launch.
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // SPEC-031 — kill any in-flight kickoff agents on quit so we
+        // don't leave orphaned `claude` subprocesses behind.
+        agentSessions.cancelAll()
+    }
+}
+
+// MARK: - SPEC-031: notification delegate
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    /// Show kickoff-result banners even while OpenQuack is foreground
+    /// (e.g. user opened Settings) — otherwise macOS suppresses them.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    /// Click handler — opens the response window for the result whose
+    /// sessionId is carried in userInfo.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+        guard
+            let sessionIdString = response.notification.request.content.userInfo["sessionId"] as? String,
+            let sessionId = UUID(uuidString: sessionIdString)
+        else { return }
+        Task { @MainActor in
+            guard let result = agentSessions.result(for: sessionId) else { return }
+            responseWindow.show(result: result)
         }
     }
 }

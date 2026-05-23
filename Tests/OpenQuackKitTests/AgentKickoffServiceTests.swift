@@ -130,9 +130,9 @@ final class AgentKickoffServiceTests: XCTestCase {
 
     // MARK: - dispatch input validation
 
-    func testDispatchRejectsEmptyPrompt() async {
+    func testStartRejectsEmptyPrompt() {
         do {
-            try await AgentKickoffService.dispatchClaudeCode(prompt: "   \n  ")
+            _ = try AgentKickoffService.startClaudeCode(prompt: "   \n  ")
             XCTFail("expected emptyPrompt error")
         } catch let error as AgentKickoffService.Error {
             XCTAssertEqual(error, .emptyPrompt)
@@ -141,18 +141,112 @@ final class AgentKickoffServiceTests: XCTestCase {
         }
     }
 
-    func testDispatchRejectsNullByte() async {
+    func testStartRejectsNullByte() {
         do {
-            try await AgentKickoffService.dispatchClaudeCode(prompt: "hi\0there")
+            _ = try AgentKickoffService.startClaudeCode(prompt: "hi\0there")
             XCTFail("expected invalidPrompt error")
         } catch let error as AgentKickoffService.Error {
             // If claude is missing on the test machine we hit that
-            // first; both pre-osascript validation errors are
-            // acceptable since the contract is "never let it through".
+            // first; either pre-process validation error is acceptable
+            // since the contract is "never let it through".
             XCTAssertTrue(error == .invalidPrompt || error == .claudeCLIMissing)
         } catch {
             XCTFail("unexpected error: \(error)")
         }
+    }
+
+    // MARK: - claude argv assembly
+
+    func testBuildClaudeArgumentsHasExpectedFlags() {
+        let id = UUID()
+        let argv = AgentKickoffService.buildClaudeArguments(
+            sessionID: id,
+            displayName: "OpenQuack: hello",
+            prompt: "hello there"
+        )
+        // Order matters for argv readability; verify the contract.
+        XCTAssertEqual(argv[0], "-p")
+        XCTAssertEqual(argv[1], "--session-id")
+        XCTAssertEqual(argv[2], id.uuidString.lowercased())
+        XCTAssertEqual(argv[3], "--permission-mode")
+        XCTAssertEqual(argv[4], "bypassPermissions")
+        XCTAssertEqual(argv[5], "--output-format")
+        XCTAssertEqual(argv[6], "text")
+        XCTAssertEqual(argv[7], "--name")
+        XCTAssertEqual(argv[8], "OpenQuack: hello")
+        XCTAssertEqual(argv.last, "hello there")
+        XCTAssertEqual(argv.count, 10)
+    }
+
+    func testBuildClaudeArgumentsSessionIdIsLowercase() {
+        let id = UUID()
+        let argv = AgentKickoffService.buildClaudeArguments(
+            sessionID: id,
+            displayName: "X",
+            prompt: "p"
+        )
+        // claude's --session-id rejects uppercase UUIDs.
+        XCTAssertEqual(argv[2], id.uuidString.lowercased())
+        XCTAssertFalse(argv[2].contains(where: { $0.isUppercase }))
+    }
+
+    func testBuildClaudeArgumentsPassesPromptAsFinalPositional() {
+        // The prompt is the only positional argument; everything else
+        // is named flags. Verify the prompt is at argv.last regardless
+        // of whether the prompt looks like a flag.
+        let argv = AgentKickoffService.buildClaudeArguments(
+            sessionID: UUID(),
+            displayName: "name",
+            prompt: "--this-is-not-a-flag"
+        )
+        XCTAssertEqual(argv.last, "--this-is-not-a-flag")
+    }
+
+    // MARK: - display name
+
+    func testDisplayNameTruncatesAt40Chars() {
+        let long = String(repeating: "a", count: 200)
+        let name = AgentKickoffService.makeDisplayName(prompt: long)
+        XCTAssertEqual(name, "OpenQuack: " + String(repeating: "a", count: 40))
+    }
+
+    func testDisplayNameFlattensNewlines() {
+        let name = AgentKickoffService.makeDisplayName(prompt: "first\nsecond\rthird")
+        XCTAssertFalse(name.contains("\n"))
+        XCTAssertFalse(name.contains("\r"))
+        XCTAssertTrue(name.contains("first second third"))
+    }
+
+    // MARK: - notification body
+
+    func testNotificationBodyKeepsShortResponseVerbatim() {
+        let r = "Timer set for 10:00."
+        XCTAssertEqual(AgentKickoffService.notificationBody(from: r), r)
+    }
+
+    func testNotificationBodyTrimsAtWordBoundary() {
+        // A 200-char response should be cut at ~150 chars at a space.
+        let r = String(repeating: "word ", count: 60)  // 300 chars
+        let body = AgentKickoffService.notificationBody(from: r, limit: 150)
+        XCTAssertTrue(body.hasSuffix("…"))
+        XCTAssertLessThanOrEqual(body.count, 152)
+        // Should not end with a half-word, so the char before "…" is
+        // either a space-trimmed boundary or the previous full word.
+        XCTAssertFalse(body.contains("wor…"),
+                       "should cut at word boundary, not mid-word")
+    }
+
+    func testNotificationBodyHandlesNoWhitespace() {
+        // Pathological: a 200-char run of non-whitespace.
+        let r = String(repeating: "x", count: 200)
+        let body = AgentKickoffService.notificationBody(from: r, limit: 50)
+        XCTAssertTrue(body.hasSuffix("…"))
+        XCTAssertEqual(body.count, 51)  // 50 chars + ellipsis
+    }
+
+    func testNotificationBodyTrimsWhitespace() {
+        let r = "\n\n  short answer  \n"
+        XCTAssertEqual(AgentKickoffService.notificationBody(from: r), "short answer")
     }
 
     // MARK: - workspace lifecycle
