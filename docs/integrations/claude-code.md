@@ -93,11 +93,53 @@ If you mostly send 5-word prompts, OpenQuack doesn't help. If your
 prompts to Claude Code are paragraphs of context, it's the right
 shape.
 
+## Quick voice-to-action (kickoff mode)
+
+Sometimes you don't want to dictate *into* a prompt field — you want
+to **start a Claude Code session** with what you just said. Set a
+timer. List a folder. Sketch a one-file prototype. Whatever Claude
+Code can do from a fresh shell.
+
+Bind a second hotkey in **Settings → Shortcut → Agent kickoff** (e.g.
+⌃⇧K). When you press it:
+
+- OpenQuack records and transcribes as normal
+- Instead of pasting at your cursor, it opens a new Terminal window
+  in `~/OpenQuackAgent/` with `claude` already running on your
+  transcript as the seed prompt
+- You see the session work in that window — approvals, output, side
+  effects — and can continue typing or speaking into it
+
+Your normal dictation hotkey is unaffected and keeps pasting locally.
+The kickoff hotkey is opt-in: the first time you bind it, OpenQuack
+asks for consent because the transcript now leaves your machine via
+Claude Code's API call. Revoke any time by clearing the binding in
+Settings.
+
+Useful when:
+
+- *You're not in Claude Code.* Browsing, in Mail, in a meeting — you
+  want a small task done without switching contexts.
+- *The agent is the actuator, not the editor.* "Move my downloaded
+  conference talks into ~/Movies/talks/", "Open a PR template for
+  the bench update I keep forgetting", "Tell me what's listening on
+  port 5432."
+- *You want a scratch workspace.* `~/OpenQuackAgent/` is isolated —
+  Claude can scaffold prototypes there without touching your real
+  repos.
+
 ## Privacy
 
 Claude Code itself routes your prompts through Anthropic's API
 under your auth. OpenQuack doesn't change that — it just gets the
 prompt from your voice into the prompt field. Audio and the
 transcript stay on your Mac (transcribed locally via WhisperKit);
-nothing OpenQuack does adds a network hop. The privacy gradient is
-yours to set per Claude Code's settings.
+nothing OpenQuack does adds a network hop **in dictation mode**.
+
+The agent-kickoff hotkey (above) is the one exception: in that mode,
+the transcript is handed to `claude`, which routes through Anthropic
+under your existing credentials. The kickoff hotkey ships unbound
+and is opt-in with a consent prompt that names this destination
+explicitly. Dictation-mode is untouched by that consent.
+
+The privacy gradient is yours to set per Claude Code's settings.
