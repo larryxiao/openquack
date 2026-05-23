@@ -197,19 +197,50 @@ final class AgentKickoffServiceTests: XCTestCase {
         }
     }
 
-    // MARK: - AppleScript template invariant
+    // MARK: - .command script body
 
-    func testAppleScriptTemplateDoesNotInterpolatePromptIntoSource() {
-        // The whole point of the design is that the shell command
-        // arrives via argv, not via string interpolation into the
-        // AppleScript source. Guard the invariant: the template must
-        // reference `item 1 of argv` and never contain a placeholder
-        // that someone might be tempted to interpolate into.
-        let tpl = AgentKickoffService.terminalAppleScript
-        XCTAssertTrue(tpl.contains("item 1 of argv"))
-        XCTAssertTrue(tpl.contains("do script"))
-        XCTAssertFalse(tpl.contains("%@"))
-        XCTAssertFalse(tpl.contains("$prompt"))
-        XCTAssertFalse(tpl.contains("\\(prompt"))
+    func testCommandScriptHasShebangAndSetE() {
+        // The script is `bash`-run; the shebang locks the interpreter
+        // and `set -e` makes the script bail if `cd` fails (so we
+        // don't accidentally execute claude in the wrong directory).
+        let body = AgentKickoffService.buildCommandScript(
+            shellCommand: "cd '/tmp/agent' && claude 'hi'"
+        )
+        XCTAssertTrue(body.hasPrefix("#!/bin/bash"))
+        XCTAssertTrue(body.contains("set -e"))
+        XCTAssertTrue(body.contains("cd '/tmp/agent' && claude 'hi'"))
+    }
+
+    func testWriteCommandScriptIsExecutable() throws {
+        let url = try AgentKickoffService.writeCommandScript(
+            shellCommand: "cd '/tmp' && claude 'hello'"
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertEqual(url.pathExtension, "command")
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: url.path))
+
+        // Read it back: shell-injection escape must survive the round trip
+        // through file write + UTF-8 decode.
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(content.contains("claude 'hello'"))
+    }
+
+    func testWriteCommandScriptPreservesInjectionCorpus() throws {
+        // The .command file is executed by /bin/bash; the same
+        // single-quote escape from buildShellCommand has to survive
+        // file write → file read → bash parsing. Verify the bytes
+        // are preserved exactly across the write step.
+        let tricky = "tell me what `whoami` returns and $(date) and 'quotes'\nline2"
+        let cmd = AgentKickoffService.buildShellCommand(
+            workspace: "/tmp",
+            prompt: tricky
+        )
+        let url = try AgentKickoffService.writeCommandScript(shellCommand: cmd)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(content.contains(cmd),
+                      "expected tricky shell command to survive write verbatim")
     }
 }

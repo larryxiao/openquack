@@ -196,53 +196,64 @@ SPEC-006 already covers in its bigger frame.
 
 ### How the spawn actually happens (shell-injection safe)
 
-`Process` invokes `osascript`, passing the prompt as a separate `argv`
-entry — never via shell interpolation. `osascript`'s `argv` is
-exposed inside AppleScript as `argv`; we pipe it through `quoted form
-of` (AppleScript's built-in shell-escape) before composing the
-`do script` line. The transcript can contain anything (backticks,
-quotes, `$()` substitutions, newlines) and it remains a literal
-argument to `claude`.
+Dispatch writes the shell command into a `.command` file and hands
+the file to `/usr/bin/open`. macOS LaunchServices recognises the
+`.command` extension as a terminal-executable script and opens it
+in the user's default terminal (Terminal.app on a stock install,
+respecting an override like iTerm or Warp if the user set one).
+No AppleEvents are involved, so this path does **not** trigger
+the Automation TCC prompt that `osascript`-based dispatch would —
+`open` is a launchd helper, callable by any process.
 
 Sketch:
 
 ```swift
+// All quoting is in Swift; bash receives the prompt as a literal arg.
+let command = "cd " + shellQuote(workspace.path) + " && claude " + shellQuote(prompt)
 let script = """
-on run argv
-    set thePrompt to item 1 of argv
-    set theWorkspace to item 2 of argv
-    tell application "Terminal"
-        activate
-        do script "cd " & quoted form of theWorkspace & " && claude " & quoted form of thePrompt
-    end tell
-end run
+#!/bin/bash
+set -e
+\(command)
 """
 
-let task = Process()
-task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-task.arguments = ["-", prompt, workspace.path]  // "-" = read script from stdin
+let url = NSTemporaryDirectory()
+    .appending("openquack-kickoff-\(UUID().uuidString).command")
+try script.write(toFile: url, atomically: true, encoding: .utf8)
+try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url)
 
-let stdin = Pipe()
-task.standardInput = stdin
+let task = Process()
+task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+task.arguments = [url]
 try task.run()
-stdin.fileHandleForWriting.write(script.data(using: .utf8)!)
-try stdin.fileHandleForWriting.close()
+task.waitUntilExit()  // open returns nearly instantly; we just check exit code.
+// Best-effort delete the script ~30s later (Terminal reads it at open time;
+// the file isn't needed once the spawned shell has it).
 ```
 
-Why osascript rather than `Process` directly invoking `claude`:
-launching `claude` headless gives the user no visible window and no
-way to interact with approval prompts; opening Terminal.app and having
-*it* run `claude` matches what the user would do by hand and inherits
-the user's shell environment (PATH, dotfiles, `nvm` setup, etc.). The
-two layers of `quoted form of` (one for the path, one for the prompt)
-keep both safe.
+Why `.command` files rather than `osascript`-driven `do script`:
 
-Tests: unit test the AppleScript-generation helper with a corpus of
-prompts that should *not* break out of the quoted argument — backticks,
-double quotes, single quotes, `$(rm -rf /)`, newlines, NUL. The
-generated script is captured as a string and asserted against expected
-escaping (we don't run osascript in tests; the integration test in the
-manual-QA pass covers end-to-end).
+- **No Automation permission.** `osascript`'s `tell application
+  "Terminal" to do script` is an AppleEvent, which goes through the
+  Automation TCC pathway and prompts the user on first use. `open` is
+  a stock LaunchServices helper that any process can call without TCC
+  bookkeeping. Dispatch works on a fresh install with no extra grants.
+- **Respects the user's default terminal.** `.command` opens in
+  whatever app the user has bound to the extension — Terminal.app by
+  default, but iTerm/Warp/Ghostty if configured. We don't hardcode
+  Terminal.app.
+- **Simpler.** One layer of escaping (POSIX single quotes in Swift)
+  vs. two (Swift → AppleScript → shell).
+
+Why we still want a visible window (vs. invoking `claude` headless
+via `Process`): the user must see the agent work to follow approval
+prompts, abort, type follow-ups. Headless dispatch hides the agent.
+
+Tests: unit-test `shellQuote`, `buildShellCommand`, `buildCommandScript`,
+and `writeCommandScript` against a corpus of prompts that should *not*
+break out of the quoted argument — backticks, double quotes, single
+quotes, `$(rm -rf /)`, newlines, NUL, Unicode/emoji. The file write is
+verified to produce an executable file at mode 0700, and the tricky
+shell command is verified to round-trip through write → read intact.
 
 ### Workspace lifecycle
 
@@ -322,12 +333,13 @@ addendum to this spec covers the picker UX when we open that PR.
 
 ## Open questions
 
-- **Terminal application choice.** v1 hardcodes Terminal.app because
-  it's always present. iTerm2 users would prefer iTerm — the
-  AppleScript shape differs (`do script` exists on both, but tab/
-  window semantics differ). Defer to a Settings option in M3. The
-  spawn primitive can grow a `host:` parameter then without changing
-  callers.
+- **Terminal application choice.** The `.command`-file dispatch
+  respects the user's default-app binding for the `.command`
+  extension — Terminal.app on a stock install, but whatever the user
+  set if they configured an override (iTerm, Warp, Ghostty). v1
+  inherits this for free. A future Settings → Agent → Terminal
+  override would let the user pin a specific host regardless of the
+  system binding; not needed for v1.
 - **What if `~/OpenQuackAgent/` is a Dropbox / iCloud path?** Some
   users keep `~` synced. Claude Code in a sync'd dir works but can
   fight the sync daemon on temp-file writes. Document but don't

@@ -701,6 +701,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "Transcript contains an invalid character"
         case .workspaceUnavailable:
             return "Couldn't access ~/OpenQuackAgent/"
+        case .scriptWriteFailed:
+            return "Couldn't write launch script — transcript on clipboard"
         case .terminalDispatchFailed:
             return "Terminal didn't launch — transcript on clipboard"
         }

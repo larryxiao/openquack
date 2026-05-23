@@ -5,27 +5,36 @@ import Foundation
 /// The post-transcription branch that **does not** paste at the focused
 /// app's cursor: instead, it spawns a fresh Claude Code session in a
 /// fixed workspace, with the transcript as the seed prompt. The agent
-/// runs inside a new Terminal.app window so the user can see it work
-/// and intervene (approve commands, follow up, abort).
+/// runs inside a new terminal window so the user can see it work and
+/// intervene (approve commands, follow up, abort).
+///
+/// Mechanism: write the shell command into a `.command` file and hand
+/// the file to `open(1)`. macOS LaunchServices recognises `.command`
+/// as a terminal-executable script and opens it in the user's default
+/// terminal (Terminal.app, iTerm, Warp, …). No AppleEvents, no
+/// Automation TCC entry — `open` is a stock command that any process
+/// can call without permission bookkeeping. The user's default terminal
+/// is respected automatically.
 ///
 /// Shell-injection safety is the load-bearing concern. The transcript
 /// can contain anything Whisper emits — backticks, quotes, `$(...)`,
-/// newlines — and we hand it to a shell-running process. We protect
-/// against that by composing the entire shell command **in Swift**
-/// using POSIX single-quote escaping, then passing it to `osascript`
-/// as a single `argv` entry. AppleScript hands it to `/bin/sh` opaquely
-/// via `do script`; the single quotes preserve every byte literally.
+/// newlines — and the `.command` file is executed by `/bin/bash`. We
+/// protect against that by composing the entire shell command using
+/// POSIX single-quote escaping in Swift; the quoted bytes pass through
+/// bash literally as a single argument to `claude`.
 public enum AgentKickoffService {
     public enum Error: Swift.Error, Equatable {
         /// `claude` is not on PATH.
         case claudeCLIMissing
         /// The kickoff prompt is empty after trimming.
         case emptyPrompt
-        /// Embedded NUL — cannot be carried in `argv`.
+        /// Embedded NUL — cannot be carried in `argv` (or a shell line).
         case invalidPrompt
         /// Workspace directory could not be created or accessed.
         case workspaceUnavailable
-        /// `osascript` invocation failed.
+        /// Failed to write the `.command` script file.
+        case scriptWriteFailed
+        /// `open(1)` invocation failed.
         case terminalDispatchFailed(exitCode: Int32)
     }
 
@@ -36,19 +45,19 @@ public enum AgentKickoffService {
     }
 
     /// `claude` resolvable on the current `PATH`. The lookup walks the
-    /// process environment so it reflects what a fresh Terminal session
-    /// would see (Terminal inherits the user's login shell PATH; this
-    /// process inherits the parent that launched the app, which on a
-    /// .app bundle is launchd — so we also union in common manual-
-    /// install locations).
+    /// process environment so it reflects what a fresh terminal session
+    /// would see (a `.command` file runs under the user's default login
+    /// shell, which inherits the user's PATH via shell rc files — so we
+    /// also union in common manual-install locations that the
+    /// `.app`-launched parent might not have).
     public static func isClaudeAvailable() -> Bool {
         resolveClaudePath() != nil
     }
 
     /// Spawn a Claude Code session in the default workspace, seeded
-    /// with `prompt`. Returns once `osascript` has been launched; does
-    /// NOT wait for the agent itself to finish — the user follows the
-    /// agent in the Terminal window that just appeared.
+    /// with `prompt`. Returns once `open(1)` has accepted the file;
+    /// does NOT wait for the agent itself to finish — the user follows
+    /// the agent in the terminal window that just appeared.
     public static func dispatchClaudeCode(prompt: String) async throws {
         let cleanedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedPrompt.isEmpty else { throw Error.emptyPrompt }
@@ -56,8 +65,10 @@ public enum AgentKickoffService {
         guard isClaudeAvailable() else { throw Error.claudeCLIMissing }
 
         let workspace = try ensureWorkspace(at: defaultWorkspace)
-        let command = buildShellCommand(workspace: workspace.path, prompt: cleanedPrompt)
-        try runOsascript(deliveringTo: command)
+        let shellCommand = buildShellCommand(workspace: workspace.path, prompt: cleanedPrompt)
+        let scriptURL = try writeCommandScript(shellCommand: shellCommand)
+        defer { Self.scheduleDeletion(of: scriptURL) }
+        try runOpen(on: scriptURL)
     }
 
     // MARK: - Internal helpers (exposed `internal` for tests)
@@ -73,23 +84,25 @@ public enum AgentKickoffService {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// Build the exact shell command that gets handed to `/bin/sh`
-    /// inside a fresh Terminal tab.
+    /// Build the exact shell command that gets executed inside the
+    /// `.command` file's bash subshell.
     static func buildShellCommand(workspace: String, prompt: String) -> String {
         "cd " + shellQuote(workspace) + " && claude " + shellQuote(prompt)
     }
 
-    /// AppleScript template — fixed; the only variable is `argv[0]`,
-    /// which carries the (already-escaped) shell command.
-    static let terminalAppleScript = """
-    on run argv
-        if (count of argv) < 1 then return
-        tell application "Terminal"
-            activate
-            do script (item 1 of argv)
-        end tell
-    end run
-    """
+    /// Compose the full `.command` script body. The shebang locks the
+    /// interpreter; the `set -e` makes the script bail if `cd` fails
+    /// (so we don't accidentally run `claude` in the wrong dir).
+    static func buildCommandScript(shellCommand: String) -> String {
+        """
+        #!/bin/bash
+        # OpenQuack SPEC-031 — agent-kickoff session launcher.
+        # This file is written to NSTemporaryDirectory and deleted shortly
+        # after `open` accepts it; do not rely on it persisting.
+        set -e
+        \(shellCommand)
+        """
+    }
 
     /// Create `~/OpenQuackAgent/` if missing. Mode 0700 — voice
     /// transcripts ending up here may be sensitive, no need to expose
@@ -120,7 +133,7 @@ public enum AgentKickoffService {
 
         This is OpenQuack's default workspace for voice-launched agent
         sessions (SPEC-031). Each time you press the agent-kickoff
-        hotkey, a Terminal window opens here with a fresh `claude`
+        hotkey, a terminal window opens here with a fresh `claude`
         session seeded by your spoken prompt.
 
         OpenQuack itself doesn't write to this directory — files here
@@ -138,13 +151,32 @@ public enum AgentKickoffService {
         )
     }
 
-    /// `osascript -e <script> <command>` — the script's `argv[0]` is
-    /// the shell command. We do not write the script to disk.
-    private static func runOsascript(deliveringTo shellCommand: String) throws {
+    /// Write the `.command` script to `NSTemporaryDirectory`. Mode 0700.
+    static func writeCommandScript(shellCommand: String) throws -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let url = dir.appendingPathComponent("openquack-kickoff-\(UUID().uuidString).command")
+        let body = buildCommandScript(shellCommand: shellCommand)
+        do {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: url.path
+            )
+        } catch {
+            throw Error.scriptWriteFailed
+        }
+        return url
+    }
+
+    /// `open <path>`. LaunchServices picks the default app for the
+    /// `.command` extension (Terminal.app on a stock macOS install)
+    /// and hands the file to it. The user's terminal starts a shell
+    /// in the file's directory, reads the file as a script, and runs
+    /// it. No AppleEvents — `open` is a launchd helper.
+    private static func runOpen(on scriptURL: URL) throws {
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", terminalAppleScript, shellCommand]
-        // Detach stdio so the spawn doesn't keep file handles open on us.
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = [scriptURL.path]
         task.standardOutput = Pipe()
         task.standardError = Pipe()
         do {
@@ -152,12 +184,19 @@ public enum AgentKickoffService {
         } catch {
             throw Error.terminalDispatchFailed(exitCode: -1)
         }
-        // We deliberately do NOT call `task.waitUntilExit()`; osascript
-        // returns nearly instantly after issuing the AEvent to Terminal.
-        // A short wait verifies it dispatched without an error code.
         task.waitUntilExit()
         if task.terminationStatus != 0 {
             throw Error.terminalDispatchFailed(exitCode: task.terminationStatus)
+        }
+    }
+
+    /// Best-effort cleanup. Terminal reads the file at open time and
+    /// exec'es a shell with it as argv[0]; once read, deletion is
+    /// safe. We delete 30s later to make absolutely sure even slow
+    /// terminals have had time to dispatch.
+    private static func scheduleDeletion(of url: URL) {
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 30) {
+            try? FileManager.default.removeItem(at: url)
         }
     }
 
