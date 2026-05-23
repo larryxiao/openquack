@@ -331,6 +331,15 @@ private struct ShortcutPane: View {
             } header: {
                 SectionHeader("Global hotkey")
             }
+
+            Section {
+                KeyboardShortcuts.Recorder("Kickoff:", name: .agentKickoff)
+                Text("Press this hotkey to dictate a request, then release — OpenQuack hands the transcript to a fresh Claude Code session in ~/OpenQuackAgent/ instead of pasting at your cursor. Unbound by default. Routes through Anthropic via Claude Code (first use shows a consent prompt).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Agent kickoff")
+            }
         }
         .formStyle(.grouped)
         .padding()

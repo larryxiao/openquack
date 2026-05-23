@@ -537,12 +537,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installHotkey() {
         hotkey.registerToggle { [weak self] in self?.toggleRecording() }
+        // SPEC-031 — second binding for agent kickoff. registerKickoff runs
+        // AFTER registerToggle since the dictation register clears all
+        // handlers.
+        hotkey.registerKickoff { [weak self] in self?.toggleKickoff() }
     }
 
     @MainActor
     private func toggleRecording() {
         switch appState.phase {
         case .idle, .ready, .error:
+            appState.recordingMode = .dictation
             startRecording()
         case .recording:
             stopAndTranscribe()
@@ -550,6 +555,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Ignore — the user gets a hotkey-tap during a transition; we just drop it.
             NSSound.beep()
         }
+    }
+
+    /// SPEC-031 — agent-kickoff hotkey. Press to start a recording whose
+    /// transcript will be handed to a fresh Claude Code session (instead
+    /// of pasting at the focused app's cursor). The first press on a
+    /// fresh install shows a consent prompt naming Anthropic; declining
+    /// is a no-op (the recording never starts).
+    @MainActor
+    private func toggleKickoff() {
+        switch appState.phase {
+        case .idle, .ready, .error:
+            guard ensureKickoffConsent() else { return }
+            appState.recordingMode = .agentKickoff
+            startRecording()
+        case .recording:
+            // Same hotkey or the dictation hotkey both stop; recordingMode
+            // was set when recording began, so the dispatch path is fixed.
+            stopAndTranscribe()
+        case .warming, .starting, .transcribing:
+            NSSound.beep()
+        }
+    }
+
+    /// SPEC-031 privacy gate — runs once per install. The kickoff hotkey
+    /// adds an Anthropic network hop on a path that was previously
+    /// fully local; the user must consent explicitly with a modal that
+    /// names the destination. Stored as a UserDefaults flag, revocable
+    /// from Settings → Shortcut (clear the binding).
+    @MainActor
+    private func ensureKickoffConsent() -> Bool {
+        let key = "agentKickoffConsented"
+        if UserDefaults.standard.bool(forKey: key) { return true }
+
+        let alert = NSAlert()
+        alert.messageText = "Send dictation to Claude Code?"
+        alert.informativeText = """
+        Agent kickoff sends what you say to Claude Code, which routes \
+        through Anthropic's API under your existing Claude Code \
+        credentials. Your normal dictation hotkey is unaffected and \
+        keeps pasting locally.
+
+        You can revoke this any time by clearing the kickoff hotkey \
+        in Settings → Shortcut.
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Enable")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            UserDefaults.standard.set(true, forKey: key)
+            return true
+        }
+        return false
     }
 
     // MARK: - record → transcribe pipeline
@@ -626,6 +685,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// faster than the eye can register, which defeats the point of having
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
+
+    /// SPEC-031 — map an AgentKickoffService error to a one-line user-
+    /// facing label for the overlay's "ready" state.
+    static func kickoffErrorLabel(_ error: Swift.Error) -> String {
+        guard let kErr = error as? AgentKickoffService.Error else {
+            return "Couldn't launch agent — \(error.localizedDescription)"
+        }
+        switch kErr {
+        case .claudeCLIMissing:
+            return "Claude Code not installed — transcript on clipboard"
+        case .emptyPrompt:
+            return "Nothing to send — say something first"
+        case .invalidPrompt:
+            return "Transcript contains an invalid character"
+        case .workspaceUnavailable:
+            return "Couldn't access ~/OpenQuackAgent/"
+        case .terminalDispatchFailed:
+            return "Terminal didn't launch — transcript on clipboard"
+        }
+    }
 
     /// SPEC-012: utterances at or above this duration take the streaming
     /// path; shorter ones stay on the offline path (faster end-to-end on
@@ -721,14 +800,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                 }
 
-                // SPEC-005: paste at cursor by default; pasteboard-only fallback.
-                let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
+                // SPEC-005 / SPEC-031: branch the output path on
+                // recordingMode. Dictation pastes at the focused app's
+                // cursor; agent kickoff hands the transcript to a fresh
+                // Claude Code session and never writes to the focused
+                // app at all.
+                let recordingMode = await MainActor.run { appState.recordingMode }
                 let pasted: Bool
-                if autoPasteEnabled {
-                    pasted = PasteService.paste(polished)
-                } else {
-                    PasteService.copyToClipboard(polished)
-                    pasted = false
+                let kickoffSucceeded: Bool
+                let kickoffErrorMessage: String?
+                switch recordingMode {
+                case .dictation:
+                    let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
+                    if autoPasteEnabled {
+                        pasted = PasteService.paste(polished)
+                    } else {
+                        PasteService.copyToClipboard(polished)
+                        pasted = false
+                    }
+                    kickoffSucceeded = false
+                    kickoffErrorMessage = nil
+                case .agentKickoff:
+                    // The dictated text becomes the agent's seed prompt.
+                    // Never paste at the user's cursor in this mode.
+                    do {
+                        try await AgentKickoffService.dispatchClaudeCode(prompt: polished)
+                        kickoffSucceeded = true
+                        kickoffErrorMessage = nil
+                        pasted = false
+                    } catch {
+                        // Fallback: stash on the clipboard so the user
+                        // doesn't lose what they said. Surfaced in the
+                        // overlay's "ready" state as an error message.
+                        PasteService.copyToClipboard(polished)
+                        kickoffSucceeded = false
+                        kickoffErrorMessage = Self.kickoffErrorLabel(error)
+                        pasted = false
+                    }
                 }
 
                 await MainActor.run {
@@ -737,6 +845,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.lastWallSeconds = result.wallSeconds
                     appState.lastRecordingURL = url
                     appState.lastPasted = pasted
+                    appState.lastKickoffSucceeded = kickoffSucceeded
+                    appState.lastKickoffError = kickoffErrorMessage
                     appState.accessibilityTrusted = PasteService.isAccessibilityTrusted()
                     appState.phase = .ready
                     playSound("Pop")

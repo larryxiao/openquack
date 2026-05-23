@@ -9,6 +9,10 @@ public extension KeyboardShortcuts.Name {
         "openquack.toggleRecording",
         default: .init(.space, modifiers: [.control, .shift])
     )
+
+    /// SPEC-031 — Agent kickoff hotkey. No default: opt-in, user must bind
+    /// explicitly in Settings → Shortcut.
+    static let agentKickoff = Self("openquack.agentKickoff")
 }
 
 /// Convenience helpers for surfacing the user's current hotkey in copy.
@@ -71,6 +75,17 @@ public final class HotkeyManager {
     /// toggle-on-press. Equivalent to `register(onKeyDown: action, onKeyUp: {})`.
     public func registerToggle(_ action: @escaping @MainActor () -> Void) {
         register(onKeyDown: action, onKeyUp: {})
+    }
+
+    /// SPEC-031 — wire the agent-kickoff hotkey. Carbon-only for v1: bare-fn
+    /// support for kickoff is a flagged follow-up in the spec's open
+    /// questions. Intended to be called once at app launch, AFTER
+    /// `register(...)` — the dictation register clears all handlers, so
+    /// kickoff is installed second to survive.
+    public func registerKickoff(_ action: @escaping @MainActor () -> Void) {
+        KeyboardShortcuts.onKeyDown(for: .agentKickoff) {
+            Task { @MainActor in action() }
+        }
     }
 
     public func unregister() {

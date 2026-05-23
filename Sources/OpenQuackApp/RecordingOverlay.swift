@@ -116,6 +116,10 @@ struct OverlayPill: View {
                 sublineView
             }
             Spacer(minLength: 0)
+            if state.recordingMode == .agentKickoff,
+               case .recording = state.phase {
+                modeChip
+            }
         }
         .padding(.horizontal, Theme.s16)
         .padding(.vertical, Theme.s12)
@@ -148,14 +152,47 @@ struct OverlayPill: View {
                 .font(.body)
                 .foregroundStyle(Theme.amber)
         case .ready:
-            Image(systemName: state.lastPasted ? "checkmark.circle.fill" : "doc.on.clipboard")
-                .font(.body)
-                .foregroundStyle(Theme.moss)
+            if state.recordingMode == .agentKickoff {
+                Image(systemName: state.lastKickoffSucceeded
+                      ? "sparkles"
+                      : "exclamationmark.triangle.fill")
+                    .font(.body)
+                    .foregroundStyle(state.lastKickoffSucceeded
+                                     ? Theme.amber
+                                     : Theme.coral)
+            } else {
+                Image(systemName: state.lastPasted ? "checkmark.circle.fill" : "doc.on.clipboard")
+                    .font(.body)
+                    .foregroundStyle(Theme.moss)
+            }
         default:
             Image(systemName: "mic")
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    /// SPEC-031 mode chip — shown only during a kickoff-mode recording.
+    /// Doubles as the privacy contract's required network indicator
+    /// (the globe icon).
+    private var modeChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "globe")
+                .font(.caption2)
+            Text("claude")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundStyle(Theme.amber)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Theme.amber.opacity(0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Theme.amber.opacity(0.35), lineWidth: 1)
+                )
+        )
     }
 
     private var sublineView: some View {
@@ -166,9 +203,14 @@ struct OverlayPill: View {
 
     private var headline: String {
         switch state.phase {
-        case .recording:    return "Listening"
+        case .recording:
+            return state.recordingMode == .agentKickoff ? "Listening (kickoff)" : "Listening"
         case .transcribing: return "Thinking"
-        case .ready:        return state.lastPasted ? "Pasted at cursor" : "Copied to clipboard"
+        case .ready:
+            if state.recordingMode == .agentKickoff {
+                return state.lastKickoffSucceeded ? "Launched claude" : "Kickoff failed"
+            }
+            return state.lastPasted ? "Pasted at cursor" : "Copied to clipboard"
         default:            return "OpenQuack"
         }
     }
@@ -177,10 +219,13 @@ struct OverlayPill: View {
         switch state.phase {
         case .recording:
             let secs = String(format: "%.1f", state.elapsedSeconds)
-            return "\(secs)s · \(HotkeyDisplay.current) to stop"
+            return "\(secs)s · press to stop"
         case .transcribing:
             return "On your Mac"
         case .ready:
+            if state.recordingMode == .agentKickoff, !state.lastKickoffSucceeded {
+                return state.lastKickoffError ?? "Transcript copied to clipboard"
+            }
             return state.lastTranscript.map { String($0.prefix(48)) } ?? ""
         default:
             return ""
