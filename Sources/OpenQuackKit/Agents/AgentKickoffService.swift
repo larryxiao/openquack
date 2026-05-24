@@ -141,6 +141,12 @@ public enum AgentKickoffService {
     }
 
     /// argv for `claude --bg`. Stable, testable.
+    ///
+    /// Environment context (what tools claude has, how to think about
+    /// the workspace, common macOS idioms) is delivered via
+    /// `CLAUDE.md` in the workspace rather than `--append-system-prompt`
+    /// — that's the native claude pattern and keeps the dispatch
+    /// argv small and stable.
     static func buildClaudeArguments(prompt: String, displayName: String) -> [String] {
         [
             "--bg",
@@ -226,13 +232,17 @@ public enum AgentKickoffService {
                     withIntermediateDirectories: true,
                     attributes: [.posixPermissions: 0o700]
                 )
-                try? writeWorkspaceReadme(in: url)
             } catch {
                 throw Error.workspaceUnavailable
             }
         } else if !isDir.boolValue {
             throw Error.workspaceUnavailable
         }
+        // Refresh README + CLAUDE.md every call so updates to the
+        // content land on existing workspaces too. Best-effort: failures
+        // here don't abort dispatch (the workspace still exists).
+        try? writeWorkspaceReadme(in: url)
+        try? writeWorkspaceClaudeMD(in: url)
         return url
     }
 
@@ -257,6 +267,9 @@ public enum AgentKickoffService {
         <short-id>`. If you keep `~` synced via Dropbox / iCloud, the
         sync daemon can fight agent writes here — workspace override
         is M3+.
+
+        See CLAUDE.md in this dir for the environment context the
+        agent sees on every kickoff.
         """
         try body.write(
             to: url.appendingPathComponent("README.md"),
@@ -264,6 +277,91 @@ public enum AgentKickoffService {
             encoding: .utf8
         )
     }
+
+    /// `CLAUDE.md` — environment context for the agent. Auto-discovered
+    /// by claude on session start (when cwd is this workspace). This
+    /// is the replacement for the per-invocation `--append-system-prompt`
+    /// — workspace docs, not per-turn instructions.
+    private static func writeWorkspaceClaudeMD(in url: URL) throws {
+        try Self.claudeMDBody.write(
+            to: url.appendingPathComponent("CLAUDE.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    /// Content of `CLAUDE.md`. Exposed `internal` so tests can lock in
+    /// substrings without re-reading the file.
+    static let claudeMDBody = """
+    # OpenQuack agent workspace
+
+    You were started here by a "kickoff" — the user pressed their
+    voice-dispatch hotkey in OpenQuack on macOS, spoke a request, and
+    the request was handed to you. You're running in the background
+    under the claude daemon; the user will read your output in a macOS
+    notification + small floating window when you're done, and can
+    drop into the live session via `claude attach <short-id>` from
+    Terminal to continue.
+
+    ## Your environment
+
+    - **macOS** with full **bash** access (--permission-mode
+      bypassPermissions). You don't need to ask before running
+      commands.
+    - **This dir (~/OpenQuackAgent/)** is gitignored scratch space —
+      write temp files here freely; the user expects no persistence.
+    - **No GUI** for per-action approval — you're unattended. The user
+      consented to bypass-perms when they enabled the kickoff hotkey.
+
+    ## Common macOS idioms (don't refuse capabilities — try these first)
+
+    The user often asks for things that look like *"I don't have
+    access to that"* until you remember bash + AppleScript via
+    osascript covers most of it:
+
+    - **Timers / alarms / reminders**: `osascript -e 'tell application
+      "Reminders" to make new reminder with properties {…}'`, or
+      `osascript -e 'tell application "Calendar" to …'`, or `at` /
+      `launchctl` for scheduled shell jobs.
+    - **Notifications**: `osascript -e 'display notification "msg"
+      with title "title"'`.
+    - **Open or control apps**: `open -a "AppName"`, or AppleScript
+      `tell application "X" to …`.
+    - **Browser state (Chrome / Safari / Arc)**: AppleScript via
+      osascript:
+      `osascript -e 'tell application "Google Chrome" to get URL of active tab of window 1'`,
+      `… to count tabs of window 1`, etc.
+    - **macOS settings / sounds / display / clipboard**: `osascript`,
+      `defaults read`/`write`, `pbpaste`/`pbcopy`, `nvram`.
+    - **File system / processes / network**: standard shell tools.
+    - **Web** (read pages, search): you have WebFetch + WebSearch
+      tools when needed.
+
+    Don't reflexively refuse with *"I don't have access to your
+    clock/browser/clipboard/etc."* — you have bash, and bash on
+    macOS has osascript, which can drive most native apps. Try the
+    obvious shell approach. If something *genuinely* can't be done
+    (e.g., it needs a paid API key the user hasn't given you), say
+    so briefly and tell the user what they'd need to do.
+
+    ## How to leave the session in a good state
+
+    - If you complete the task: produce a clear final message — that
+      becomes the notification body.
+    - If you need user input: set yourself to "blocked" naturally
+      (just ask the question and wait) — OpenQuack notifies the user
+      that you need input. They'll attach via `claude attach` and
+      reply live.
+    - If you can't complete the task: explain what blocked you and
+      what would unblock (missing creds, missing tools, ambiguous
+      ask). Don't apologise at length.
+
+    ## Re-entering this session
+
+    The user may attach via `claude attach <short-id>` after seeing
+    your notification. Treat the session as resumable — leave a clean
+    intermediate state if you stop to wait for input.
+    """
 
     static func writeCommandScript(shellCommand: String) throws -> URL {
         let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)

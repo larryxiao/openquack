@@ -163,6 +163,7 @@ final class AgentKickoffServiceTests: XCTestCase {
             displayName: "OpenQuack: hello"
         )
         // Order matters for argv readability; verify the contract.
+        // Environment context lives in workspace CLAUDE.md, not here.
         XCTAssertEqual(argv[0], "--bg")
         XCTAssertEqual(argv[1], "--permission-mode")
         XCTAssertEqual(argv[2], "bypassPermissions")
@@ -181,6 +182,53 @@ final class AgentKickoffServiceTests: XCTestCase {
             displayName: "name"
         )
         XCTAssertEqual(argv.last, "--this-is-not-a-flag")
+    }
+
+    // MARK: - workspace CLAUDE.md (environment context for the agent)
+
+    func testClaudeMDBodyTeachesMacOSIdioms() {
+        // The whole point of CLAUDE.md is teaching claude that bash +
+        // osascript covers most "I don't have access" cases. Lock in
+        // the substrings that matter.
+        let body = AgentKickoffService.claudeMDBody
+        XCTAssertTrue(body.contains("OpenQuack"))
+        XCTAssertTrue(body.contains("bash"))
+        XCTAssertTrue(body.contains("osascript"))
+        XCTAssertTrue(body.contains("AppleScript"))
+        XCTAssertTrue(body.contains("Reminders"))
+        XCTAssertTrue(body.contains("Google Chrome"))
+        XCTAssertTrue(body.contains("Don't reflexively refuse"))
+    }
+
+    func testEnsureWorkspaceWritesClaudeMD() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openquack-agent-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        _ = try AgentKickoffService.ensureWorkspace(at: tmp)
+        let claudeMD = tmp.appendingPathComponent("CLAUDE.md")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: claudeMD.path))
+
+        let content = try String(contentsOf: claudeMD, encoding: .utf8)
+        XCTAssertEqual(content, AgentKickoffService.claudeMDBody)
+    }
+
+    func testEnsureWorkspaceRefreshesClaudeMDOnExistingDir() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("openquack-agent-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        // First call creates the dir + writes CLAUDE.md.
+        _ = try AgentKickoffService.ensureWorkspace(at: tmp)
+        // Stomp the file with old content.
+        let claudeMD = tmp.appendingPathComponent("CLAUDE.md")
+        try "stale content from old OpenQuack version".write(
+            to: claudeMD, atomically: true, encoding: .utf8)
+
+        // Second call refreshes it.
+        _ = try AgentKickoffService.ensureWorkspace(at: tmp)
+        let content = try String(contentsOf: claudeMD, encoding: .utf8)
+        XCTAssertEqual(content, AgentKickoffService.claudeMDBody)
     }
 
     // MARK: - banner parser

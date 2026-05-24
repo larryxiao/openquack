@@ -518,11 +518,45 @@ parses JSON on each write, calls back with the parsed state. Has a
 small (~100ms) debounce because state writes can come in bursts
 during fast tool sequences.
 
-### Workspace lifecycle
+### Workspace lifecycle + agent environment context
 
-Unchanged from v1: `~/OpenQuackAgent/` is created on first use with
-mode 0700, README written explaining purpose + the new bypass-perm
-caveat. Idempotent.
+`~/OpenQuackAgent/` is created on first use with mode 0700. On every
+dispatch, OpenQuack (re)writes two files in the workspace:
+
+- **`README.md`** — for the human user, explains what the directory
+  is and how to interact with kickoffs (`claude attach`, `claude
+  agents`, `claude stop`).
+- **`CLAUDE.md`** — for the agent. Auto-discovered by claude on
+  session start (cwd = workspace). Documents the **environment**:
+  full bash + osascript / AppleScript access, common macOS idioms
+  for timers / reminders / browser state / notifications, and the
+  shape of the kickoff lifecycle (background + notification + attach).
+
+Why CLAUDE.md rather than `--append-system-prompt`:
+
+- CLAUDE.md is the native claude pattern for "environment context"
+  — same machinery as project-level CLAUDE.md files.
+- It lives with the workspace, not the dispatch — easy to inspect,
+  edit, version. Users can extend it with their own preferences.
+- The dispatch argv stays small and stable; no per-invocation
+  payload to maintain.
+- Conceptually right: CLAUDE.md says *"here's where you are and what
+  you have"*; `--append-system-prompt` would say *"override your
+  defaults this turn"*. The former composes; the latter doesn't.
+
+Content focuses on **teaching the agent to reach for bash + osascript
+for macOS-flavored tasks** rather than reflexively refusing with *"I
+don't have access to that"*. Recurring user-feedback failure mode:
+the agent says it has no clock / browser / etc. access, when bash +
+osascript would have handled it.
+
+MCP server inheritance: the dispatch does NOT pass `--strict-mcp-config`,
+so any MCP servers the user has registered via `claude mcp add` are
+loaded into the kickoff session by default. (Most v1 users won't have
+local MCP servers configured beyond Anthropic-managed ones, but those
+who have computer-use / browser MCPs get them for free.) A future
+"Quack capabilities" Settings pane could let users opt-in to specific
+MCP server bundles per-session.
 
 ### Tests
 
