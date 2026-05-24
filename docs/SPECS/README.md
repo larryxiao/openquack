@@ -32,7 +32,8 @@ Conventions:
 | [SPEC-016](SPEC-016-distilled-polish-model.md) | Distilled polish model (1B from Gemma 4) | draft | M2.5 |
 | [SPEC-029](SPEC-029-ane-cache-only-model.md) | ANE-cache-only model footprint (investigation) | draft | M3 |
 | [SPEC-030](SPEC-030-ane-cache-volunteer-bench.md) | ANE cache footprint: volunteer measurement campaign | draft | M3 |
-| [SPEC-031](SPEC-031-agent-kickoff.md) | Agent kickoff (one-shot voice-to-action) | draft | M2 |
+| [SPEC-031](SPEC-031-agent-kickoff.md) | Agent kickoff (one-shot voice-to-action) | ratified | M2 |
+| [SPEC-031a](SPEC-031a-voice-reply.md) | Voice reply to live agent sessions | draft | M2 |
 
 ## Spec lifecycle
 
