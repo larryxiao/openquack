@@ -607,12 +607,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "Send dictation to Claude Code?"
         alert.informativeText = """
         Agent kickoff sends what you say to Claude Code, which routes \
-        through Anthropic's API under your existing Claude Code \
-        credentials. Your normal dictation hotkey is unaffected and \
-        keeps pasting locally.
+        through Anthropic's API under your existing credentials. The \
+        agent then runs in the background under permission-bypass — \
+        it will execute commands, edit files, and take system actions \
+        in ~/OpenQuackAgent/ without asking you first. You'll get a \
+        macOS notification when it finishes and can step into the \
+        live session in Terminal to continue.
 
-        You can revoke this any time by clearing the kickoff hotkey \
-        in Settings → Shortcut.
+        First-time setup: you'll also be prompted to accept a one-time \
+        disclaimer from claude (Terminal opens automatically). After \
+        that, kickoff works without further prompts. Your normal \
+        dictation hotkey is unaffected and keeps pasting locally.
+
+        Revoke any time by clearing the kickoff hotkey in Settings \
+        → Shortcut.
         """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Enable")
@@ -718,6 +726,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return "Couldn't access ~/OpenQuackAgent/"
         case .launchFailed:
             return "Couldn't start claude — transcript on clipboard"
+        case .disclaimerNotAccepted:
+            // Should be caught upstream and surfaced with a clearer
+            // message; fallback here.
+            return "claude needs one-time setup — transcript on clipboard"
+        case .bannerParseFailed:
+            return "claude --bg ran but no session ID seen — transcript on clipboard"
         case .scriptWriteFailed:
             return "Couldn't write launch script — transcript on clipboard"
         case .terminalDispatchFailed:
@@ -843,12 +857,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // The dictated text becomes the agent's seed prompt.
                     // Never paste at the user's cursor in this mode.
                     do {
-                        let session = try AgentKickoffService.startClaudeCode(prompt: polished)
+                        let session = try AgentKickoffService.startClaudeKickoff(prompt: polished)
                         await MainActor.run { [agentSessions] in
                             agentSessions.track(session)
                         }
                         kickoffSucceeded = true
                         kickoffErrorMessage = nil
+                        pasted = false
+                    } catch AgentKickoffService.Error.disclaimerNotAccepted {
+                        // First-use: open Terminal with the one-time
+                        // claude-side disclaimer and stash the
+                        // transcript so the user doesn't lose what
+                        // they said. They re-press kickoff after
+                        // accepting.
+                        try? AgentKickoffService.openDisclaimerTerminal()
+                        PasteService.copyToClipboard(polished)
+                        kickoffSucceeded = false
+                        kickoffErrorMessage = "Accept the claude disclaimer in Terminal, then re-press kickoff. Transcript on clipboard."
                         pasted = false
                     } catch {
                         // Fallback: stash on the clipboard so the user
@@ -1062,9 +1087,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // SPEC-031 — kill any in-flight kickoff agents on quit so we
-        // don't leave orphaned `claude` subprocesses behind.
-        agentSessions.cancelAll()
+        // SPEC-031 v3 — kickoff sessions are owned by the claude
+        // daemon and survive OpenQuack quitting (that's the whole
+        // point of --bg). Stop our state-file watchers but DON'T
+        // kill the sessions; user can re-enter them via `claude
+        // agents` or `claude attach <id>` next time they want to.
+        agentSessions.stopTrackingAll()
     }
 }
 
@@ -1082,7 +1110,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     }
 
     /// Click handler — opens the response window for the result whose
-    /// sessionId is carried in userInfo.
+    /// shortID is carried in userInfo.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
@@ -1090,11 +1118,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
     ) {
         defer { completionHandler() }
         guard
-            let sessionIdString = response.notification.request.content.userInfo["sessionId"] as? String,
-            let sessionId = UUID(uuidString: sessionIdString)
+            let shortID = response.notification.request.content.userInfo["shortID"] as? String
         else { return }
         Task { @MainActor in
-            guard let result = agentSessions.result(for: sessionId) else { return }
+            guard let result = agentSessions.result(for: shortID) else { return }
             responseWindow.show(result: result)
         }
     }

@@ -3,56 +3,73 @@ import UserNotifications
 import Combine
 import OpenQuackKit
 
-/// SPEC-031 — tracks live + recently-completed agent-kickoff sessions
-/// for the app. Lives on AppDelegate, observed by SwiftUI views.
+/// SPEC-031 v3 — tracks live + recently-completed agent-kickoff
+/// sessions, drives StateFileWatchers, posts notifications.
 ///
 /// Lifecycle per session:
-///   track(session) → background Task awaits result → handle(result)
-///     → liveSessions[id] removed, completedSessions cap-appended,
-///     → UNUserNotificationCenter notification posted.
+///   track(session) → install StateFileWatcher on
+///     ~/.claude/jobs/<short>/state.json
+///   → on each state change, update liveStates
+///   → on terminal state (done/blocked/idle): archive as
+///     KickoffResult, post UNNotification, stop the watcher.
 ///
 /// Click handler in AppDelegate's UNUserNotificationCenterDelegate
-/// looks up the result by sessionId and asks ResponseWindowController
+/// looks up the result by shortID and asks ResponseWindowController
 /// to open.
 @MainActor
 final class AgentSessionManager: ObservableObject {
-    @Published private(set) var liveSessions: [UUID: KickoffSession] = [:]
+    @Published private(set) var liveSessions: [String: KickoffSession] = [:]
+    @Published private(set) var liveStates:   [String: KickoffState]   = [:]
     @Published private(set) var completedResults: [KickoffResult] = []
 
     private static let completedCap = 20
+    private var watchers: [String: StateFileWatcher] = [:]
 
-    /// SPEC-031 — track an already-started session. Spawns a detached
-    /// Task that awaits completion off the main actor; result is
-    /// delivered back on main via `handle`.
+    /// Begin tracking a dispatched session. Installs a state-file
+    /// watcher that drives notifications on terminal-state transitions.
     func track(_ session: KickoffSession) {
-        liveSessions[session.id] = session
-        Task { [weak self] in
-            let result = await session.awaitResult()
-            await self?.handle(result)
+        liveSessions[session.shortID] = session
+        let watcher = StateFileWatcher(url: session.stateFileURL) { [weak self] state in
+            // Watcher callback fires off-main; hop to main.
+            Task { @MainActor in
+                self?.handle(state: state, session: session)
+            }
         }
+        watchers[session.shortID] = watcher
+        watcher.start()
     }
 
-    /// Look up a completed result by session ID. Used by the
+    /// Look up a completed result by short ID. Used by the
     /// notification click handler.
-    func result(for sessionId: UUID) -> KickoffResult? {
-        completedResults.first(where: { $0.sessionId == sessionId })
+    func result(for shortID: String) -> KickoffResult? {
+        completedResults.first(where: { $0.shortID == shortID })
     }
 
-    /// Cancel all in-flight sessions. Called on app quit.
-    func cancelAll() {
-        for session in liveSessions.values {
-            session.cancel()
+    /// Stop watching everything. Sessions themselves are owned by the
+    /// daemon and keep running even after we forget about them —
+    /// that's the whole point of `--bg`.
+    func stopTrackingAll() {
+        for watcher in watchers.values {
+            watcher.stop()
         }
+        watchers.removeAll()
     }
 
     // MARK: - private
 
-    private func handle(_ result: KickoffResult) {
-        liveSessions[result.sessionId] = nil
+    private func handle(state: KickoffState, session: KickoffSession) {
+        liveStates[session.shortID] = state
+        guard state.isTerminal else { return }
+
+        // Archive + notify.
+        let result = KickoffResult(from: state, session: session)
         completedResults.append(result)
         if completedResults.count > Self.completedCap {
             completedResults.removeFirst(completedResults.count - Self.completedCap)
         }
+        watchers[session.shortID]?.stop()
+        watchers[session.shortID] = nil
+        liveSessions[session.shortID] = nil
         postNotification(for: result)
     }
 
@@ -68,27 +85,28 @@ final class AgentSessionManager: ObservableObject {
     }
 
     private func deliver(result: KickoffResult, granted: Bool) {
-        guard granted else {
-            // Notification permission denied — surface via a future
-            // menu-bar dot. v1: silent. The result is still in
-            // completedResults; the user can drive a UI surface later.
-            return
-        }
+        guard granted else { return }
         let content = UNMutableNotificationContent()
-        if result.succeeded {
+        switch result.state {
+        case .done, .idle:
             content.title = "claude finished"
-        } else {
-            content.title = "claude failed (exit \(result.exitCode))"
+        case .blocked:
+            content.title = "claude needs input"
+        default:
+            content.title = "claude session updated"
         }
-        content.body = AgentKickoffService.notificationBody(
-            from: result.succeeded ? result.response : result.stderr
-        )
+        let bodySource: String =
+            result.detail
+            ?? result.output
+            ?? result.needs
+            ?? ""
+        content.body = AgentKickoffService.notificationBody(from: bodySource)
         content.sound = .default
-        content.userInfo = ["sessionId": result.sessionId.uuidString]
+        content.userInfo = ["shortID": result.shortID]
         content.categoryIdentifier = AgentSessionManager.notificationCategory
 
         let request = UNNotificationRequest(
-            identifier: "openquack.kickoff.\(result.sessionId.uuidString)",
+            identifier: "openquack.kickoff.\(result.shortID)",
             content: content,
             trigger: nil
         )

@@ -132,7 +132,7 @@ final class AgentKickoffServiceTests: XCTestCase {
 
     func testStartRejectsEmptyPrompt() {
         do {
-            _ = try AgentKickoffService.startClaudeCode(prompt: "   \n  ")
+            _ = try AgentKickoffService.startClaudeKickoff(prompt: "   \n  ")
             XCTFail("expected emptyPrompt error")
         } catch let error as AgentKickoffService.Error {
             XCTAssertEqual(error, .emptyPrompt)
@@ -143,7 +143,7 @@ final class AgentKickoffServiceTests: XCTestCase {
 
     func testStartRejectsNullByte() {
         do {
-            _ = try AgentKickoffService.startClaudeCode(prompt: "hi\0there")
+            _ = try AgentKickoffService.startClaudeKickoff(prompt: "hi\0there")
             XCTFail("expected invalidPrompt error")
         } catch let error as AgentKickoffService.Error {
             // If claude is missing on the test machine we hit that
@@ -155,39 +155,21 @@ final class AgentKickoffServiceTests: XCTestCase {
         }
     }
 
-    // MARK: - claude argv assembly
+    // MARK: - claude --bg argv assembly
 
     func testBuildClaudeArgumentsHasExpectedFlags() {
-        let id = UUID()
         let argv = AgentKickoffService.buildClaudeArguments(
-            sessionID: id,
-            displayName: "OpenQuack: hello",
-            prompt: "hello there"
+            prompt: "hello there",
+            displayName: "OpenQuack: hello"
         )
         // Order matters for argv readability; verify the contract.
-        XCTAssertEqual(argv[0], "-p")
-        XCTAssertEqual(argv[1], "--session-id")
-        XCTAssertEqual(argv[2], id.uuidString.lowercased())
-        XCTAssertEqual(argv[3], "--permission-mode")
-        XCTAssertEqual(argv[4], "bypassPermissions")
-        XCTAssertEqual(argv[5], "--output-format")
-        XCTAssertEqual(argv[6], "text")
-        XCTAssertEqual(argv[7], "--name")
-        XCTAssertEqual(argv[8], "OpenQuack: hello")
+        XCTAssertEqual(argv[0], "--bg")
+        XCTAssertEqual(argv[1], "--permission-mode")
+        XCTAssertEqual(argv[2], "bypassPermissions")
+        XCTAssertEqual(argv[3], "--name")
+        XCTAssertEqual(argv[4], "OpenQuack: hello")
         XCTAssertEqual(argv.last, "hello there")
-        XCTAssertEqual(argv.count, 10)
-    }
-
-    func testBuildClaudeArgumentsSessionIdIsLowercase() {
-        let id = UUID()
-        let argv = AgentKickoffService.buildClaudeArguments(
-            sessionID: id,
-            displayName: "X",
-            prompt: "p"
-        )
-        // claude's --session-id rejects uppercase UUIDs.
-        XCTAssertEqual(argv[2], id.uuidString.lowercased())
-        XCTAssertFalse(argv[2].contains(where: { $0.isUppercase }))
+        XCTAssertEqual(argv.count, 6)
     }
 
     func testBuildClaudeArgumentsPassesPromptAsFinalPositional() {
@@ -195,11 +177,123 @@ final class AgentKickoffServiceTests: XCTestCase {
         // is named flags. Verify the prompt is at argv.last regardless
         // of whether the prompt looks like a flag.
         let argv = AgentKickoffService.buildClaudeArguments(
-            sessionID: UUID(),
-            displayName: "name",
-            prompt: "--this-is-not-a-flag"
+            prompt: "--this-is-not-a-flag",
+            displayName: "name"
         )
         XCTAssertEqual(argv.last, "--this-is-not-a-flag")
+    }
+
+    // MARK: - banner parser
+
+    func testParseBackgroundedBannerCanonical() {
+        let stdout = "backgrounded · 1a2b3c4d (idle — send a prompt to start)"
+        XCTAssertEqual(
+            AgentKickoffService.parseBackgroundedBanner(stdout),
+            "1a2b3c4d"
+        )
+    }
+
+    func testParseBackgroundedBannerLeadingWhitespace() {
+        let stdout = "\n\n   backgrounded · 1a2b3c4d (idle — …)\n"
+        XCTAssertEqual(
+            AgentKickoffService.parseBackgroundedBanner(stdout),
+            "1a2b3c4d"
+        )
+    }
+
+    func testParseBackgroundedBannerWithAnsiEscapes() {
+        // Real claude output includes ANSI colour escapes around the
+        // banner. Strip them and parse.
+        let stdout = "\u{001B}[2mbackgrounded\u{001B}[0m · \u{001B}[1ma3c4272d\u{001B}[0m (idle)"
+        XCTAssertEqual(
+            AgentKickoffService.parseBackgroundedBanner(stdout),
+            "a3c4272d"
+        )
+    }
+
+    func testParseBackgroundedBannerVariantSeparators() {
+        // Defensive: tolerate bullet, hyphen, colon in place of the
+        // middle-dot in case the format drifts across versions.
+        for sep in ["·", "•", ":", "-"] {
+            let stdout = "backgrounded \(sep) ef0d33c5 (idle)"
+            XCTAssertEqual(
+                AgentKickoffService.parseBackgroundedBanner(stdout),
+                "ef0d33c5",
+                "failed for separator: \(sep)"
+            )
+        }
+    }
+
+    func testParseBackgroundedBannerMissingReturnsNil() {
+        let stdout = "Some unrelated output without the banner."
+        XCTAssertNil(AgentKickoffService.parseBackgroundedBanner(stdout))
+    }
+
+    // MARK: - stderr disclaimer detection
+
+    func testStderrDisclaimerDetection() {
+        let bypass = "--bg with bypassPermissions requires accepting the disclaimer first. Run `claude --dangerously-skip-permissions` once interactively."
+        XCTAssertTrue(AgentKickoffService.stderrIndicatesDisclaimer(bypass))
+
+        let auto = "--bg with auto mode requires opting in first. Run `claude --permission-mode auto` once interactively."
+        XCTAssertTrue(AgentKickoffService.stderrIndicatesDisclaimer(auto))
+
+        let unrelated = "Couldn't connect to daemon."
+        XCTAssertFalse(AgentKickoffService.stderrIndicatesDisclaimer(unrelated))
+    }
+
+    // MARK: - state JSON parsing
+
+    func testParseStateJSONDone() {
+        let data = #"{"state":"done","detail":"Timer set.","output":"OK","needs":null}"#
+            .data(using: .utf8)!
+        let s = KickoffState.parse(data)
+        XCTAssertEqual(s?.kind, .done)
+        XCTAssertEqual(s?.detail, "Timer set.")
+        XCTAssertEqual(s?.output, "OK")
+        XCTAssertNil(s?.needs)
+        XCTAssertTrue(s?.isTerminal == true)
+    }
+
+    func testParseStateJSONBlocked() {
+        let data = #"{"state":"blocked","detail":"awaiting user","needs":"reply when ready","output":null}"#
+            .data(using: .utf8)!
+        let s = KickoffState.parse(data)
+        XCTAssertEqual(s?.kind, .blocked)
+        XCTAssertEqual(s?.needs, "reply when ready")
+        XCTAssertTrue(s?.isTerminal == true)
+    }
+
+    func testParseStateJSONWorking() {
+        let data = #"{"state":"working","detail":"reading file"}"#.data(using: .utf8)!
+        let s = KickoffState.parse(data)
+        XCTAssertEqual(s?.kind, .working)
+        XCTAssertFalse(s?.isTerminal == true)
+    }
+
+    func testParseStateJSONUnknownKind() {
+        let data = #"{"state":"weird-new-state","detail":""}"#.data(using: .utf8)!
+        let s = KickoffState.parse(data)
+        XCTAssertEqual(s?.kind, .unknown)
+    }
+
+    func testParseStateJSONMalformedReturnsNil() {
+        let data = "not json".data(using: .utf8)!
+        XCTAssertNil(KickoffState.parse(data))
+    }
+
+    // MARK: - KickoffSession paths
+
+    func testKickoffSessionStateFilePath() {
+        let s = KickoffSession(
+            shortID: "abc12345",
+            workspace: URL(fileURLWithPath: "/tmp/ws"),
+            prompt: "p",
+            startedAt: Date(),
+            displayName: "X"
+        )
+        XCTAssertTrue(s.stateFileURL.path.hasSuffix("/.claude/jobs/abc12345/state.json"))
+        XCTAssertTrue(s.timelineFileURL.path.hasSuffix("/.claude/jobs/abc12345/timeline.jsonl"))
     }
 
     // MARK: - display name

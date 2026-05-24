@@ -2,23 +2,31 @@
 
 **Status:** draft (M2 — adoption-band demo feature)
 **Owner:** `OpenQuackKit/Agents/` + `OpenQuackApp/{RecordingOverlay,ResponseWindow}.swift`
-**Last updated:** 2026-05-23
+**Last updated:** 2026-05-23 (v3 — claude --bg + daemon-managed sessions)
 
 ## Goal
 
 A second, separately-bindable hotkey that takes the user's spoken
-utterance and dispatches it to a **fresh background `claude` session**
-in a known workspace. The agent runs *headless* — no Terminal pops up,
-no workspace-trust prompt, no focus stolen. When the agent finishes,
-OpenQuack posts a macOS notification with the response preview;
-clicking the notification opens a small floating window with the full
-response and a button to drop into the live session in Terminal if
-the user wants to continue.
+utterance and dispatches it to a **fresh background Claude Code
+session managed by claude's own supervisor daemon**, via the
+`claude --bg "<prompt>"` CLI. The session runs detached — no
+Terminal pops up, no workspace-trust dialog, no focus stolen. The
+session is **centrally tracked**: it appears in `claude agents
+--json` (and the `claude agents` TUI) alongside any other background
+agents the user is running. When the agent finishes (or asks for
+input), OpenQuack posts a macOS notification; clicking it opens a
+small floating window with the full response and a button to drop
+into the **live** session via `claude attach <id>`.
 
-Voice → action → notification. The user doesn't have to be in any
-particular app, doesn't position a cursor, doesn't paste anything,
-and isn't interrupted by a Terminal window appearing during whatever
-they were doing.
+Voice → action → notification → optional drop-in.
+
+The user doesn't have to be in any particular app, doesn't position
+a cursor, doesn't paste anything, and isn't interrupted by a Terminal
+window appearing during whatever they were doing. The session
+*persists* after dispatch — closing OpenQuack does not kill it; the
+claude daemon does. Re-entering the session uses `claude attach`,
+which connects to the live daemon-owned PTY rather than starting a
+fresh process.
 
 ## User story
 
@@ -127,15 +135,26 @@ that the right hotkey fired before they start speaking. Cancel
 
 ```
 Dictation:  Transcribe ──▶ PasteService.paste(transcript)        [SPEC-005]
-Kickoff:    Transcribe ──▶ AgentKickoffService.startSession(…)
+Kickoff:    Transcribe ──▶ AgentKickoffService.startClaudeKickoff(…)
+                            └─ short-lived Process spawns:
+                                  claude --bg \
+                                    --permission-mode bypassPermissions \
+                                    --name "OpenQuack: <prefix>" \
+                                    <prompt>
+                                  (cwd=~/OpenQuackAgent/)
+                            └─ stdout parsed for banner:
+                                  "backgrounded · <short-id> (idle — …)"
+                            └─ short-id captured; daemon owns the session
                             └─ overlay flashes "Agent launched ✓ (claude)"
                             └─ overlay dismisses after ~700 ms
-                            └─ subprocess runs in background
+                            └─ spawn process exits; agent keeps running
 ```
 
 No Terminal window appears. The recording overlay flashes the
 launched-state for the same dwell time the dictation path uses for
-"Pasted ✓", then dismisses. The kickoff process runs detached.
+"Pasted ✓", then dismisses. The kickoff session is owned by the
+claude daemon; OpenQuack only holds a reference (short-id +
+workspace + prompt).
 
 If the agent CLI is missing (`claude` not on `PATH`), the kickoff
 fails loudly: an error banner in the overlay with a one-click "Install
@@ -143,32 +162,52 @@ Claude Code" link to `claude.com/claude-code`, and the transcript is
 copied to the clipboard as a fallback so the user doesn't lose what
 they said.
 
-### Notification on completion
+If the daemon disclaimer hasn't been accepted (claude prints
+*"--bg with bypassPermissions requires accepting the disclaimer first.
+Run `claude --dangerously-skip-permissions` once interactively."*),
+OpenQuack opens a `.command` Terminal with that exact command so the
+user can accept the one-time disclaimer, and the current transcript
+is stashed on the clipboard. The next kickoff press dispatches
+normally.
 
-When the agent finishes, OpenQuack posts a notification via
-`UNUserNotificationCenter`:
+### Completion signal — FSEventStream on state.json
 
+The claude daemon writes per-session state to
+`~/.claude/jobs/<short-id>/state.json` with shape:
+
+```json
+{
+  "state": "working" | "blocked" | "done" | "idle",
+  "detail": "<one-line summary the agent wrote>",
+  "tempo": "...",
+  "inFlight": { "tasks": 0, "queued": 0, "kinds": [] },
+  "needs": "<what the agent is waiting on, when blocked>",
+  "output": "<final response, when done>",
+  ...
+}
 ```
-┌──────────────────────────────────────────────┐
-│ 🦆 OpenQuack                                  │
-│ ──────────────────────────────────────────── │
-│ claude finished                               │
-│ Timer set for 10:00. macOS reminder           │
-│ scheduled via osascript; user will be …       │
-└──────────────────────────────────────────────┘
-```
 
-Title: `claude finished` (or `claude failed` if the process exited
-non-zero). Body: first ~150 characters of stdout, trimmed at a word
-boundary. Notifications use a `kickoffResult` category whose default
-action opens the response window (below).
+OpenQuack watches each session's `state.json` via FSEventStream and
+notifies on transitions:
+
+| State transition | Notification |
+|---|---|
+| `working → done` | "claude finished" + `detail` (or `output` first line) |
+| `working → blocked` | "claude needs input" + `needs` |
+| `→ idle` after working | Same as `done` — final state |
+| anything → exit (file deleted) | "claude session ended" + last `detail` |
+
+Title: `claude finished` / `claude needs input` / `claude failed`.
+Body: agent-written `detail` field if present, else first ~150 chars
+of `output`, word-boundary trimmed. Notifications use a
+`kickoffResult` category whose default action opens the response
+window (below).
 
 Permission: `UNUserNotificationCenter.current().requestAuthorization`
-is called the first time a kickoff is dispatched — never on app
-launch — so the prompt arrives in context, not as one of N first-run
-modals. If the user denies notification permission, completed
-kickoffs surface as a dot on the menu-bar duck instead; clicking the
-duck opens the response window directly.
+is called the first time a kickoff completes — never on app launch —
+so the prompt arrives in context. If the user denies notification
+permission, completed kickoffs surface as a dot on the menu-bar duck;
+clicking the duck opens the response window directly.
 
 ### Response window (click handler)
 
@@ -182,7 +221,7 @@ Clicking the notification opens a small floating window
 │    "Set me a timer for ten o'clock and put a          │
 │    notification centre entry on it."                   │
 │                                                       │
-│  claude responded (5.2s, exit 0):                      │
+│  claude finished (state: done, 5.2s)                   │
 │  ─────────────────────────────────────────            │
 │    Timer set for 10:00.                                │
 │    Created reminder via osascript:                     │
@@ -190,24 +229,47 @@ Clicking the notification opens a small floating window
 │    macOS reminder scheduled; the system will fire     │
 │    a notification at 10:00 sharp.                      │
 │                                                       │
-│  [Copy response]  [Continue in Terminal]  [Close]      │
+│  [Copy response] [Continue in Terminal]                │
+│  [Show all kickoffs] [Stop session] [Close]            │
 │                                                       │
 └────────────────────────────────────────────────────────┘
 ```
 
 - **Copy response** — `NSPasteboard.general.setString(response, …)`.
-- **Continue in Terminal** — reuses the `.command`-file spawn
-  primitive from this spec's earlier draft: writes a one-line
-  `cd <workspace> && claude --resume <session-id>` to a `.command`
-  file in `NSTemporaryDirectory`, calls `open(1)` on it. The
-  user's default terminal opens, attaches to the persisted session
-  by ID, picks up where claude left off.
-- **Close** — dismisses the window. The session remains on disk;
-  the user can still resume it via Claude Code's own `--resume`
-  picker.
+- **Continue in Terminal** — writes a one-line
+  `cd <workspace> && claude attach <short-id>` to a `.command`
+  file in `NSTemporaryDirectory`, calls `open(1)`. The user's
+  default terminal opens and **attaches to the live daemon-owned
+  session** (different from `--resume`, which starts a fresh
+  process). If the session is in `blocked` state waiting on input,
+  attach lets the user answer live. If `done`, attach lets the
+  user continue the conversation.
+- **Show all kickoffs** — writes `claude agents` to a `.command`
+  file and `open(1)`s it. The user lands in claude's own TUI
+  showing every background session (ours plus theirs), with
+  arrow-key navigation, peek, attach, stop.
+- **Stop session** — runs `claude stop <short-id>` via Process.
+  The daemon terminates the session; OpenQuack updates the
+  response window to a final "Stopped" state.
+- **Close** — dismisses the window. The session remains live (or
+  done, depending on state) on the daemon; the user can still
+  attach via Terminal or `claude agents`.
 
 The response window does NOT auto-open on completion — that would be
 intrusive. It only opens via notification click or menu-bar fallback.
+
+### What about Claude.app (the desktop app)?
+
+The Claude desktop app currently does **not** register a `claude://`
+URL scheme route for opening a specific Claude Code session by ID
+(verified in `Claude.app/Contents/Resources/app.asar` — only
+`claude://cowork/shared-artifact?uuid=` is registered). Until
+Anthropic adds something like `claude://session/<id>`, the only
+deep-link continuation surface is Terminal + `claude attach`.
+
+Filing a feature request with Anthropic for a session-deep-link URL
+is a follow-up. When/if it lands, the response window can grow a
+fourth button ("Open in Claude app") without other changes.
 
 ## Backend
 
@@ -217,14 +279,35 @@ intrusive. It only opens via notification click or menu-bar fallback.
 // Sources/OpenQuackKit/Agents/AgentKickoffService.swift
 
 public enum AgentKickoffService {
-    /// Start a Claude Code session in the background, seeded by
-    /// `prompt`, in the default workspace. Returns the live session
-    /// handle. The process is detached (no controlling TTY) — `claude`
-    /// runs headless under `--print`, so its workspace-trust dialog
-    /// is skipped automatically. The caller is responsible for
-    /// awaiting the session's completion (which fires when the
-    /// process exits).
-    public static func startClaudeCode(prompt: String) async throws -> KickoffSession
+    /// Spawn `claude --bg <prompt>` in the default workspace.
+    /// The spawn process exits within ~seconds after the daemon
+    /// accepts the dispatch; the actual agent session is owned by
+    /// the claude daemon and persists after this returns. Parses
+    /// stdout for the dispatch banner to capture the short session
+    /// ID.
+    public static func startClaudeKickoff(prompt: String) throws -> KickoffSession
+
+    /// Open the user's default terminal at the workspace with
+    /// `claude attach <short-id>` running. Attaches to the LIVE
+    /// daemon-owned session, not a fresh process. Used by the
+    /// "Continue in Terminal" button.
+    public static func continueInTerminal(shortID: String, workspace: URL) throws
+
+    /// Open the user's default terminal with `claude agents` (the
+    /// full background-sessions TUI). Used by the "Show all
+    /// kickoffs" button.
+    public static func showAgentsTUI() throws
+
+    /// Run `claude stop <short-id>` via Process. Daemon
+    /// terminates the session. Used by the "Stop session" button.
+    public static func stopSession(shortID: String) throws
+
+    /// Spawn a Terminal with `claude --dangerously-skip-permissions`
+    /// for the user to accept the one-time disclaimer that
+    /// `--bg --permission-mode bypassPermissions` requires. Called
+    /// from the consent flow OR auto-triggered if dispatch fails
+    /// with the "disclaimer not accepted" error.
+    public static func openDisclaimerTerminal() throws
 
     /// `~/OpenQuackAgent/`. Created on first use with mode 0700.
     public static var defaultWorkspace: URL { get }
@@ -235,38 +318,53 @@ public enum AgentKickoffService {
     public enum Error: Swift.Error, Equatable {
         case claudeCLIMissing
         case emptyPrompt
-        case invalidPrompt           // NUL or other unsafe content
+        case invalidPrompt
         case workspaceUnavailable
         case launchFailed
+        /// `claude --bg` printed the disclaimer error. Caller should
+        /// call `openDisclaimerTerminal()` and stash the transcript.
+        case disclaimerNotAccepted
+        /// Couldn't parse the short-id banner from stdout.
+        case bannerParseFailed(stdout: String)
+        case scriptWriteFailed
+        case terminalDispatchFailed(exitCode: Int32)
     }
 }
 
-/// One live (or recently-completed) kickoff. Each kickoff press
-/// produces a new session value; OpenQuack does not reuse them.
-public struct KickoffSession: Sendable {
-    public let id: UUID
+/// Reference to a kickoff dispatched via `claude --bg`. The session
+/// itself is owned by the claude daemon — OpenQuack only holds
+/// metadata + paths for watching its state.
+public struct KickoffSession: Sendable, Identifiable, Equatable {
+    /// 8-char short ID printed in the dispatch banner; used by
+    /// `claude agents`, `claude attach`, `claude stop`, and as
+    /// the directory name in `~/.claude/jobs/<short>/`.
+    public let shortID: String
     public let workspace: URL
     public let prompt: String
     public let startedAt: Date
-    /// `claude --name "OpenQuack: <40-char prompt prefix>"` so the
-    /// session is recognisable in Claude Code's own `--resume` picker
-    /// and in `claude agents --json`.
     public let displayName: String
 
-    /// Stream the agent's output as it accumulates. The stream
-    /// completes when the agent process exits. The aggregated result
-    /// (response text + stderr + exit code + duration) is delivered
-    /// via the completion handler set by the session manager.
-    public func awaitResult() async throws -> KickoffResult
+    public var id: String { shortID }
+    public var stateFileURL: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent(".claude/jobs/\(shortID)/state.json")
+    }
+    public var timelineFileURL: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent(".claude/jobs/\(shortID)/timeline.jsonl")
+    }
 }
 
-public struct KickoffResult: Sendable, Equatable {
-    public let sessionId: UUID
-    public let response: String        // stdout, trimmed
-    public let stderr: String          // captured for failure surface
-    public let exitCode: Int32
-    public let durationSeconds: Double
-    public var succeeded: Bool { exitCode == 0 }
+/// One snapshot of a kickoff's state. Read from
+/// `~/.claude/jobs/<short>/state.json` by `StateFileWatcher`.
+public struct KickoffState: Sendable, Equatable {
+    public enum Kind: String, Sendable {
+        case working, blocked, done, idle, unknown
+    }
+    public let kind: Kind
+    public let detail: String?  // one-line agent-written summary
+    public let output: String?  // final response (when done)
+    public let needs: String?   // what agent waits on (when blocked)
 }
 
 public extension KeyboardShortcuts.Name {
@@ -277,118 +375,172 @@ public extension KeyboardShortcuts.Name {
 ### How dispatch actually happens
 
 ```swift
-let id = UUID()
 let workspace = try ensureWorkspace(at: defaultWorkspace)
-let claudeBin = resolveClaudePath()!.path
+let claudeBin = resolveClaudePath()!  // URL
 
 let task = Process()
-task.executableURL = URL(fileURLWithPath: claudeBin)
+task.executableURL = claudeBin
 task.currentDirectoryURL = workspace
 task.arguments = [
-    "-p",
-    "--session-id",      id.uuidString.lowercased(),
+    "--bg",
     "--permission-mode", "bypassPermissions",
-    "--output-format",   "text",
-    "--name",            "OpenQuack: \(prompt.prefix(40))",
+    "--name", "OpenQuack: \(prompt.prefix(40))",
     prompt,
 ]
 
 let stdout = Pipe()
 let stderr = Pipe()
 task.standardOutput = stdout
-task.standardError  = stderr
-task.standardInput  = FileHandle.nullDevice  // explicitly no TTY
+task.standardError = stderr
+task.standardInput = FileHandle.nullDevice  // explicitly no TTY
 
+let start = Date()
 try task.run()
-// Return the session handle immediately; a background Task in the
-// session manager awaits `task.terminationHandler`, reads the
-// pipes, and posts the notification.
+task.waitUntilExit()  // --bg returns in seconds after daemon accept
+
+let stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
+let stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+let stdoutStr  = String(data: stdoutData, encoding: .utf8) ?? ""
+let stderrStr  = String(data: stderrData, encoding: .utf8) ?? ""
+
+if stderrStr.contains("requires accepting the disclaimer") {
+    throw Error.disclaimerNotAccepted
+}
+if task.terminationStatus != 0 {
+    throw Error.launchFailed
+}
+
+// Parse: "backgrounded · <short> (idle — send a prompt to start)"
+guard let shortID = parseBackgroundedBanner(stdoutStr) else {
+    throw Error.bannerParseFailed(stdout: stdoutStr)
+}
+
+return KickoffSession(
+    shortID: shortID,
+    workspace: workspace,
+    prompt: prompt,
+    startedAt: start,
+    displayName: "OpenQuack: \(prompt.prefix(40))"
+)
 ```
 
-No `.command` files for the headless dispatch. No `osascript`, no
-`open(1)`, no AppleEvents — just `Process` with stdio piped. The
-prompt is passed as a single argument (`argv[N]`); shell quoting is
-*not* needed because no shell sits between us and `claude`. (The
-shell-quoting code path is still kept for the "Continue in Terminal"
-button — see UX above — where we genuinely need a `.command` file to
-launch a user-facing terminal with `claude --resume <id>`.)
+Banner parser:
 
-Why `--print` headless rather than the interactive default:
-- **No workspace-trust dialog.** Per `claude --help`, the trust
-  prompt is skipped when stdout isn't a TTY, which we guarantee by
-  piping.
-- **No window.** The agent runs as a background process; the user's
-  workflow isn't interrupted.
-- **Clean exit on completion.** The process exits when the agent has
-  finished, so we have a natural completion signal (`Process.
-  terminationHandler`) without polling.
+```swift
+/// Matches "backgrounded · <8-hex-id> (idle — …)" with tolerance for
+/// surrounding whitespace, ANSI escapes, and version-to-version drift
+/// in the parenthetical suffix.
+static func parseBackgroundedBanner(_ stdout: String) -> String? {
+    let pattern = #"backgrounded\s*[·•]\s*([0-9a-f]{6,12})"#
+    let cleaned = stripAnsi(stdout)
+    guard let match = cleaned.range(of: pattern, options: .regularExpression)
+    else { return nil }
+    let snippet = String(cleaned[match])
+    let idPattern = #"[0-9a-f]{6,12}"#
+    guard let idMatch = snippet.range(of: idPattern, options: .regularExpression)
+    else { return nil }
+    return String(snippet[idMatch])
+}
+```
 
-Why `--permission-mode bypassPermissions`:
-The agent runs unattended — there's no UI for the user to approve
-individual actions during the run. Bypassing approvals is the cost
-of fire-and-forget; it's why kickoff is opt-in with a consent prompt
-that says so explicitly (see Privacy contract). The user can still
-review the agent's actions in the response window when it finishes,
-and the workspace is a known sandbox they control.
+The dispatch process completes quickly because the daemon
+acknowledges acceptance once the session is spawned; the agent's
+actual work happens inside the daemon-owned worker process. Nothing
+holds the OpenQuack-side spawn open after that.
 
-Why `--output-format text` rather than `json` or `stream-json`:
-v1 surfaces the response as a single block in the response window.
-JSON output would only be needed for structured rendering, which
-isn't part of the v1 UI. Stream-json would enable live progress
-into the response window — flagged as a follow-up.
+### Why `claude --bg` rather than `claude -p`
 
-### Session manager + notification
+The v2 design used `claude -p` (print mode). v3 abandons that because:
+
+- `-p` is one-shot — the process *is* the session, and exits on
+  completion. Sessions don't appear in `claude agents --json` while
+  running (the daemon never sees them) and can't be `attach`-ed.
+- `--bg` is daemon-managed — sessions persist after the spawn CLI
+  exits, are listed by `claude agents --json`, survive OpenQuack
+  quitting, and can be entered via `claude attach <id>`.
+
+This matches the spec's "centralized session management" requirement
+(user feedback 2026-05-23): voice-launched sessions visible alongside
+any other background work in the claude TUI.
+
+### Why `--permission-mode bypassPermissions`
+
+The agent runs unattended — there's no UI for per-action approvals
+during the run. Bypass mode is required for actuator tasks ("set a
+timer", "move these files") which need bash. The cost is real and
+called out in the consent prompt (Privacy contract below).
+
+This mode requires a one-time disclaimer acceptance via
+`claude --dangerously-skip-permissions` (the system-level claude
+opt-in). OpenQuack's consent flow surfaces this as a guided two-step:
+first OpenQuack's own consent modal, then a Terminal popup for the
+claude-side disclaimer.
+
+### Session manager (file-watcher-based)
 
 ```swift
 @MainActor
 public final class AgentSessionManager: ObservableObject {
-    @Published public private(set) var liveSessions: [UUID: KickoffSession] = [:]
-    @Published public private(set) var completedSessions: [KickoffResult] = []
+    @Published public private(set) var liveSessions: [String: KickoffSession] = [:]
+    @Published public private(set) var liveStates:   [String: KickoffState]   = [:]
+    @Published public private(set) var completedResults: [KickoffResult] = []
 
-    public func dispatch(prompt: String) async throws {
-        let session = try await AgentKickoffService.startClaudeCode(prompt: prompt)
-        liveSessions[session.id] = session
-        Task.detached { [weak self] in
-            let result = try await session.awaitResult()
-            await self?.handle(result: result, session: session)
+    private var watchers: [String: StateFileWatcher] = [:]
+
+    public func track(_ session: KickoffSession) {
+        liveSessions[session.shortID] = session
+        let watcher = StateFileWatcher(url: session.stateFileURL) { [weak self] state in
+            Task { @MainActor in self?.handle(state: state, session: session) }
         }
+        watchers[session.shortID] = watcher
+        watcher.start()
     }
 
-    private func handle(result: KickoffResult, session: KickoffSession) {
-        liveSessions[session.id] = nil
-        completedSessions.append(result)
-        // Cap to N most-recent (~20) so memory bounded.
-        if completedSessions.count > 20 {
-            completedSessions.removeFirst(completedSessions.count - 20)
+    private func handle(state: KickoffState, session: KickoffSession) {
+        liveStates[session.shortID] = state
+        let isTerminal = state.kind == .done || state.kind == .idle || state.kind == .blocked
+        if isTerminal {
+            // Convert to result, archive, notify.
+            let result = KickoffResult(from: state, session: session)
+            completedResults.append(result)
+            cap(&completedResults, at: 20)
+            watchers[session.shortID]?.stop()
+            watchers[session.shortID] = nil
+            liveSessions[session.shortID] = nil
+            postNotification(result: result)
         }
-        postNotification(result: result, session: session)
     }
 }
 ```
 
-The notification carries the session UUID as `userInfo["sessionId"]`;
-the click handler in `AppDelegate` looks up the result and opens the
-response window.
+`StateFileWatcher` wraps `FSEventStream` for one state.json path,
+parses JSON on each write, calls back with the parsed state. Has a
+small (~100ms) debounce because state writes can come in bursts
+during fast tool sequences.
 
 ### Workspace lifecycle
 
 Unchanged from v1: `~/OpenQuackAgent/` is created on first use with
-mode 0700, README written explaining the purpose. Idempotent.
+mode 0700, README written explaining purpose + the new bypass-perm
+caveat. Idempotent.
 
 ### Tests
 
 - `shellQuote` + `buildShellCommand` + `buildCommandScript` +
-  `writeCommandScript` — kept verbatim from v1; used by the
-  "Continue in Terminal" button. Same shell-injection corpus.
+  `writeCommandScript` — kept; used by `continueInTerminal`,
+  `showAgentsTUI`, `stopSession`, `openDisclaimerTerminal`. Shell-
+  injection corpus retained.
 - `ensureWorkspace` — kept.
-- New: argument-array assembly for `claude -p` — verify the exact
-  argv list given a prompt, including `--session-id` lowercase,
-  `--name` truncation at 40 chars, `--output-format text`,
-  `--permission-mode bypassPermissions`.
-- New: response truncation for the notification body (word-boundary
-  cut at ~150 chars).
-- The actual `Process` run is *not* unit-tested (it spawns a real
-  claude session). End-to-end validation covers it manually.
+- New: `parseBackgroundedBanner` against a corpus of expected
+  banner formats (with/without ANSI escapes, different parenthetical
+  suffixes, leading whitespace, multi-line stdout).
+- New: argv assembly for `claude --bg` — verify exact flag order
+  (`--bg`, `--permission-mode bypassPermissions`, `--name ...`,
+  prompt as final positional).
+- New: state.json parsing for the four known `state` values.
+- New: notification body truncation (kept).
+- The actual `Process` run is NOT unit-tested. End-to-end validation
+  covers it manually.
 
 ### How the spawn actually happens (shell-injection safe)
 
