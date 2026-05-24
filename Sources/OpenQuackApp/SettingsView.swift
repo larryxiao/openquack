@@ -325,16 +325,120 @@ private struct ShortcutPane: View {
         Form {
             Section {
                 KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
-                Text("Press once to start dictating, again to stop. ⌃⇧Space is the default and works in most apps.")
+                Text("Press once to start dictating, again to stop. ⌃Space is the default and works in most apps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
                 SectionHeader("Global hotkey")
             }
+
+            Section {
+                KeyboardShortcuts.Recorder("Kickoff:", name: .agentKickoff)
+                Text("Voice → fresh background Claude Code session. Press the hotkey, dictate a task, release; the agent runs unattended with **full permission bypass** (any shell command, any file, any app) and you get a macOS notification when it's done. Default ⌃⇧Space; first press shows a consent prompt that spells out what the agent can do — until you accept it, nothing leaves your Mac. Routes through Anthropic.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ClaudeCodeStatusRow()
+            } header: {
+                SectionHeader("Agent kickoff")
+            }
         }
         .formStyle(.grouped)
         .padding()
         .creamSettingsBackground()
+    }
+}
+
+// MARK: - Claude Code preflight (SPEC-031)
+
+private struct ClaudeCodeStatusRow: View {
+    @State private var status: AgentKickoffService.ClaudeCodeStatus?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            icon
+                .frame(width: 14, alignment: .center)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(statusTitle).font(.caption)
+                if let helpLine {
+                    Text(helpLine)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                cta
+            }
+            Spacer(minLength: 0)
+            Button("Re-check") {
+                refresh()
+            }
+            .buttonStyle(.borderless)
+            .font(.caption2)
+        }
+        .task { refresh() }
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        switch status {
+        case .ok:
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case .needsUpdate, .unparseableVersion:
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        case .notInstalled:
+            Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        case .none:
+            ProgressView().controlSize(.mini)
+        }
+    }
+
+    private var statusTitle: String {
+        switch status {
+        case .ok(let v): return "Claude Code: ✓ v\(v) detected"
+        case .needsUpdate(let installed, let required):
+            return "Claude Code: ⚠ v\(installed) — needs v\(required)+ for --bg"
+        case .unparseableVersion(let raw):
+            return "Claude Code: ⚠ couldn't parse version (\(raw))"
+        case .notInstalled: return "Claude Code: ✗ not detected on PATH"
+        case .none: return "Checking Claude Code…"
+        }
+    }
+
+    private var helpLine: String? {
+        switch status {
+        case .ok: return nil
+        case .needsUpdate:
+            return "Run `claude update` in Terminal to upgrade."
+        case .unparseableVersion:
+            return "Try `claude update`, or reinstall from claude.com/claude-code."
+        case .notInstalled:
+            return "OpenQuack will fall back to clipboard when kickoff fires without claude."
+        case .none: return nil
+        }
+    }
+
+    @ViewBuilder
+    private var cta: some View {
+        switch status {
+        case .notInstalled:
+            Link("Install Claude Code →",
+                 destination: URL(string: "https://claude.com/claude-code")!)
+                .font(.caption2)
+        case .needsUpdate, .unparseableVersion:
+            Link("Update instructions →",
+                 destination: URL(string: "https://claude.com/claude-code")!)
+                .font(.caption2)
+        case .ok, .none:
+            EmptyView()
+        }
+    }
+
+    private func refresh() {
+        // Synchronous: claude --version is fast (~50ms). Off-main
+        // briefly via Task so we don't block the Settings sheet
+        // appearing.
+        Task {
+            let s = AgentKickoffService.claudeCodeStatus()
+            await MainActor.run { self.status = s }
+        }
     }
 }
 

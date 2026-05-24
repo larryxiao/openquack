@@ -3,10 +3,20 @@ import KeyboardShortcuts
 
 /// SPEC-003 — Global hotkey, backed by sindresorhus/KeyboardShortcuts.
 public extension KeyboardShortcuts.Name {
-    /// Default: ⌃⇧Space. User-overridable via `KeyboardShortcuts.Recorder` once
-    /// the Settings scene lands.
+    /// SPEC-003 — Dictation hotkey. Default: ⌃Space (simpler combo for
+    /// the more-frequent action). User-overridable via the Settings
+    /// recorder.
     static let toggleRecording = Self(
         "openquack.toggleRecording",
+        default: .init(.space, modifiers: [.control])
+    )
+
+    /// SPEC-031 — Agent kickoff hotkey. Default: ⌃⇧Space (the "shift
+    /// up" modifier signals louder/escalated action vs plain
+    /// dictation). User-overridable. Distinct binding from dictation
+    /// so the two paths never collide.
+    static let agentKickoff = Self(
+        "openquack.agentKickoff",
         default: .init(.space, modifiers: [.control, .shift])
     )
 }
@@ -71,6 +81,17 @@ public final class HotkeyManager {
     /// toggle-on-press. Equivalent to `register(onKeyDown: action, onKeyUp: {})`.
     public func registerToggle(_ action: @escaping @MainActor () -> Void) {
         register(onKeyDown: action, onKeyUp: {})
+    }
+
+    /// SPEC-031 — wire the agent-kickoff hotkey. Carbon-only for v1: bare-fn
+    /// support for kickoff is a flagged follow-up in the spec's open
+    /// questions. Intended to be called once at app launch, AFTER
+    /// `register(...)` — the dictation register clears all handlers, so
+    /// kickoff is installed second to survive.
+    public func registerKickoff(_ action: @escaping @MainActor () -> Void) {
+        KeyboardShortcuts.onKeyDown(for: .agentKickoff) {
+            Task { @MainActor in action() }
+        }
     }
 
     public func unregister() {

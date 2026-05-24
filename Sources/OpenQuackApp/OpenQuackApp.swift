@@ -5,6 +5,7 @@ import Combine
 import os
 import ServiceManagement
 import Sparkle
+import UserNotifications
 import OpenQuackKit
 
 // SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
@@ -75,6 +76,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let appState = AppState()
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyManager()
+
+    /// SPEC-031 — tracks live + completed agent-kickoff sessions and
+    /// posts notifications. Created lazily on the main actor because
+    /// AgentSessionManager is @MainActor.
+    @MainActor lazy var agentSessions = AgentSessionManager()
+    /// SPEC-031 — opens on notification click.
+    @MainActor lazy var responseWindow = ResponseWindowController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     private var overlay: RecordingOverlay?
@@ -144,6 +152,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
+
+        // SPEC-031 — kickoff notification plumbing. Set the delegate
+        // BEFORE any notification is posted so first-press clicks are
+        // routed correctly; register the category so the action
+        // button shows in Notification Center.
+        UNUserNotificationCenter.current().delegate = self
+        AgentSessionManager.registerNotificationCategory()
 
         // Defensive: switching activation policy back to .accessory can hide
         // the menu-bar status item on macOS 15. Re-assert visibility on every
@@ -537,12 +552,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installHotkey() {
         hotkey.registerToggle { [weak self] in self?.toggleRecording() }
+        // SPEC-031 — second binding for agent kickoff. registerKickoff runs
+        // AFTER registerToggle since the dictation register clears all
+        // handlers.
+        hotkey.registerKickoff { [weak self] in self?.toggleKickoff() }
     }
 
     @MainActor
     private func toggleRecording() {
         switch appState.phase {
         case .idle, .ready, .error:
+            appState.recordingMode = .dictation
             startRecording()
         case .recording:
             stopAndTranscribe()
@@ -550,6 +570,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Ignore — the user gets a hotkey-tap during a transition; we just drop it.
             NSSound.beep()
         }
+    }
+
+    /// SPEC-031 — agent-kickoff hotkey. Press to start a recording whose
+    /// transcript will be handed to a fresh Claude Code session (instead
+    /// of pasting at the focused app's cursor). The first press on a
+    /// fresh install shows a consent prompt naming Anthropic; declining
+    /// is a no-op (the recording never starts).
+    @MainActor
+    private func toggleKickoff() {
+        switch appState.phase {
+        case .idle, .ready, .error:
+            guard ensureKickoffConsent() else { return }
+            appState.recordingMode = .agentKickoff
+            startRecording()
+        case .recording:
+            // Same hotkey or the dictation hotkey both stop; recordingMode
+            // was set when recording began, so the dispatch path is fixed.
+            stopAndTranscribe()
+        case .warming, .starting, .transcribing:
+            NSSound.beep()
+        }
+    }
+
+    /// SPEC-031 privacy gate — runs once per install. The kickoff hotkey
+    /// adds an Anthropic network hop on a path that was previously
+    /// fully local; the user must consent explicitly with a modal that
+    /// names the destination. Stored as a UserDefaults flag, revocable
+    /// from Settings → Shortcut (clear the binding).
+    @MainActor
+    private func ensureKickoffConsent() -> Bool {
+        let key = "agentKickoffConsented"
+        if UserDefaults.standard.bool(forKey: key) { return true }
+
+        let alert = NSAlert()
+        alert.messageText = "Enable voice-launched agent?"
+        alert.informativeText = """
+        This hotkey sends your dictated request to Claude Code (Anthropic), \
+        then the agent runs UNATTENDED with full permission bypass:
+
+        • Runs any shell command on your Mac
+        • Reads, writes, or deletes any file you can — not just the \
+          workspace directory
+        • Controls apps, changes settings, opens browser tabs, makes \
+          network requests
+        • Does all of this WITHOUT asking you first
+
+        The default workspace is ~/OpenQuackAgent/ but the agent isn't \
+        sandboxed there — its blast radius is everything bash can reach \
+        as your user. Don't enable this if that's a worry.
+
+        When the task finishes, you get a macOS notification. You can \
+        attach to the live session in Terminal to continue, or stop it.
+
+        First time: a one-time disclaimer from claude opens in Terminal — \
+        accept it once, then kickoffs work straight through.
+
+        Your normal dictation hotkey is unaffected. Revoke by clearing \
+        this hotkey in Settings → Shortcut.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Enable")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            UserDefaults.standard.set(true, forKey: key)
+            return true
+        }
+        return false
     }
 
     // MARK: - record → transcribe pipeline
@@ -626,6 +715,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// faster than the eye can register, which defeats the point of having
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
+
+    /// SPEC-031 — map an AgentKickoffService error to a one-line user-
+    /// facing label for the overlay's "ready" state.
+    static func kickoffErrorLabel(_ error: Swift.Error) -> String {
+        guard let kErr = error as? AgentKickoffService.Error else {
+            return "Couldn't launch agent — \(error.localizedDescription)"
+        }
+        switch kErr {
+        case .claudeCLIMissing:
+            return "Claude Code not installed — transcript on clipboard"
+        case .emptyPrompt:
+            return "Nothing to send — say something first"
+        case .invalidPrompt:
+            return "Transcript contains an invalid character"
+        case .workspaceUnavailable:
+            return "Couldn't access ~/OpenQuackAgent/"
+        case .launchFailed:
+            return "Couldn't start claude — transcript on clipboard"
+        case .disclaimerNotAccepted:
+            // Should be caught upstream and surfaced with a clearer
+            // message; fallback here.
+            return "claude needs one-time setup — transcript on clipboard"
+        case .bannerParseFailed:
+            return "claude --bg ran but no session ID seen — transcript on clipboard"
+        case .scriptWriteFailed:
+            return "Couldn't write launch script — transcript on clipboard"
+        case .terminalDispatchFailed:
+            return "Terminal didn't launch — transcript on clipboard"
+        }
+    }
 
     /// SPEC-012: utterances at or above this duration take the streaming
     /// path; shorter ones stay on the offline path (faster end-to-end on
@@ -721,14 +840,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                 }
 
-                // SPEC-005: paste at cursor by default; pasteboard-only fallback.
-                let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
+                // SPEC-005 / SPEC-031: branch the output path on
+                // recordingMode. Dictation pastes at the focused app's
+                // cursor; agent kickoff hands the transcript to a fresh
+                // Claude Code session and never writes to the focused
+                // app at all.
+                let recordingMode = await MainActor.run { appState.recordingMode }
                 let pasted: Bool
-                if autoPasteEnabled {
-                    pasted = PasteService.paste(polished)
-                } else {
-                    PasteService.copyToClipboard(polished)
-                    pasted = false
+                let kickoffSucceeded: Bool
+                let kickoffErrorMessage: String?
+                switch recordingMode {
+                case .dictation:
+                    let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
+                    if autoPasteEnabled {
+                        pasted = PasteService.paste(polished)
+                    } else {
+                        PasteService.copyToClipboard(polished)
+                        pasted = false
+                    }
+                    kickoffSucceeded = false
+                    kickoffErrorMessage = nil
+                case .agentKickoff:
+                    // The dictated text becomes the agent's seed prompt.
+                    // Never paste at the user's cursor in this mode.
+                    do {
+                        let session = try AgentKickoffService.startClaudeKickoff(prompt: polished)
+                        await MainActor.run { [agentSessions] in
+                            agentSessions.track(session)
+                        }
+                        kickoffSucceeded = true
+                        kickoffErrorMessage = nil
+                        pasted = false
+                    } catch AgentKickoffService.Error.disclaimerNotAccepted {
+                        // First-use: open Terminal with the one-time
+                        // claude-side disclaimer and stash the
+                        // transcript so the user doesn't lose what
+                        // they said. They re-press kickoff after
+                        // accepting.
+                        try? AgentKickoffService.openDisclaimerTerminal()
+                        PasteService.copyToClipboard(polished)
+                        kickoffSucceeded = false
+                        kickoffErrorMessage = "Accept the claude disclaimer in Terminal, then re-press kickoff. Transcript on clipboard."
+                        pasted = false
+                    } catch {
+                        // Fallback: stash on the clipboard so the user
+                        // doesn't lose what they said. Surfaced in the
+                        // overlay's "ready" state as an error message.
+                        PasteService.copyToClipboard(polished)
+                        kickoffSucceeded = false
+                        kickoffErrorMessage = Self.kickoffErrorLabel(error)
+                        pasted = false
+                    }
                 }
 
                 await MainActor.run {
@@ -737,6 +899,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.lastWallSeconds = result.wallSeconds
                     appState.lastRecordingURL = url
                     appState.lastPasted = pasted
+                    appState.lastKickoffSucceeded = kickoffSucceeded
+                    appState.lastKickoffError = kickoffErrorMessage
                     appState.accessibilityTrusted = PasteService.isAccessibilityTrusted()
                     appState.phase = .ready
                     playSound("Pop")
@@ -926,6 +1090,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await usageStats.record(transcript: polished, audioSeconds: result.audioSeconds)
         } catch {
             // Best-effort — leave the entry recoverable for next launch.
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // SPEC-031 v3 — kickoff sessions are owned by the claude
+        // daemon and survive OpenQuack quitting (that's the whole
+        // point of --bg). Stop our state-file watchers but DON'T
+        // kill the sessions; user can re-enter them via `claude
+        // agents` or `claude attach <id>` next time they want to.
+        agentSessions.stopTrackingAll()
+    }
+}
+
+// MARK: - SPEC-031: notification delegate
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    /// Show kickoff-result banners even while OpenQuack is foreground
+    /// (e.g. user opened Settings) — otherwise macOS suppresses them.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    /// Click handler — opens the response window for the result whose
+    /// shortID is carried in userInfo.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        defer { completionHandler() }
+        guard
+            let shortID = response.notification.request.content.userInfo["shortID"] as? String
+        else { return }
+        Task { @MainActor in
+            guard let result = agentSessions.result(for: shortID) else { return }
+            responseWindow.show(result: result)
         }
     }
 }

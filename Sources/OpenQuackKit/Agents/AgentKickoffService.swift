@@ -1,0 +1,577 @@
+import Foundation
+
+/// SPEC-031 v3 — Agent kickoff (voice → background claude session).
+///
+/// Spawns `claude --bg <prompt>` as a short-lived `Process` that
+/// asks the claude daemon to launch a background session. The
+/// daemon owns the session lifetime; OpenQuack holds only the
+/// short-id + workspace + prompt, watches state.json for completion,
+/// and offers Terminal-based handoffs (`claude attach`, `claude
+/// agents`, `claude stop`) via the `.command`-file spawn primitive
+/// retained from v2.
+public enum AgentKickoffService {
+    public enum Error: Swift.Error, Equatable {
+        case claudeCLIMissing
+        case emptyPrompt
+        case invalidPrompt
+        case workspaceUnavailable
+        case launchFailed
+        /// `claude --bg` printed the disclaimer error. Caller should
+        /// run `openDisclaimerTerminal()` and stash the transcript.
+        case disclaimerNotAccepted
+        /// Couldn't parse the short-id banner from stdout.
+        case bannerParseFailed(stdout: String)
+        case scriptWriteFailed
+        case terminalDispatchFailed(exitCode: Int32)
+    }
+
+    public static var defaultWorkspace: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent("OpenQuackAgent", isDirectory: true)
+    }
+
+    public static func isClaudeAvailable() -> Bool {
+        resolveClaudePath() != nil
+    }
+
+    /// Minimum claude version that exposes the `--bg` daemon-managed
+    /// background-session primitive. Older versions either don't have
+    /// the flag or ship a partial implementation. Bumped only when
+    /// empirically required by behaviour change in claude.
+    public static let minimumClaudeVersion = ClaudeVersion(major: 2, minor: 1, patch: 143)
+
+    /// Pre-flight summary of the user's claude install — surfaced in
+    /// Settings → Agent kickoff so the user can fix install / version
+    /// issues before pressing the hotkey.
+    public enum ClaudeCodeStatus: Sendable, Equatable {
+        case notInstalled
+        case unparseableVersion(raw: String)
+        case needsUpdate(installed: ClaudeVersion, required: ClaudeVersion)
+        case ok(version: ClaudeVersion)
+    }
+
+    /// Run `claude --version`, parse, compare against
+    /// `minimumClaudeVersion`. Synchronous + fast (~50ms). Safe to
+    /// call from a `.task` in SwiftUI.
+    public static func claudeCodeStatus() -> ClaudeCodeStatus {
+        guard let url = resolveClaudePath() else { return .notInstalled }
+        guard let raw = runForStdout(url, args: ["--version"]),
+              let parsed = ClaudeVersion.parse(raw)
+        else {
+            // claude exists but its --version output didn't parse —
+            // probably an old or experimental build. Treat as a soft
+            // fail so the user knows the install needs attention.
+            let raw = (try? runForStdoutThrowing(url, args: ["--version"])) ?? ""
+            return .unparseableVersion(raw: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if parsed.isAtLeast(minimumClaudeVersion) {
+            return .ok(version: parsed)
+        }
+        return .needsUpdate(installed: parsed, required: minimumClaudeVersion)
+    }
+
+    private static func runForStdout(_ url: URL, args: [String]) -> String? {
+        try? runForStdoutThrowing(url, args: args)
+    }
+
+    private static func runForStdoutThrowing(_ url: URL, args: [String]) throws -> String {
+        let task = Process()
+        task.executableURL = url
+        task.arguments = args
+        let stdout = Pipe()
+        task.standardOutput = stdout
+        task.standardError = Pipe()
+        task.standardInput = FileHandle.nullDevice
+        try task.run()
+        task.waitUntilExit()
+        guard task.terminationStatus == 0 else {
+            return ""  // throw via the wrapper if needed; we just want stdout
+        }
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// Dispatch a kickoff via `claude --bg`. Returns the session
+    /// handle once the daemon has acknowledged the dispatch (the
+    /// spawn process exits at that point; the agent keeps running
+    /// inside a daemon-owned worker).
+    public static func startClaudeKickoff(prompt: String) throws -> KickoffSession {
+        let cleaned = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { throw Error.emptyPrompt }
+        guard !cleaned.contains("\0") else { throw Error.invalidPrompt }
+        guard let claudeURL = resolveClaudePath() else { throw Error.claudeCLIMissing }
+
+        let workspace = try ensureWorkspace(at: defaultWorkspace)
+        let displayName = makeDisplayName(prompt: cleaned)
+
+        let task = Process()
+        task.executableURL = claudeURL
+        task.currentDirectoryURL = workspace
+        task.arguments = buildClaudeArguments(prompt: cleaned, displayName: displayName)
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        task.standardOutput = stdoutPipe
+        task.standardError  = stderrPipe
+        task.standardInput  = FileHandle.nullDevice
+
+        let started = Date()
+        do {
+            try task.run()
+        } catch {
+            throw Error.launchFailed
+        }
+        task.waitUntilExit()
+
+        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
+        let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+
+        if Self.stderrIndicatesDisclaimer(stderr) || Self.stderrIndicatesDisclaimer(stdout) {
+            throw Error.disclaimerNotAccepted
+        }
+        if task.terminationStatus != 0 {
+            throw Error.launchFailed
+        }
+
+        guard let shortID = parseBackgroundedBanner(stdout) else {
+            throw Error.bannerParseFailed(stdout: stdout)
+        }
+
+        return KickoffSession(
+            shortID: shortID,
+            workspace: workspace,
+            prompt: cleaned,
+            startedAt: started,
+            displayName: displayName
+        )
+    }
+
+    /// Open Terminal at `workspace` with `claude attach <shortID>`.
+    public static func continueInTerminal(shortID: String, workspace: URL) throws {
+        let cmd = "cd " + shellQuote(workspace.path)
+                + " && claude attach " + shellQuote(shortID)
+        try spawnCommandFile(shellCommand: cmd)
+    }
+
+    /// Open Terminal with the full `claude agents` TUI.
+    public static func showAgentsTUI() throws {
+        try spawnCommandFile(shellCommand: "claude agents")
+    }
+
+    /// Stop a running session via `claude stop <shortID>`.
+    public static func stopSession(shortID: String) throws {
+        guard let claudeURL = resolveClaudePath() else { throw Error.claudeCLIMissing }
+        let task = Process()
+        task.executableURL = claudeURL
+        task.arguments = ["stop", shortID]
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
+        do {
+            try task.run()
+        } catch {
+            throw Error.launchFailed
+        }
+        task.waitUntilExit()
+        if task.terminationStatus != 0 {
+            throw Error.launchFailed
+        }
+    }
+
+    /// Open Terminal with `claude --dangerously-skip-permissions`
+    /// for the user to accept the one-time disclaimer that
+    /// `--bg --permission-mode bypassPermissions` requires.
+    public static func openDisclaimerTerminal() throws {
+        try spawnCommandFile(shellCommand: "claude --dangerously-skip-permissions")
+    }
+
+    // MARK: - Internal helpers (exposed for tests)
+
+    static func stderrIndicatesDisclaimer(_ s: String) -> Bool {
+        let needles = [
+            "requires accepting the disclaimer",
+            "claude --dangerously-skip-permissions",
+            "requires opting in first",
+        ]
+        for needle in needles where s.contains(needle) { return true }
+        return false
+    }
+
+    /// argv for `claude --bg`. Stable, testable.
+    ///
+    /// Environment context (what tools claude has, how to think about
+    /// the workspace, common macOS idioms) is delivered via
+    /// `CLAUDE.md` in the workspace rather than `--append-system-prompt`
+    /// — that's the native claude pattern and keeps the dispatch
+    /// argv small and stable.
+    static func buildClaudeArguments(prompt: String, displayName: String) -> [String] {
+        [
+            "--bg",
+            "--permission-mode", "bypassPermissions",
+            "--name", displayName,
+            prompt,
+        ]
+    }
+
+    static func makeDisplayName(prompt: String) -> String {
+        let oneLine = prompt
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        let prefix = oneLine.prefix(40)
+        return "OpenQuack: \(prefix)"
+    }
+
+    /// Parse the dispatch banner. Tolerates ANSI escapes, leading
+    /// whitespace, and variant parenthetical suffixes.
+    static func parseBackgroundedBanner(_ stdout: String) -> String? {
+        let cleaned = stripAnsi(stdout)
+        // The middle-dot is the documented separator; accept also
+        // bullet, hyphen, colon as defensive fallbacks for version
+        // drift.
+        let pattern = #"backgrounded\s*[·•:\-]\s*([0-9a-f]{6,12})"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+              let match = regex.firstMatch(
+                in: cleaned,
+                range: NSRange(cleaned.startIndex..., in: cleaned)
+              ),
+              let idRange = Range(match.range(at: 1), in: cleaned)
+        else { return nil }
+        return String(cleaned[idRange])
+    }
+
+    static func stripAnsi(_ s: String) -> String {
+        // Strip CSI sequences: ESC [ ... letter
+        let pattern = "\u{001B}\\[[0-9;?]*[A-Za-z]"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return s }
+        let range = NSRange(s.startIndex..., in: s)
+        return regex.stringByReplacingMatches(in: s, range: range, withTemplate: "")
+    }
+
+    /// Trim the response for a notification body — at most ~150 chars
+    /// at a word boundary, with an ellipsis if truncated.
+    public static func notificationBody(from response: String, limit: Int = 150) -> String {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > limit else { return trimmed }
+        let cap = trimmed.index(trimmed.startIndex, offsetBy: limit)
+        let slice = trimmed[..<cap]
+        if let lastSpace = slice.lastIndex(where: { $0.isWhitespace }) {
+            return trimmed[..<lastSpace].trimmingCharacters(in: .whitespaces) + "…"
+        }
+        return trimmed[..<cap] + "…"
+    }
+
+    static func shellQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    static func buildShellCommand(workspace: String, prompt: String) -> String {
+        "cd " + shellQuote(workspace) + " && claude " + shellQuote(prompt)
+    }
+
+    static func buildCommandScript(shellCommand: String) -> String {
+        """
+        #!/bin/bash
+        # OpenQuack SPEC-031 — Terminal handoff launcher.
+        # Written to NSTemporaryDirectory and deleted shortly after open(1)
+        # accepts it; do not rely on it persisting.
+        set -e
+        \(shellCommand)
+        """
+    }
+
+    static func ensureWorkspace(at url: URL) throws -> URL {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        if !fm.fileExists(atPath: url.path, isDirectory: &isDir) {
+            do {
+                try fm.createDirectory(
+                    at: url,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+            } catch {
+                throw Error.workspaceUnavailable
+            }
+        } else if !isDir.boolValue {
+            throw Error.workspaceUnavailable
+        }
+        // Refresh README + CLAUDE.md every call so updates to the
+        // content land on existing workspaces too. Best-effort: failures
+        // here don't abort dispatch (the workspace still exists).
+        try? writeWorkspaceReadme(in: url)
+        try? writeWorkspaceClaudeMD(in: url)
+        return url
+    }
+
+    private static func writeWorkspaceReadme(in url: URL) throws {
+        let body = """
+        # OpenQuack agent workspace
+
+        This is OpenQuack's default workspace for voice-launched
+        background agent sessions (SPEC-031). Each time you press the
+        agent-kickoff hotkey, a fresh `claude` session runs in the
+        background here under the daemon's management, seeded by your
+        spoken prompt. When it finishes you get a macOS notification.
+
+        The agent runs with permission bypass — it executes shell
+        commands, edits, and side effects without asking you first.
+        That's the cost of fire-and-forget dispatch. Treat this dir
+        like a sandbox: don't keep anything in it you'd hate to lose
+        to an unexpected agent action.
+
+        Re-enter a kickoff with `claude attach <short-id>` or browse
+        all kickoffs with `claude agents`. Stop one with `claude stop
+        <short-id>`. If you keep `~` synced via Dropbox / iCloud, the
+        sync daemon can fight agent writes here — workspace override
+        is M3+.
+
+        See CLAUDE.md in this dir for the environment context the
+        agent sees on every kickoff.
+        """
+        try body.write(
+            to: url.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    /// `CLAUDE.md` — environment context for the agent. Auto-discovered
+    /// by claude on session start (when cwd is this workspace). This
+    /// is the replacement for the per-invocation `--append-system-prompt`
+    /// — workspace docs, not per-turn instructions.
+    private static func writeWorkspaceClaudeMD(in url: URL) throws {
+        try Self.claudeMDBody.write(
+            to: url.appendingPathComponent("CLAUDE.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    /// Content of `CLAUDE.md`. Exposed `internal` so tests can lock in
+    /// substrings without re-reading the file.
+    ///
+    /// Posture-only on purpose. You already know AppleScript
+    /// dictionaries, `osascript` idioms, `defaults`, the works — we
+    /// don't list them here. What we DO need is to flip your default
+    /// posture in `--bg` mode from "AI assistant chat" to "action
+    /// agent with bash". A short workspace doc trusts the model and
+    /// won't drift.
+    static let claudeMDBody = """
+    # OpenQuack voice workspace
+
+    You were started by a voice-dispatched task from OpenQuack on
+    macOS. Voice = action context, not chat.
+
+    - Bash is your universal tool. `--permission-mode
+      bypassPermissions` means you don't ask first.
+    - For macOS-native asks (timers, app control, browser state,
+      notifications, clipboard), reach for `osascript` / `open` /
+      `defaults` etc. before declining. You know the AppleScript
+      dictionaries; use them.
+    - Refusing with "I don't have access" when bash would work is a
+      bug.
+    - Your final message becomes the user's notification body — make
+      it useful.
+
+    User may `claude attach <short-id>` after the notification to
+    continue.
+    """
+
+    static func writeCommandScript(shellCommand: String) throws -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let url = dir.appendingPathComponent("openquack-kickoff-\(UUID().uuidString).command")
+        let body = buildCommandScript(shellCommand: shellCommand)
+        do {
+            try body.write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: url.path
+            )
+        } catch {
+            throw Error.scriptWriteFailed
+        }
+        return url
+    }
+
+    private static func spawnCommandFile(shellCommand: String) throws {
+        let url = try writeCommandScript(shellCommand: shellCommand)
+        defer { scheduleDeletion(of: url) }
+        try runOpen(on: url)
+    }
+
+    private static func runOpen(on scriptURL: URL) throws {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = [scriptURL.path]
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
+        do {
+            try task.run()
+        } catch {
+            throw Error.terminalDispatchFailed(exitCode: -1)
+        }
+        task.waitUntilExit()
+        if task.terminationStatus != 0 {
+            throw Error.terminalDispatchFailed(exitCode: task.terminationStatus)
+        }
+    }
+
+    private static func scheduleDeletion(of url: URL) {
+        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 30) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    private static func resolveClaudePath() -> URL? {
+        let env = ProcessInfo.processInfo.environment
+        var paths = (env["PATH"] ?? "").split(separator: ":").map(String.init)
+        let home = NSHomeDirectory()
+        paths.append(contentsOf: [
+            "\(home)/.local/bin",
+            "\(home)/.claude/local",
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+        ])
+        let fm = FileManager.default
+        for dir in paths where !dir.isEmpty {
+            let candidate = (dir as NSString).appendingPathComponent("claude")
+            if fm.isExecutableFile(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+        }
+        return nil
+    }
+}
+
+/// Reference to a `claude --bg` session. The session is owned by
+/// the claude daemon, not OpenQuack — this struct just carries
+/// metadata + paths.
+public struct KickoffSession: Sendable, Identifiable, Equatable {
+    public let shortID: String
+    public let workspace: URL
+    public let prompt: String
+    public let startedAt: Date
+    public let displayName: String
+
+    public var id: String { shortID }
+
+    public var stateFileURL: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent(".claude/jobs/\(shortID)/state.json")
+    }
+
+    public var timelineFileURL: URL {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return home.appendingPathComponent(".claude/jobs/\(shortID)/timeline.jsonl")
+    }
+}
+
+/// Parsed snapshot of `~/.claude/jobs/<short>/state.json`.
+public struct KickoffState: Sendable, Equatable {
+    public enum Kind: String, Sendable {
+        case working, blocked, done, idle, unknown
+    }
+    public let kind: Kind
+    public let detail: String?
+    public let output: String?
+    public let needs: String?
+
+    public init(kind: Kind, detail: String?, output: String?, needs: String?) {
+        self.kind = kind
+        self.detail = detail
+        self.output = output
+        self.needs = needs
+    }
+
+    public var isTerminal: Bool {
+        kind == .done || kind == .blocked || kind == .idle
+    }
+
+    /// Parse a JSON object as a state.json snapshot.
+    public static func parse(_ data: Data) -> KickoffState? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let kindRaw = obj["state"] as? String ?? "unknown"
+        let kind = Kind(rawValue: kindRaw) ?? .unknown
+        return KickoffState(
+            kind: kind,
+            detail: obj["detail"] as? String,
+            output: obj["output"] as? String,
+            needs: obj["needs"] as? String
+        )
+    }
+}
+
+/// Semantic version triple for claude binary version parsing.
+/// `claude --version` emits "<major>.<minor>.<patch> (Claude Code)";
+/// we only care about the numeric triple for comparison.
+public struct ClaudeVersion: Sendable, Equatable, Comparable, CustomStringConvertible {
+    public let major: Int
+    public let minor: Int
+    public let patch: Int
+
+    public init(major: Int, minor: Int, patch: Int) {
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+    }
+
+    /// Parse the leading "X.Y.Z" out of any string. Returns nil if
+    /// the three parts aren't all base-10 ints. Tolerates surrounding
+    /// noise ("v2.1.150" / "2.1.150 (Claude Code)" / "2.1.150\n").
+    public static func parse(_ raw: String) -> ClaudeVersion? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pattern = #"(\d+)\.(\d+)\.(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: trimmed,
+                range: NSRange(trimmed.startIndex..., in: trimmed)
+              )
+        else { return nil }
+        func group(_ idx: Int) -> Int? {
+            guard let r = Range(match.range(at: idx), in: trimmed) else { return nil }
+            return Int(trimmed[r])
+        }
+        guard let M = group(1), let m = group(2), let p = group(3) else { return nil }
+        return ClaudeVersion(major: M, minor: m, patch: p)
+    }
+
+    public func isAtLeast(_ other: ClaudeVersion) -> Bool {
+        self >= other
+    }
+
+    public static func < (lhs: ClaudeVersion, rhs: ClaudeVersion) -> Bool {
+        if lhs.major != rhs.major { return lhs.major < rhs.major }
+        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+        return lhs.patch < rhs.patch
+    }
+
+    public var description: String { "\(major).\(minor).\(patch)" }
+}
+
+/// Final result presented in the response window + notification.
+public struct KickoffResult: Sendable, Equatable {
+    public let shortID: String
+    public let prompt: String
+    public let workspace: URL
+    public let displayName: String
+    public let state: KickoffState.Kind
+    public let detail: String?
+    public let output: String?
+    public let needs: String?
+    public let durationSeconds: Double
+
+    public var succeeded: Bool { state == .done || state == .idle }
+
+    public init(from state: KickoffState, session: KickoffSession) {
+        self.shortID = session.shortID
+        self.prompt = session.prompt
+        self.workspace = session.workspace
+        self.displayName = session.displayName
+        self.state = state.kind
+        self.detail = state.detail
+        self.output = state.output
+        self.needs = state.needs
+        self.durationSeconds = Date().timeIntervalSince(session.startedAt)
+    }
+}

@@ -13,7 +13,17 @@ public final class AppState: ObservableObject {
         case error(String)
     }
 
+    /// SPEC-031 — which output path the *current* recording is bound for.
+    /// Set when recording starts (by which hotkey fired); read at the
+    /// post-transcribe dispatch fork to choose paste-at-cursor vs
+    /// agent kickoff. Orthogonal to `phase`.
+    public enum RecordingMode: Equatable {
+        case dictation
+        case agentKickoff
+    }
+
     @Published public var phase: Phase = .warming(modelLabel: "medium")
+    @Published public var recordingMode: RecordingMode = .dictation
     @Published public var elapsedSeconds: Double = 0
     @Published public var currentLevel: Float = 0  // 0…1 RMS, for the level meter
     /// Sliding window of recent RMS samples (newest on the right). Drives the
@@ -40,6 +50,13 @@ public final class AppState: ObservableObject {
     @Published public var lastWallSeconds: Double?
     @Published public var lastRecordingURL: URL?
     @Published public var lastPasted: Bool = false
+    /// SPEC-031 — whether the most-recent kickoff dispatch reached
+    /// Terminal/`claude` successfully. Only meaningful when
+    /// `recordingMode == .agentKickoff` was set during the recording.
+    @Published public var lastKickoffSucceeded: Bool = false
+    /// SPEC-031 — short error label for failed kickoffs, shown in the
+    /// "ready" overlay state.
+    @Published public var lastKickoffError: String?
     @Published public var accessibilityTrusted: Bool = false
     @Published public var modelLabel: String = "medium"
     /// Lifecycle of an update check — drives both the menu-bar 🦆⬆
