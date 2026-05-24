@@ -28,7 +28,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
-> 📢 **What's new — [v2.0.0-alpha.13](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.13):** In-app updates are live. Settings → General now has an Updates section with auto-check, a "Check now" button, last-checked timestamp, and an opt-in for pre-release builds. Hope you like it! ([past releases](https://github.com/larryxiao/openquack/releases))
+> 📢 **What's new — [v2.0.0-alpha.14](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.14):** Voice-launched agent (SPEC-031). New default hotkey ⌃⇧Space records a task, then a fresh `claude --bg` session runs it in the background — no terminal popup, no focus stolen. macOS notification fires when done; click to open a response window with Copy / Continue in Terminal (claude attach) / All kickoffs / Stop. Dictation hotkey default moved to ⌃Space. Settings → Shortcut → Agent kickoff has a Claude Code preflight + install/update guidance. ([past releases](https://github.com/larryxiao/openquack/releases))
 
 ## What it is
 
