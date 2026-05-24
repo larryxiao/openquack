@@ -3,16 +3,22 @@ import KeyboardShortcuts
 
 /// SPEC-003 — Global hotkey, backed by sindresorhus/KeyboardShortcuts.
 public extension KeyboardShortcuts.Name {
-    /// Default: ⌃⇧Space. User-overridable via `KeyboardShortcuts.Recorder` once
-    /// the Settings scene lands.
+    /// SPEC-003 — Dictation hotkey. Default: ⌃Space (simpler combo for
+    /// the more-frequent action). User-overridable via the Settings
+    /// recorder.
     static let toggleRecording = Self(
         "openquack.toggleRecording",
-        default: .init(.space, modifiers: [.control, .shift])
+        default: .init(.space, modifiers: [.control])
     )
 
-    /// SPEC-031 — Agent kickoff hotkey. No default: opt-in, user must bind
-    /// explicitly in Settings → Shortcut.
-    static let agentKickoff = Self("openquack.agentKickoff")
+    /// SPEC-031 — Agent kickoff hotkey. Default: ⌃⇧Space (the "shift
+    /// up" modifier signals louder/escalated action vs plain
+    /// dictation). User-overridable. Distinct binding from dictation
+    /// so the two paths never collide.
+    static let agentKickoff = Self(
+        "openquack.agentKickoff",
+        default: .init(.space, modifiers: [.control, .shift])
+    )
 }
 
 /// Convenience helpers for surfacing the user's current hotkey in copy.

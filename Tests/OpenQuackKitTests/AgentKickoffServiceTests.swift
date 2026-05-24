@@ -336,6 +336,56 @@ final class AgentKickoffServiceTests: XCTestCase {
         XCTAssertNil(KickoffState.parse(data))
     }
 
+    // MARK: - ClaudeVersion parsing + comparison
+
+    func testClaudeVersionParseCanonical() {
+        let v = ClaudeVersion.parse("2.1.150 (Claude Code)")
+        XCTAssertEqual(v, ClaudeVersion(major: 2, minor: 1, patch: 150))
+        XCTAssertEqual(v?.description, "2.1.150")
+    }
+
+    func testClaudeVersionParseTrimmedAndPrefixed() {
+        XCTAssertEqual(
+            ClaudeVersion.parse("\n  v2.1.150\n"),
+            ClaudeVersion(major: 2, minor: 1, patch: 150)
+        )
+    }
+
+    func testClaudeVersionParseTwoDigitGroups() {
+        XCTAssertEqual(
+            ClaudeVersion.parse("10.20.300 (Claude Code)"),
+            ClaudeVersion(major: 10, minor: 20, patch: 300)
+        )
+    }
+
+    func testClaudeVersionParseRejectsNonNumeric() {
+        XCTAssertNil(ClaudeVersion.parse("not a version"))
+        XCTAssertNil(ClaudeVersion.parse("2.1 (only two parts)"))
+    }
+
+    func testClaudeVersionOrdering() {
+        let a = ClaudeVersion(major: 2, minor: 1, patch: 143)
+        let b = ClaudeVersion(major: 2, minor: 1, patch: 150)
+        let c = ClaudeVersion(major: 2, minor: 2, patch: 0)
+        let d = ClaudeVersion(major: 3, minor: 0, patch: 0)
+
+        XCTAssertLessThan(a, b)
+        XCTAssertLessThan(b, c)
+        XCTAssertLessThan(c, d)
+        XCTAssertTrue(b.isAtLeast(a))
+        XCTAssertTrue(b.isAtLeast(b))
+        XCTAssertFalse(a.isAtLeast(b))
+    }
+
+    func testMinimumClaudeVersionIsReasonable() {
+        // The empirical minimum we've observed for --bg working. Just
+        // a smoke check that the constant looks sane and isn't
+        // accidentally newer than what we tested against.
+        let min = AgentKickoffService.minimumClaudeVersion
+        XCTAssertGreaterThanOrEqual(min, ClaudeVersion(major: 2, minor: 0, patch: 0))
+        XCTAssertLessThanOrEqual(min, ClaudeVersion(major: 2, minor: 1, patch: 200))
+    }
+
     // MARK: - KickoffSession paths
 
     func testKickoffSessionStateFilePath() {

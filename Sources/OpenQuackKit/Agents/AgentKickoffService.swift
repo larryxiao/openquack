@@ -34,6 +34,63 @@ public enum AgentKickoffService {
         resolveClaudePath() != nil
     }
 
+    /// Minimum claude version that exposes the `--bg` daemon-managed
+    /// background-session primitive. Older versions either don't have
+    /// the flag or ship a partial implementation. Bumped only when
+    /// empirically required by behaviour change in claude.
+    public static let minimumClaudeVersion = ClaudeVersion(major: 2, minor: 1, patch: 143)
+
+    /// Pre-flight summary of the user's claude install — surfaced in
+    /// Settings → Agent kickoff so the user can fix install / version
+    /// issues before pressing the hotkey.
+    public enum ClaudeCodeStatus: Sendable, Equatable {
+        case notInstalled
+        case unparseableVersion(raw: String)
+        case needsUpdate(installed: ClaudeVersion, required: ClaudeVersion)
+        case ok(version: ClaudeVersion)
+    }
+
+    /// Run `claude --version`, parse, compare against
+    /// `minimumClaudeVersion`. Synchronous + fast (~50ms). Safe to
+    /// call from a `.task` in SwiftUI.
+    public static func claudeCodeStatus() -> ClaudeCodeStatus {
+        guard let url = resolveClaudePath() else { return .notInstalled }
+        guard let raw = runForStdout(url, args: ["--version"]),
+              let parsed = ClaudeVersion.parse(raw)
+        else {
+            // claude exists but its --version output didn't parse —
+            // probably an old or experimental build. Treat as a soft
+            // fail so the user knows the install needs attention.
+            let raw = (try? runForStdoutThrowing(url, args: ["--version"])) ?? ""
+            return .unparseableVersion(raw: raw.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        if parsed.isAtLeast(minimumClaudeVersion) {
+            return .ok(version: parsed)
+        }
+        return .needsUpdate(installed: parsed, required: minimumClaudeVersion)
+    }
+
+    private static func runForStdout(_ url: URL, args: [String]) -> String? {
+        try? runForStdoutThrowing(url, args: args)
+    }
+
+    private static func runForStdoutThrowing(_ url: URL, args: [String]) throws -> String {
+        let task = Process()
+        task.executableURL = url
+        task.arguments = args
+        let stdout = Pipe()
+        task.standardOutput = stdout
+        task.standardError = Pipe()
+        task.standardInput = FileHandle.nullDevice
+        try task.run()
+        task.waitUntilExit()
+        guard task.terminationStatus == 0 else {
+            return ""  // throw via the wrapper if needed; we just want stdout
+        }
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
     /// Dispatch a kickoff via `claude --bg`. Returns the session
     /// handle once the daemon has acknowledged the dispatch (the
     /// spawn process exits at that point; the agent keeps running
@@ -443,6 +500,53 @@ public struct KickoffState: Sendable, Equatable {
             needs: obj["needs"] as? String
         )
     }
+}
+
+/// Semantic version triple for claude binary version parsing.
+/// `claude --version` emits "<major>.<minor>.<patch> (Claude Code)";
+/// we only care about the numeric triple for comparison.
+public struct ClaudeVersion: Sendable, Equatable, Comparable, CustomStringConvertible {
+    public let major: Int
+    public let minor: Int
+    public let patch: Int
+
+    public init(major: Int, minor: Int, patch: Int) {
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+    }
+
+    /// Parse the leading "X.Y.Z" out of any string. Returns nil if
+    /// the three parts aren't all base-10 ints. Tolerates surrounding
+    /// noise ("v2.1.150" / "2.1.150 (Claude Code)" / "2.1.150\n").
+    public static func parse(_ raw: String) -> ClaudeVersion? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pattern = #"(\d+)\.(\d+)\.(\d+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: trimmed,
+                range: NSRange(trimmed.startIndex..., in: trimmed)
+              )
+        else { return nil }
+        func group(_ idx: Int) -> Int? {
+            guard let r = Range(match.range(at: idx), in: trimmed) else { return nil }
+            return Int(trimmed[r])
+        }
+        guard let M = group(1), let m = group(2), let p = group(3) else { return nil }
+        return ClaudeVersion(major: M, minor: m, patch: p)
+    }
+
+    public func isAtLeast(_ other: ClaudeVersion) -> Bool {
+        self >= other
+    }
+
+    public static func < (lhs: ClaudeVersion, rhs: ClaudeVersion) -> Bool {
+        if lhs.major != rhs.major { return lhs.major < rhs.major }
+        if lhs.minor != rhs.minor { return lhs.minor < rhs.minor }
+        return lhs.patch < rhs.patch
+    }
+
+    public var description: String { "\(major).\(minor).\(patch)" }
 }
 
 /// Final result presented in the response window + notification.
