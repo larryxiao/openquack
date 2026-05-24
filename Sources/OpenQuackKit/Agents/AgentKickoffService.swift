@@ -292,75 +292,32 @@ public enum AgentKickoffService {
 
     /// Content of `CLAUDE.md`. Exposed `internal` so tests can lock in
     /// substrings without re-reading the file.
+    ///
+    /// Posture-only on purpose. You already know AppleScript
+    /// dictionaries, `osascript` idioms, `defaults`, the works — we
+    /// don't list them here. What we DO need is to flip your default
+    /// posture in `--bg` mode from "AI assistant chat" to "action
+    /// agent with bash". A short workspace doc trusts the model and
+    /// won't drift.
     static let claudeMDBody = """
-    # OpenQuack agent workspace
+    # OpenQuack voice workspace
 
-    You were started here by a "kickoff" — the user pressed their
-    voice-dispatch hotkey in OpenQuack on macOS, spoke a request, and
-    the request was handed to you. You're running in the background
-    under the claude daemon; the user will read your output in a macOS
-    notification + small floating window when you're done, and can
-    drop into the live session via `claude attach <short-id>` from
-    Terminal to continue.
+    You were started by a voice-dispatched task from OpenQuack on
+    macOS. Voice = action context, not chat.
 
-    ## Your environment
+    - Bash is your universal tool. `--permission-mode
+      bypassPermissions` means you don't ask first.
+    - For macOS-native asks (timers, app control, browser state,
+      notifications, clipboard), reach for `osascript` / `open` /
+      `defaults` etc. before declining. You know the AppleScript
+      dictionaries; use them.
+    - Refusing with "I don't have access" when bash would work is a
+      bug.
+    - Your final message becomes the user's notification body — make
+      it useful.
 
-    - **macOS** with full **bash** access (--permission-mode
-      bypassPermissions). You don't need to ask before running
-      commands.
-    - **This dir (~/OpenQuackAgent/)** is gitignored scratch space —
-      write temp files here freely; the user expects no persistence.
-    - **No GUI** for per-action approval — you're unattended. The user
-      consented to bypass-perms when they enabled the kickoff hotkey.
-
-    ## Common macOS idioms (don't refuse capabilities — try these first)
-
-    The user often asks for things that look like *"I don't have
-    access to that"* until you remember bash + AppleScript via
-    osascript covers most of it:
-
-    - **Timers / alarms / reminders**: `osascript -e 'tell application
-      "Reminders" to make new reminder with properties {…}'`, or
-      `osascript -e 'tell application "Calendar" to …'`, or `at` /
-      `launchctl` for scheduled shell jobs.
-    - **Notifications**: `osascript -e 'display notification "msg"
-      with title "title"'`.
-    - **Open or control apps**: `open -a "AppName"`, or AppleScript
-      `tell application "X" to …`.
-    - **Browser state (Chrome / Safari / Arc)**: AppleScript via
-      osascript:
-      `osascript -e 'tell application "Google Chrome" to get URL of active tab of window 1'`,
-      `… to count tabs of window 1`, etc.
-    - **macOS settings / sounds / display / clipboard**: `osascript`,
-      `defaults read`/`write`, `pbpaste`/`pbcopy`, `nvram`.
-    - **File system / processes / network**: standard shell tools.
-    - **Web** (read pages, search): you have WebFetch + WebSearch
-      tools when needed.
-
-    Don't reflexively refuse with *"I don't have access to your
-    clock/browser/clipboard/etc."* — you have bash, and bash on
-    macOS has osascript, which can drive most native apps. Try the
-    obvious shell approach. If something *genuinely* can't be done
-    (e.g., it needs a paid API key the user hasn't given you), say
-    so briefly and tell the user what they'd need to do.
-
-    ## How to leave the session in a good state
-
-    - If you complete the task: produce a clear final message — that
-      becomes the notification body.
-    - If you need user input: set yourself to "blocked" naturally
-      (just ask the question and wait) — OpenQuack notifies the user
-      that you need input. They'll attach via `claude attach` and
-      reply live.
-    - If you can't complete the task: explain what blocked you and
-      what would unblock (missing creds, missing tools, ambiguous
-      ask). Don't apologise at length.
-
-    ## Re-entering this session
-
-    The user may attach via `claude attach <short-id>` after seeing
-    your notification. Treat the session as resumable — leave a clean
-    intermediate state if you stop to wait for input.
+    User may `claude attach <short-id>` after the notification to
+    continue.
     """
 
     static func writeCommandScript(shellCommand: String) throws -> URL {

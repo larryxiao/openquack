@@ -186,18 +186,24 @@ final class AgentKickoffServiceTests: XCTestCase {
 
     // MARK: - workspace CLAUDE.md (environment context for the agent)
 
-    func testClaudeMDBodyTeachesMacOSIdioms() {
-        // The whole point of CLAUDE.md is teaching claude that bash +
-        // osascript covers most "I don't have access" cases. Lock in
-        // the substrings that matter.
+    func testClaudeMDBodyFlipsPostureFromChatToAction() {
+        // Minimal CLAUDE.md — posture only. We trust the model knows
+        // AppleScript dictionaries; we don't list them here. Lock in
+        // the load-bearing substrings: the action-context framing,
+        // the bash-is-universal nudge, the named anti-pattern.
         let body = AgentKickoffService.claudeMDBody
         XCTAssertTrue(body.contains("OpenQuack"))
+        XCTAssertTrue(body.contains("Voice = action context"))
         XCTAssertTrue(body.contains("bash"))
         XCTAssertTrue(body.contains("osascript"))
-        XCTAssertTrue(body.contains("AppleScript"))
-        XCTAssertTrue(body.contains("Reminders"))
-        XCTAssertTrue(body.contains("Google Chrome"))
-        XCTAssertTrue(body.contains("Don't reflexively refuse"))
+        XCTAssertTrue(body.contains("bypassPermissions"))
+        XCTAssertTrue(body.contains("\"I don't have access\""))
+        // Should NOT have a long recipe book — keep it short. The
+        // file is doc, not training data.
+        XCTAssertLessThan(
+            body.count, 1000,
+            "CLAUDE.md drifting toward a recipe book; trim it back to posture-only"
+        )
     }
 
     func testEnsureWorkspaceWritesClaudeMD() throws {

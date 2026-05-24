@@ -604,25 +604,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if UserDefaults.standard.bool(forKey: key) { return true }
 
         let alert = NSAlert()
-        alert.messageText = "Send dictation to Claude Code?"
+        alert.messageText = "Enable voice-launched agent?"
         alert.informativeText = """
-        Agent kickoff sends what you say to Claude Code, which routes \
-        through Anthropic's API under your existing credentials. The \
-        agent then runs in the background under permission-bypass — \
-        it will execute commands, edit files, and take system actions \
-        in ~/OpenQuackAgent/ without asking you first. You'll get a \
-        macOS notification when it finishes and can step into the \
-        live session in Terminal to continue.
+        This hotkey sends your dictated request to Claude Code (Anthropic), \
+        then the agent runs UNATTENDED with full permission bypass:
 
-        First-time setup: you'll also be prompted to accept a one-time \
-        disclaimer from claude (Terminal opens automatically). After \
-        that, kickoff works without further prompts. Your normal \
-        dictation hotkey is unaffected and keeps pasting locally.
+        • Runs any shell command on your Mac
+        • Reads, writes, or deletes any file you can — not just the \
+          workspace directory
+        • Controls apps, changes settings, opens browser tabs, makes \
+          network requests
+        • Does all of this WITHOUT asking you first
 
-        Revoke any time by clearing the kickoff hotkey in Settings \
-        → Shortcut.
+        The default workspace is ~/OpenQuackAgent/ but the agent isn't \
+        sandboxed there — its blast radius is everything bash can reach \
+        as your user. Don't enable this if that's a worry.
+
+        When the task finishes, you get a macOS notification. You can \
+        attach to the live session in Terminal to continue, or stop it.
+
+        First time: a one-time disclaimer from claude opens in Terminal — \
+        accept it once, then kickoffs work straight through.
+
+        Your normal dictation hotkey is unaffected. Revoke by clearing \
+        this hotkey in Settings → Shortcut.
         """
-        alert.alertStyle = .informational
+        alert.alertStyle = .warning
         alert.addButton(withTitle: "Enable")
         alert.addButton(withTitle: "Cancel")
 

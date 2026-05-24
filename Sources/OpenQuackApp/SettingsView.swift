@@ -334,7 +334,7 @@ private struct ShortcutPane: View {
 
             Section {
                 KeyboardShortcuts.Recorder("Kickoff:", name: .agentKickoff)
-                Text("Press this hotkey to dictate a request, then release — OpenQuack hands the transcript to a fresh Claude Code session in ~/OpenQuackAgent/ instead of pasting at your cursor. Unbound by default. Routes through Anthropic via Claude Code (first use shows a consent prompt).")
+                Text("Voice → fresh background Claude Code session. Press the hotkey, dictate a task, release; the agent runs unattended with **full permission bypass** (any shell command, any file, any app) and you get a macOS notification when it's done. Unbound by default. Routes through Anthropic; first use shows a consent prompt that spells out what the agent can do.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
