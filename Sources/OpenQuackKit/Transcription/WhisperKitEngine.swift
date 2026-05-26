@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import OpenQuackPlatform
 import WhisperKit
 
 public final class WhisperKitEngine: TranscriptionEngine {
@@ -49,10 +50,23 @@ public final class WhisperKitEngine: TranscriptionEngine {
         // into the new location.
         Self.migrateLegacyDocumentsCache(into: cacheDir)
 
+        // Passing modelFolder + tokenizerFolder when the cache is complete
+        // makes upstream skip its mandatory HuggingFace manifest call,
+        // which fails when the app autostarts before WiFi is up.
+        let hasLocalCache = Self.hasCompleteLocalCache(for: model, downloadBase: cacheDir)
+        let modelFolderArg: String? = hasLocalCache
+            ? Self.localModelFolder(for: model, downloadBase: cacheDir).path
+            : nil
+        let tokenizerFolderArg: URL? = hasLocalCache
+            ? Self.localTokenizerFolder(for: model, downloadBase: cacheDir)
+            : nil
+
         do {
             let config = WhisperKitConfig(
                 model: model,
                 downloadBase: cacheDir,
+                modelFolder: modelFolderArg,
+                tokenizerFolder: tokenizerFolderArg,
                 verbose: false,
                 logLevel: .error,
                 load: true
@@ -61,6 +75,43 @@ public final class WhisperKitEngine: TranscriptionEngine {
         } catch {
             throw EngineError.loadFailed("\(error)")
         }
+    }
+
+    static func localModelFolder(for variant: String, downloadBase: URL? = nil) -> URL {
+        (downloadBase ?? defaultDownloadBase())
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("argmaxinc", isDirectory: true)
+            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
+            .appendingPathComponent("openai_whisper-\(variant)", isDirectory: true)
+    }
+
+    static func localTokenizerFolder(for variant: String, downloadBase: URL? = nil) -> URL {
+        (downloadBase ?? defaultDownloadBase())
+            .appendingPathComponent("models", isDirectory: true)
+            .appendingPathComponent("openai", isDirectory: true)
+            .appendingPathComponent("whisper-\(variant)", isDirectory: true)
+    }
+
+    static func hasCompleteLocalCache(for variant: String, downloadBase: URL? = nil) -> Bool {
+        let fm = FileManager.default
+        let modelFolder = localModelFolder(for: variant, downloadBase: downloadBase)
+        let required = ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"]
+        let modelsPresent = required.allSatisfy {
+            fm.fileExists(atPath: modelFolder.appendingPathComponent($0).path)
+        }
+        let tokenizer = localTokenizerFolder(for: variant, downloadBase: downloadBase)
+            .appendingPathComponent("tokenizer.json")
+        return modelsPresent && fm.fileExists(atPath: tokenizer.path)
+    }
+
+    public static func refreshModelInBackground(model: String, downloadBase: URL? = nil) async {
+        await NetworkReachability.waitForSatisfied(timeoutSeconds: 300)
+        let cacheDir = downloadBase ?? defaultDownloadBase()
+        _ = try? await WhisperKit.download(
+            variant: model,
+            downloadBase: cacheDir,
+            progressCallback: { _ in }
+        )
     }
 
     /// `~/Library/Application Support/OpenQuack/WhisperKit/`. App-private; no
@@ -196,11 +247,9 @@ public final class WhisperKitEngine: TranscriptionEngine {
         var freed: Int64 = 0
 
         // CoreML weights — argmaxinc/whisperkit-coreml/openai_whisper-<size>.
-        let weightsRoot = cacheDir
-            .appendingPathComponent("models", isDirectory: true)
-            .appendingPathComponent("argmaxinc", isDirectory: true)
-            .appendingPathComponent("whisperkit-coreml", isDirectory: true)
-        let weightsKeep = "openai_whisper-\(keeping)"
+        let keptWeights = localModelFolder(for: keeping, downloadBase: cacheDir)
+        let weightsRoot = keptWeights.deletingLastPathComponent()
+        let weightsKeep = keptWeights.lastPathComponent
         if let entries = try? fm.contentsOfDirectory(atPath: weightsRoot.path) {
             for entry in entries where entry != weightsKeep && !entry.hasPrefix(".") {
                 let url = weightsRoot.appendingPathComponent(entry)
@@ -210,10 +259,9 @@ public final class WhisperKitEngine: TranscriptionEngine {
         }
 
         // Tokenizer/config — openai/whisper-<size> (a few MB each).
-        let tokenizerRoot = cacheDir
-            .appendingPathComponent("models", isDirectory: true)
-            .appendingPathComponent("openai", isDirectory: true)
-        let tokenizerKeep = "whisper-\(keeping)"
+        let keptTokenizer = localTokenizerFolder(for: keeping, downloadBase: cacheDir)
+        let tokenizerRoot = keptTokenizer.deletingLastPathComponent()
+        let tokenizerKeep = keptTokenizer.lastPathComponent
         if let entries = try? fm.contentsOfDirectory(atPath: tokenizerRoot.path) {
             for entry in entries where entry != tokenizerKeep && !entry.hasPrefix(".") {
                 let url = tokenizerRoot.appendingPathComponent(entry)

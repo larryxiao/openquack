@@ -959,6 +959,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task.detached(priority: .background) {
                 _ = WhisperKitEngine.cleanupOtherModels(keeping: active)
             }
+            Task.detached(priority: .background) {
+                await WhisperKitEngine.refreshModelInBackground(model: active)
+            }
         } catch {
             await MainActor.run {
                 appState.phase = .error("Failed to load Whisper: \(error)")
