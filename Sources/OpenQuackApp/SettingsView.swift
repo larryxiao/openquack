@@ -51,7 +51,7 @@ private struct GeneralPane: View {
     @AppStorage("playSounds")          private var playSounds: Bool = true
     @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
-    @AppStorage("customWords")         private var customWords: String = ""
+    @AppStorage("customWords")         private var customWords: String = CustomDictionaryDefaults.seedList
     @AppStorage("model")               private var model: String = "medium"
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
 
@@ -162,14 +162,23 @@ private struct GeneralPane: View {
             Section {
                 PlaceholderTextEditor(
                     text: $customWords,
-                    prompt: "e.g.\nOpenQuack\nWhisperKit\nClaude Code",
+                    prompt: CustomDictionaryDefaults.seedList,
                     monospaced: true,
-                    minHeight: 90,
-                    idealHeight: 110
+                    minHeight: 110,
+                    idealHeight: 140
                 )
-                Text("One word or phrase per line. Whisper uses these as a hint when deciding between similar-sounding words — useful for proper nouns, jargon, and project names.")
+                HStack(spacing: 8) {
+                    Text("One word or phrase per line. Whisper uses these as a hint when deciding between similar-sounding words — useful for proper nouns, jargon, and project names.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Button("Restore suggested") {
+                        customWords = CustomDictionaryDefaults.seedList
+                    }
+                    .buttonStyle(.borderless)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .help("Replaces the editor contents with OpenQuack's default seed list (\(CustomDictionaryDefaults.seedEntries.count) entries focused on macOS / AI-tooling proper nouns Whisper routinely mishears).")
+                }
             } header: {
                 SectionHeader("Custom dictionary")
             }
