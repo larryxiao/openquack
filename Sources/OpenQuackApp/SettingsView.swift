@@ -325,7 +325,7 @@ private struct ShortcutPane: View {
         Form {
             Section {
                 KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
-                Text("Press once to start dictating, again to stop. ⌃Space is the default and works in most apps.")
+                Text("Press once to start dictating, again to stop. ⌃⇧Space is the default and works in most apps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -334,7 +334,7 @@ private struct ShortcutPane: View {
 
             Section {
                 KeyboardShortcuts.Recorder("Kickoff:", name: .agentKickoff)
-                Text("Voice → fresh background Claude Code session. Press the hotkey, dictate a task, release; the agent runs unattended with **full permission bypass** (any shell command, any file, any app) and you get a macOS notification when it's done. Default ⌃⇧Space; first press shows a consent prompt that spells out what the agent can do — until you accept it, nothing leaves your Mac. Routes through Anthropic.")
+                Text("Voice → fresh background Claude Code session. Press the hotkey, dictate a task, release; the agent runs unattended with **full permission bypass** (any shell command, any file, any app) and you get a macOS notification when it's done. Default ⌃Space; first press shows a consent prompt that spells out what the agent can do — until you accept it, nothing leaves your Mac. Routes through Anthropic.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 ClaudeCodeStatusRow()
