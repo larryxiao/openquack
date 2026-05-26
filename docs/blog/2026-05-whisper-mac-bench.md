@@ -67,13 +67,13 @@ Then add 10 dB SNR of pink noise:
 | `base` | 5.9% | 24.0% |
 | `tiny` | 7.2% | 27.3% |
 
-`tiny` and `base` go from "marginal" to "unusable" the moment you introduce real-world noise. People dictate near A/C, in cafés, with HVAC running. Quoting only the clean-speech number for these sizes would have been misleading. On 8 GB Macs, `small` is the conservative starting point — it's the smallest size that stays under 12% noisy WER. The gap versus `medium` (6.3% vs 11.4% on noise) is significant. Whether `medium` is practical on 8 GB hardware is still an open question; the bench was M4 / 16 GB only. See the contribute section if you have 8 GB data.
+`tiny` and `base` go from "marginal" to "unusable" the moment you introduce real-world noise. People dictate near A/C, in cafés, with HVAC running. Quoting only the clean-speech number for these sizes would have been misleading. On 8 GB Macs, `small` is the conservative starting point — it's the smallest size that stays under 12% noisy WER. The gap versus `medium` (6.3% vs 11.4% on noise) is significant, and memory isn't the bottleneck: `medium` peaks at 197 MB RSS, roughly 2% of 8 GB. The open question is RTF — whether WhisperKit `medium` runs at comparable speed on M1/M2 8 GB chips as it does on M4. That data doesn't exist yet. See the contribute section if you're on older hardware.
 
 ## What this changed
 
 Three concrete decisions came out of the bench:
 
-- **Model selection.** `medium` is the default — it's the clearest winner in the bench. On 8 GB Macs the choice is open: `small` clears the noisy-WER bar but the gap versus `medium` (11.4% vs 6.3% on noise) is real, and whether `medium` is practical on 8 GB is unanswered. 8 GB bench results would close it.
+- **Model selection.** `medium` is the default — it's the clearest winner in the bench. At 197 MB peak RSS it fits easily on any current Mac; the open question for 8 GB hardware is RTF on older chips, not memory headroom. M1/M2 bench results would settle this.
 - **Explicit language picker in Settings.** Auto-detect is too fragile on short non-English audio for an app that has to feel reliable on the first try.
 - **Streaming for long audio.** Once `medium` was the default, the end-of-dictation wait got bad on long clips. A 5-minute clip finishes offline in 34.4 seconds wall-clock; without streaming the user experience was 30 seconds of staring at a "transcribing..." indicator.
 
@@ -101,4 +101,4 @@ The local-LLM polish step — taking a raw transcript and tightening it into som
 
 If you have a non-M4 Mac (M1, M2, M3, Intel, 8 GB, 24 GB+), the bench script smoke-passes in CI and the corpus is checked in. PRs to `bench/out/` are the most useful contribution this project can take. The matrix is one host wide right now; it should be many.
 
-The most wanted data point right now: `small` vs `medium` on 8 GB RAM. The bench makes `medium` the clear winner on 16 GB but the question is whether it holds at 8 GB — if you've run it, a PR with your numbers settles this.
+The most wanted data point right now: `medium` RTF on M1/M2 8 GB. Memory isn't the constraint (197 MB fits easily); the question is whether older Apple Silicon runs `medium` at comparable speed. If you have an M1 or M2 Mac, that's the run we're missing.
