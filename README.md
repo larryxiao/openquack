@@ -28,7 +28,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
-> 📢 **What's new — [v2.0.0-alpha.15](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.15):** Polish on the voice-launched agent. Dictation hotkey default back to ⌃⇧Space (kickoff moves to ⌃Space), blank-audio kickoffs no longer burn a claude session, a curated Whisper-bias dictionary ships in Settings (Claude, Anthropic, macOS, …) — restore with one click. SPEC-031a (voice reply to live sessions) merged as a design doc; implementation lands across the next few releases. ([past releases](https://github.com/larryxiao/openquack/releases))
+> 📢 **What's new — [v2.0.0-alpha.16](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.16):** Reverts the Whisper-bias seed-list default shipped in alpha.15 — it was surfacing before the prompt-token cache was in place. SPEC-032 filed for the clean implementation; custom dictionary still works, just no pre-filled default for now. ([past releases](https://github.com/larryxiao/openquack/releases))
 
 ## What it is
 
