@@ -25,11 +25,12 @@ Conventions:
 | [SPEC-007b](SPEC-007b-rewrite-ux.md) | Intelligent rewrite UX | draft | M2.5 |
 | [SPEC-008](SPEC-008-in-context-rewrite.md) | In-context transcript rewrite | draft | M3 |
 | [SPEC-010](SPEC-010-app-shell.md) | App shell | draft | M2 |
-| [SPEC-011](SPEC-011-update-flow.md) | Update flow | draft | M2 |
+| [SPEC-011](SPEC-011-update-flow.md) | Update flow (Phase A + B.5 implemented) | draft | M2 |
 | [SPEC-012](SPEC-012-streaming-transcription.md) | Streaming transcription (perf) | draft | M3 |
 | [SPEC-013](SPEC-013-usage-stats.md) | Usage stats pane | draft | M3 |
 | [SPEC-014](SPEC-014-local-history.md) | Local audio + transcript history | draft | M3 |
 | [SPEC-016](SPEC-016-distilled-polish-model.md) | Distilled polish model (1B from Gemma 4) | draft | M2.5 |
+| [SPEC-022](SPEC-022-custom-dict-autolearn.md) | Custom dictionary auto-learn from user corrections | draft | M3 |
 | [SPEC-029](SPEC-029-ane-cache-only-model.md) | ANE-cache-only model footprint (investigation) | draft | M3 |
 | [SPEC-030](SPEC-030-ane-cache-volunteer-bench.md) | ANE cache footprint: volunteer measurement campaign | draft | M3 |
 | [SPEC-031](SPEC-031-agent-kickoff.md) | Agent kickoff (one-shot voice-to-action) | ratified | M2 |

@@ -546,7 +546,7 @@ private struct AboutPane: View {
             HStack(spacing: 4) {
                 Text("·").foregroundStyle(.tertiary)
                 Button {
-                    UpgradeAction.run(release: release, installMethod: appState.installMethod)
+                    UpgradeAction.run(release: release, installMethod: appState.installMethod, appState: appState)
                 } label: {
                     Label("v\(release.version) ready", systemImage: "arrow.down.circle.fill")
                         .labelStyle(.titleAndIcon)
@@ -554,6 +554,14 @@ private struct AboutPane: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.moss)
+            }
+        case .upgrading:
+            HStack(spacing: 4) {
+                Text("·").foregroundStyle(.tertiary)
+                ProgressView().controlSize(.mini)
+                Text("Installing…")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         case .failed:
             EmptyView()

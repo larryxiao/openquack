@@ -86,6 +86,8 @@ public enum UpdateCheckStatus: Equatable {
     case upToDate(version: String, at: Date)
     /// Newer release found.
     case available(UpdateChecker.ReleaseInfo)
+    /// Silent brew upgrade script is running; this instance is about to quit.
+    case upgrading
     /// Last check failed (network, parse, etc).
     case failed(String)
 

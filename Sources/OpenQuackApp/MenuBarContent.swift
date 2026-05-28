@@ -27,7 +27,8 @@ struct MenuBarContent: View {
 
     @ViewBuilder
     private var updateBanner: some View {
-        if let update = state.availableUpdate {
+        switch state.updateStatus {
+        case .available(let update):
             HStack(alignment: .top, spacing: Theme.s8) {
                 bounceableArrow(versionKey: update.version)
                 VStack(alignment: .leading, spacing: 2) {
@@ -40,6 +41,22 @@ struct MenuBarContent: View {
             }
             .oqBanner(tint: Theme.moss)
             .transition(.scale(scale: 0.96).combined(with: .opacity))
+        case .upgrading:
+            HStack(alignment: .top, spacing: Theme.s8) {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 20, height: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Installing update…").font(.caption.weight(.semibold))
+                    Text("Duck will be back in ~30 seconds.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: Theme.s4)
+            }
+            .oqBanner(tint: Theme.moss)
+            .transition(.scale(scale: 0.96).combined(with: .opacity))
+        default:
+            EmptyView()
         }
     }
 
@@ -58,7 +75,7 @@ struct MenuBarContent: View {
 
     private var updateSubtitle: String {
         switch state.installMethod {
-        case .homebrew: return "Tap Upgrade — runs `brew upgrade --cask openquack` in Terminal."
+        case .homebrew: return "Tap Upgrade — installs silently, then restarts OpenQuack."
         case .manual:   return "Tap Download for the new DMG."
         }
     }
@@ -69,7 +86,7 @@ struct MenuBarContent: View {
 
     private func handleUpdateAction() {
         guard let update = state.availableUpdate else { return }
-        UpgradeAction.run(release: update, installMethod: state.installMethod)
+        UpgradeAction.run(release: update, installMethod: state.installMethod, appState: state)
     }
 
     @ViewBuilder
