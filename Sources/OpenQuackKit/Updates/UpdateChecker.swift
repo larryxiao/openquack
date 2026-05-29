@@ -100,14 +100,68 @@ public actor UpdateChecker {
         return Self.isNewer(remote: info.version, than: currentVersion) ? info : nil
     }
 
-    /// Naive version comparison. Good enough for the alpha cadence
-    /// ("2.0.0-alpha.1" → "2.0.0-alpha.2"). For the future "alpha → release"
-    /// boundary we'll need a proper semver parser; flagged in SPEC-?? once the
-    /// first non-alpha ships.
+    /// SemVer-2.0.0 precedence comparison. Returns true iff `remote` is a
+    /// strictly newer release than `current`.
+    ///
+    /// The old `.numeric` string compare got three cases wrong, all of which
+    /// could pin the update badge "on" forever:
+    ///   • prerelease ordering — "2.0.0-alpha.2" sorted *after* "...alpha.16"
+    ///     lexically, so an older advertised build looked newer.
+    ///   • release vs prerelease — "2.0.0" must outrank "2.0.0-alpha.16"; the
+    ///     prefix compare reported the opposite.
+    ///   • differently-formatted-but-equal versions never compared equal.
     static func isNewer(remote: String, than current: String) -> Bool {
         let r = remote.hasPrefix("v") ? String(remote.dropFirst()) : remote
         let c = current.hasPrefix("v") ? String(current.dropFirst()) : current
-        return r.compare(c, options: .numeric) == .orderedDescending
+        return compareSemver(r, c) == .orderedDescending
+    }
+
+    /// SemVer-2.0.0 precedence (build metadata after `+` is ignored — we emit
+    /// none). Tolerant of short cores like "2.0" (missing parts read as 0).
+    static func compareSemver(_ a: String, _ b: String) -> ComparisonResult {
+        let (coreA, preA) = splitPrerelease(a)
+        let (coreB, preB) = splitPrerelease(b)
+
+        // 1. Core: major.minor.patch, numeric, missing components are 0.
+        let na = coreA.split(separator: ".").map { Int($0) ?? 0 }
+        let nb = coreB.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(na.count, nb.count) {
+            let x = i < na.count ? na[i] : 0
+            let y = i < nb.count ? nb[i] : 0
+            if x != y { return x < y ? .orderedAscending : .orderedDescending }
+        }
+
+        // 2. A version with NO prerelease tag outranks one that has it.
+        switch (preA.isEmpty, preB.isEmpty) {
+        case (true, true):  return .orderedSame
+        case (true, false): return .orderedDescending
+        case (false, true): return .orderedAscending
+        case (false, false): break
+        }
+
+        // 3. Compare prerelease identifiers left to right.
+        let idA = preA.split(separator: ".").map(String.init)
+        let idB = preB.split(separator: ".").map(String.init)
+        for i in 0..<max(idA.count, idB.count) {
+            // Fewer identifiers, all else equal, ranks lower.
+            guard i < idA.count else { return .orderedAscending }
+            guard i < idB.count else { return .orderedDescending }
+            let x = idA[i], y = idB[i]
+            if x == y { continue }
+            switch (Int(x), Int(y)) {
+            case let (xi?, yi?): return xi < yi ? .orderedAscending : .orderedDescending
+            case (_?, nil):      return .orderedAscending   // numeric < alphanumeric
+            case (nil, _?):      return .orderedDescending
+            case (nil, nil):     return x < y ? .orderedAscending : .orderedDescending
+            }
+        }
+        return .orderedSame
+    }
+
+    private static func splitPrerelease(_ v: String) -> (core: String, pre: String) {
+        let noBuild = v.split(separator: "+", maxSplits: 1).first.map(String.init) ?? v
+        guard let dash = noBuild.firstIndex(of: "-") else { return (noBuild, "") }
+        return (String(noBuild[..<dash]), String(noBuild[noBuild.index(after: dash)...]))
     }
 
     private static func parseDate(_ s: String) -> Date? {
