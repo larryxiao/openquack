@@ -324,7 +324,7 @@ private struct ShortcutPane: View {
     var body: some View {
         Form {
             Section {
-                KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
+                FnAwareShortcutRecorder()
                 Text("Press once to start dictating, again to stop. ⌃⇧Space is the default and works in most apps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

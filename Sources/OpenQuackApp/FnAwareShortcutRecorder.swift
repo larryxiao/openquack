@@ -268,9 +268,12 @@ private struct MonitorInstallerView: NSViewRepresentable {
             let kc = event.keyCode
             captureState.wrappedValue = .idle
 
-            if !FnShortcut.fRowKeyCodes.contains(kc) {
-                commit(FnShortcut(keyCode: kc))
+            if FnShortcut.fRowKeyCodes.contains(kc) {
+                // F-row keys steal hardware controls when combined with fn;
+                // pass through so the Carbon recorder can capture them alone.
+                return event
             }
+            commit(FnShortcut(keyCode: kc))
             return nil
         }
 

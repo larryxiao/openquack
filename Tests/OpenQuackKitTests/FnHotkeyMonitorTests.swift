@@ -135,4 +135,27 @@ final class FnHotkeyMonitorTests: XCTestCase {
         monitor.dispatchFlagsChanged(nowDown: true)
         XCTAssertEqual(downCount, 1)  // no new events after clear
     }
+
+    // MARK: - fRowKeyCodes (pass-through guard for SPEC-003a)
+    //
+    // FnAwareShortcutRecorder.handleKeyDown passes F-row keys back to the
+    // Carbon recorder instead of committing them as fn+key shortcuts.
+    // These tests guard against accidentally removing F-keys from the set
+    // (which would silently commit them as fn+F-row — stealing hardware controls).
+
+    func testFRowKeyCodes_containsF1ThroughF12() {
+        // kVK_F1…kVK_F12 in Carbon order
+        let f1ToF12: [UInt16] = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111]
+        for kc in f1ToF12 {
+            XCTAssertTrue(FnShortcut.fRowKeyCodes.contains(kc), "F-key keyCode \(kc) must be in fRowKeyCodes")
+        }
+    }
+
+    func testFRowKeyCodes_doesNotContainPrintableKeys() {
+        // Printable keys must be committable as fn+key shortcuts
+        let printable: [UInt16] = [0 /*A*/, 1 /*S*/, 2 /*D*/, 11 /*B*/, 31 /*O*/]
+        for kc in printable {
+            XCTAssertFalse(FnShortcut.fRowKeyCodes.contains(kc), "Printable key \(kc) must not be in fRowKeyCodes")
+        }
+    }
 }

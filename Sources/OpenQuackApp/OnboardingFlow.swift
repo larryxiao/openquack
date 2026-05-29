@@ -482,7 +482,7 @@ private struct HotkeyStep: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 400)
             Spacer().frame(height: Theme.s8)
-            KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
+            FnAwareShortcutRecorder()
             Spacer()
         }
     }
