@@ -1,8 +1,8 @@
-# SPEC-031 — Privacy-respecting visitor analytics for Pages landing
+# SPEC-033 — Privacy-respecting visitor analytics for Pages landing
 
 **Status:** draft (Adoption focus)
 **Tracks:** Adoption focus band (`docs/ROADMAP.md`)
-**Related:** [[SPEC-027]] (landing-page polish), [[SPEC-032]] (install count from appcast)
+**Related:** [[SPEC-027]] (landing-page polish), [[SPEC-034]] (install count from appcast)
 
 ---
 
@@ -134,8 +134,8 @@ Reject any implementation that:
 
 | PR | Title | SPEC cite | Effort |
 |---|---|---|---|
-| this | `docs(SPEC-031): privacy-respecting Pages analytics` | SPEC-031 | XS |
-| PR-A | `feat(docs): GoatCounter snippet via _config.yml flag` | SPEC-031 | XS — adds `_config.yml` + `_includes/analytics.html` + FAQ line in both READMEs |
+| this | `docs(SPEC-033): privacy-respecting Pages analytics` | SPEC-033 | XS |
+| PR-A | `feat(docs): GoatCounter snippet via _config.yml flag` | SPEC-033 | XS — adds `_config.yml` + `_includes/analytics.html` + FAQ line in both READMEs |
 
 PR-A is gated only on Larry creating the GoatCounter site (1-min signup).
 The PR can be opened with the snippet wired but `analytics_enabled: false`
