@@ -1,4 +1,5 @@
 import Foundation
+import OpenQuackPlatform
 import WhisperKit
 
 /// SPEC-012: streaming transcription that chunks audio at silence boundaries
@@ -58,6 +59,11 @@ public actor StreamingTranscriber {
     private var bufferStartSample: Int = 0
     private var beginTime: Date?
     private var language: String?
+    /// On the auto path (`language == nil`), the language detected on the first
+    /// chunk, reused for every subsequent chunk so the whole utterance decodes
+    /// in one consistent language instead of WhisperKit re-detecting (and
+    /// possibly flipping) per chunk (SPEC-021).
+    private var resolvedLanguage: String?
     private var promptTokens: [Int]?
     private var ended: Bool = false
     private var cancelled: Bool = false
@@ -104,6 +110,7 @@ public actor StreamingTranscriber {
         cancelled = false
         beginTime = Date()
         self.language = language
+        self.resolvedLanguage = nil
         self.promptTokens = encodePrompt(customWords: customWords)
     }
 
@@ -156,6 +163,7 @@ public actor StreamingTranscriber {
         buffer.removeAll(keepingCapacity: false)
         chunkOutcomes.removeAll()
         beginTime = nil
+        resolvedLanguage = nil
     }
 
     // MARK: - cut-point logic
@@ -228,16 +236,45 @@ public actor StreamingTranscriber {
     private func transcribeOne(samples: [Float]) async -> ChunkOutcome {
         var options = DecodingOptions()
         options.task = .transcribe
-        options.language = language
         options.verbose = false
         options.withoutTimestamps = true
         if let p = promptTokens, !p.isEmpty {
             options.promptTokens = p
         }
+
+        // Detect-then-lock on the auto path (SPEC-021), via the shared policy.
+        // WhisperKit only detects when `language == nil && detectLanguage`
+        // (the latter defaults false), so without this every chunk silently
+        // prefills English and translates non-English audio. The first auto
+        // chunk detects (reusing its own encoder pass — no extra cost); the
+        // result is locked into `resolvedLanguage` below so later chunks reuse
+        // it and the utterance can't flip language mid-stream. A pinned language
+        // skips detection entirely.
+        //
+        // Limitation: WhisperKit reports `Constants.defaultLanguageCode` ("en")
+        // rather than nil when detection is weak, so we only lock from a chunk
+        // that produced real text (see the `!text.isEmpty` guard below) — a
+        // leading-silence or empty chunk leaves `resolvedLanguage` nil so the
+        // next, content-bearing chunk re-detects instead of pinning "en". The
+        // first emitted chunk is a full ~20s window (`targetChunkSeconds`) where
+        // detection is reliable; pinning a language in Settings removes the risk
+        // entirely. The auto streaming path is not yet benched (no stream-bench
+        // auto option) — tracked in docs/research/accuracy-en-zh-mixed-plan.md.
+        let decision = LanguageDecodePolicy.decide(pinned: language, locked: resolvedLanguage)
+        options.language = decision.language
+        options.detectLanguage = decision.detectLanguage
+
         do {
             let results = try await pipe.transcribe(audioArray: samples, decodeOptions: options)
             let text = results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            return ChunkOutcome(text: text, detectedLanguage: results.first?.language, succeeded: true)
+            let detected = results.first?.language
+            // Lock the auto-detected language for the rest of the session, but
+            // only from a chunk that actually transcribed something — an empty
+            // (silence) chunk yields the "en" fallback and must not pin English.
+            if language == nil, resolvedLanguage == nil, !text.isEmpty, let detected {
+                resolvedLanguage = detected
+            }
+            return ChunkOutcome(text: text, detectedLanguage: detected, succeeded: true)
         } catch {
             return ChunkOutcome(text: "", detectedLanguage: nil, succeeded: false)
         }
