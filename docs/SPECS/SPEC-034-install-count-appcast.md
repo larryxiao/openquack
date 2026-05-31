@@ -1,9 +1,9 @@
-# SPEC-032 — Active-install count via Sparkle appcast hits
+# SPEC-034 — Active-install count via Sparkle appcast hits
 
 **Status:** draft (Adoption focus)
 **Tracks:** Adoption focus band (`docs/ROADMAP.md`)
 **Depends on:** [[SPEC-026]] (Sparkle auto-update) — implementation
-**Related:** [[SPEC-031]] (Pages visitor analytics)
+**Related:** [[SPEC-033]] (Pages visitor analytics)
 
 ---
 
@@ -117,7 +117,7 @@ beyond what SPEC-026 already defines.
 
 ### Privacy contract considerations
 
-Same framing as [[SPEC-031]]. The macOS app's no-telemetry promise is
+Same framing as [[SPEC-033]]. The macOS app's no-telemetry promise is
 about the binary not sending user data anywhere. The appcast request is a
 **functional update check**, not telemetry. The Worker aggregates request
 counts in a way that's structurally incapable of identifying a user. The
@@ -149,10 +149,10 @@ SPEC-026's Settings → Updates pane).
 
 | PR | Title | SPEC cite | Effort |
 |---|---|---|---|
-| this | `docs(SPEC-032): install count via appcast hits` | SPEC-032 | XS |
-| PR-A | `feat(infra): Cloudflare Worker serving appcast.xml with daily counter` | SPEC-032 | S — Wrangler config + Worker script + KV namespace + docs |
-| PR-B | `feat(infra): version + OS breakdown in appcast counter` | SPEC-032 | S — optional, only if PR-A's number proves useful |
-| PR-C | `docs(VISION): document the update-check ping in the privacy contract` | SPEC-032 | XS — explicit user-facing disclosure |
+| this | `docs(SPEC-034): install count via appcast hits` | SPEC-034 | XS |
+| PR-A | `feat(infra): Cloudflare Worker serving appcast.xml with daily counter` | SPEC-034 | S — Wrangler config + Worker script + KV namespace + docs |
+| PR-B | `feat(infra): version + OS breakdown in appcast counter` | SPEC-034 | S — optional, only if PR-A's number proves useful |
+| PR-C | `docs(VISION): document the update-check ping in the privacy contract` | SPEC-034 | XS — explicit user-facing disclosure |
 
 PR-A is gated on:
 
