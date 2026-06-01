@@ -300,9 +300,24 @@ public final class WhisperKitEngine: TranscriptionEngine {
     ) async throws -> EngineTranscription {
         var options = DecodingOptions()
         options.task = .transcribe
-        options.language = language
         options.verbose = false
         options.withoutTimestamps = true
+
+        // Drive WhisperKit's language handling via the shared policy (SPEC-021).
+        // The offline path is stateless, so `locked` is nil: a pinned language
+        // is forced; otherwise in-decoder detection is enabled. Detection is
+        // gated on `options.detectLanguage`, which defaults to `false` (derives
+        // from `!usePrefillPrompt`, prefill on by default — see
+        // LanguageDecodePolicy and TranscribeTask.swift:312); with it off and
+        // `language == nil` the decoder silently prefilled the English token and
+        // *translated* non-English speech (measured 253% WER / 156% CER on
+        // bench/corpus/multilingual, every clip mislabelled `en`). The detect
+        // reuses the already-computed encoder pass (no extra encode); the pinned
+        // path sets the same `false` it already defaulted to → byte-for-byte
+        // unchanged.
+        let decision = LanguageDecodePolicy.decide(pinned: language)
+        options.language = decision.language
+        options.detectLanguage = decision.detectLanguage
 
         if let words = customWords?.trimmingCharacters(in: .whitespacesAndNewlines), !words.isEmpty {
             // Newline-separated → comma-joined per Whisper convention.
