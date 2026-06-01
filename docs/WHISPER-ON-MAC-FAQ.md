@@ -6,11 +6,9 @@ If you spot something wrong, [open an issue](https://github.com/larryxiao/openqu
 
 ## Why does Whisper output English when I speak Spanish (or another non-English language)?
 
-Auto-detect on short non-English clips is a known failure mode. In our bench, every WhisperKit configuration produced **>100% WER on a 2-second Spanish clip** — the model hallucinates fluent English sentences for non-English audio. Lightning-Whisper-MLX on the same Whisper weights got 16.7% WER on the same audio. Same model weights, very different multilingual robustness; the difference is decoder defaults.
+Because WhisperKit's `DecodingOptions.detectLanguage` defaults to `false`. It's derived from `!usePrefillPrompt`, and prefill is on by default, so unless you set it yourself the decoder never runs language detection — it prefills the English token and decodes, which on non-English audio means *translating*. The symptom is dramatic: a 2-second Spanish clip comes back as a fluent English sentence, >100% WER. Lightning-Whisper-MLX runs a detect pass by default on the same weights and gets 16.7% WER, which is what gives away that this is a decoder-config difference, not a model limit.
 
-**Practical fix:** set the language explicitly rather than relying on auto-detect for short utterances. Whisper's `language=` parameter (or in OpenQuack's case, Settings → Language) forces the language token and skips auto-detection. Auto-detect is fine for longer clips (~10 seconds+) where the language signal is strong; on short utterances it's unreliable enough that explicit language is the right default.
-
-The deeper question — why WhisperKit's auto-detect implementation differs from Lightning's on the same weights — is open. Suspected: differences in suppress-tokens, no_speech_threshold, or language-token forcing during the first decode step. Reproducer: `bench/corpus/multilingual/` if you want to validate against your build.
+If you're integrating WhisperKit, the fix is one line: when no language is pinned, set `options.detectLanguage = true`. The in-decoder detect reuses the encoder output it already computed, so it's nearly free. That took WhisperKit `medium` from 253% to 16.7% WER on our multilingual bench. OpenQuack does this automatically as of v2.0.0-alpha.17; pinning a language in Settings still works and skips detection entirely. Reproduce with `swift run openquack-bench --models medium --corpus bench/corpus/multilingual` (see SPEC-021, [#63](https://github.com/larryxiao/openquack/pull/63)).
 
 ## What Whisper model should I pick for my Mac?
 
