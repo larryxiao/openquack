@@ -16,7 +16,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 <p align="center">
   <strong>English</strong> ·
-  <a href="docs/i18n/README.zh-CN.md">简体中文</a> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
   <a href="docs/i18n/README.ja.md">日本語</a> ·
   <a href="docs/i18n/README.ko.md">한국어</a> ·
   <a href="docs/i18n/README.fr.md">Français</a> ·
