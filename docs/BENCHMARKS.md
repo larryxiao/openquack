@@ -10,7 +10,7 @@ Living document. We add a row to the host matrix every time someone runs the ben
 
 For 8 GB Macs, `whisperkit small` is the practical choice (165 MB RSS, 4.1 % LibriSpeech WER, but degrades to 11 % on noise).
 
-> **Multilingual usage *requires* a language hint.** With auto-detect, every WhisperKit configuration produces >100 % WER on short non-English clips (catastrophic hallucination). Lightning is more robust but still degraded. The app must surface a language preference in Settings before non-English users can rely on it.
+> **⚠️ Update (v2.0.0-alpha.17): the multilingual auto-detect numbers below are pre-fix.** The catastrophic >100 % WER was a configuration bug, not a model limitation — WhisperKit's `DecodingOptions.detectLanguage` defaults to `false` (it derives from `!usePrefillPrompt`, and prefill is on by default), so on the auto path the decoder never attempted detection and silently translated non-English speech to English. Enabling detection on the auto path (SPEC-021, [#63](https://github.com/larryxiao/openquack/pull/63)) drops WhisperKit `medium` multilingual auto-detect from **253.2 % → 16.7 % WER / 156.0 % → 3.7 % CER** — matching Lightning. English is unchanged (LibriSpeech 2.6 %). The full matrix below has **not** been re-benched (only `medium` was re-measured post-fix); treat the multilingual rows as the pre-fix baseline. See the [Multilingual](#multilingual-auto-detect-12-clips-zhjakoesfrde--2) section for the after table.
 
 ## Hosts
 
@@ -34,7 +34,7 @@ For 8 GB Macs, `whisperkit small` is the practical choice (165 MB RSS, 4.1 % Lib
   - **RTF** — wall_seconds ÷ audio_seconds.
   - **Cold start** — wall-clock from engine init to first transcribe ready (includes cache-miss download).
   - **Peak RSS** — sampled at 100 ms via `mach_task_basic_info`.
-- **Auto-detect**: language was *not* hinted at the engine; auto-detect was used. This is intentional — it's the worst-case scenario the app must handle.
+- **Auto-detect**: language was *not* hinted at the engine; auto-detect was used. This is the app's default path. (In the original runs this surfaced a config bug that made WhisperKit translate non-English to English; SPEC-021/alpha.17 fixes it — see the Multilingual section.)
 
 ## Per-bucket results — `M4-16GB` (2026-04-26)
 
@@ -89,6 +89,8 @@ For 8 GB Macs, `whisperkit small` is the practical choice (165 MB RSS, 4.1 % Lib
 
 ### Multilingual (auto-detect, 12 clips: zh/ja/ko/es/fr/de × 2)
 
+**Pre-fix (alpha.16 and earlier):**
+
 | Engine | Model | WER | CER |
 |---|---|---:|---:|
 | lightning | `medium` | **16.7 %** | 3.7 % |
@@ -102,7 +104,13 @@ For 8 GB Macs, `whisperkit small` is the practical choice (165 MB RSS, 4.1 % Lib
 | whisperkit | `distil-large-v3` | 231.9 % | 122.0 % |
 | lightning | `distil-large-v3` | 352.6 % | 130.2 % |
 
-**Read:** Without a language hint, every WhisperKit configuration hallucinates badly on short non-English clips (it produces vastly more text than the reference, which is what >100 % WER means). Lightning's `medium` is far more robust. **Action:** the app must expose a language preference (Settings → General). Auto-detect on short utterances is unreliable and we should not pretend otherwise.
+**Post-fix (alpha.17, SPEC-021 — `medium` re-benched):**
+
+| Engine | Model | WER | CER | Δ vs pre-fix |
+|---|---|---:|---:|---|
+| whisperkit | `medium` | **16.7 %** | **3.7 %** | −236 pp WER / −152 pp CER |
+
+**Read:** The pre-fix WhisperKit numbers were not a model limitation — auto-detect was *disabled* in our `DecodingOptions` (see the TL;DR callout). With detection enabled (SPEC-021, [#63](https://github.com/larryxiao/openquack/pull/63)), WhisperKit `medium` now matches Lightning `medium` exactly (16.7 % WER / 3.7 % CER): every clip detects its true language (de/es/fr/ja/ko/zh) instead of being mislabelled `en` and translated. zh_001 went 350 % → 0.0 % WER. A long-form Mandarin clip (30.8 s) detects `zh` at 12.9 % CER (most of that is number normalisation, `三点` → `3点`, not recognition error). The other WhisperKit sizes have not been re-benched but are expected to improve similarly; PRs welcome. **Auto-detect is now a sound default**; an explicit Settings → Language picker remains available and is zero-overhead when set.
 
 ### Cold start + memory
 
@@ -129,12 +137,12 @@ Cold-start values include first-run model download. Warm-cache loads are 1–10 
 
 **Engine default:** WhisperKit. Native Swift, zero Python sidecar, faster on Apple Silicon. Lightning stays as the bench baseline.
 
-**Multilingual users:** must set Settings → Language explicitly. We'll surface this prominently in onboarding.
+**Multilingual users:** auto-detect now works (alpha.17, SPEC-021). Setting Settings → Language explicitly is still supported and is zero-overhead — useful if you dictate in one fixed language and want to skip the detection pass entirely.
 
 ## Open questions / next runs
 
 1. **`large-v3-turbo`** — neither engine accepts the obvious model name. Discover the right one via `WhisperKit.fetchAvailableModels()` and rerun. Turbo's promise is "approaches large-v3 quality at small-ish cost"; if real, it could displace `medium` as the default.
-2. **Language-hinted multilingual run.** Re-bench multilingual with `--language zh,ja,ko,es,fr,de` to get honest non-English numbers. Should drop the multilingual WER from 250 % to single digits.
+2. **Re-bench the full multilingual matrix post-fix.** SPEC-021 re-measured only WhisperKit `medium` (253 % → 16.7 %). The other sizes (`tiny`/`base`/`small`/`distil`) still show pre-fix numbers above and should be re-run with detection enabled.
 3. **Real-world noise types.** Synthetic white/pink is a baseline; the M3 corpus should add curated environmental clips (cafe babble, traffic, keyboard) under permissive licensing.
 4. **Cross-host coverage.** 8 GB and 24+ GB tiers are still empty. M1, M2, M3 results all welcome — see `bench/CONTRIBUTING.md`.
 5. **Warm-cache cold-start.** This run measures cache-miss cold-start. Add a second run that pre-warms each model and reports the warm cold-start (it's the one users feel after the first launch).
@@ -145,7 +153,7 @@ These feed into M2/M3 specs:
 
 - **Pre-warm the chosen model on app launch.** 27 s cache-miss cold-start is the worst number; after that it's ~5–10 s warm. Hide it behind onboarding's "first dictation test" and the user never sees it.
 - **VAD-trimmed audio** at the recorder boundaries — drop leading/trailing silence before transcribe; smaller window = lower latency.
-- **User language preference** in Settings → General — required to fix multilingual, also speeds up English transcription by skipping detection.
+- **User language preference** in Settings → General — shipped; now optional (auto-detect works as of alpha.17) but still speeds up transcription by skipping the detection pass when you dictate in one fixed language.
 - **Custom-words bias.** Power users and proper-noun-heavy domains (legal, medical, dev) deserve `initial_prompt` injection from a user dictionary.
 - **Streaming.** WhisperKit's `transcribeWithResults` supports a callback. M3 spec should expose progressive transcripts to the overlay so longer utterances feel snappier.
 

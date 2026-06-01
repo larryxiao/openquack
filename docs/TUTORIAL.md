@@ -39,7 +39,7 @@ If paste-at-cursor is off (or Accessibility is denied), the transcript lands on 
 Open **Settings** from the menu-bar duck → **gear icon**.
 
 - **General → Speech model.** `medium` is the default; `large-v3` is the most accurate (slower, more memory). `tiny` and `base` are fast but less reliable on accents and proper nouns.
-- **General → Language.** Auto-detect by default. Set to your primary language for short utterances where auto-detect can be unreliable.
+- **General → Language.** Auto-detect by default, and it handles non-English and mixed speech well (as of alpha.17). Pin your primary language if you only ever dictate in one — it skips the detection step for a touch less latency.
 - **General → Custom dictionary.** One word or phrase per line — proper nouns, jargon, project names. Whisper biases toward these.
 - **Shortcut.** Press once to start dictating; press again to stop.
 - **Stats.** Words dictated, audio processed, time saved versus typing — local-only, opt-in display.
