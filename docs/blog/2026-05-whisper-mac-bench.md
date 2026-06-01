@@ -1,6 +1,6 @@
 # What I learned benchmarking Whisper on Apple Silicon for a Mac dictation app
 
-> **Update (2026-05-31):** Finding 1 below has a resolution. The "WhisperKit hallucinates on non-English audio" result was a configuration bug on my end, not a model or engine limitation — WhisperKit's `DecodingOptions.detectLanguage` defaults to `false`, so my engine never ran language detection and the decoder silently *translated* non-English speech to English. Setting `detectLanguage = true` on the auto path dropped WhisperKit `medium` multilingual auto-detect from **253% → 16.7% WER** (now matching Lightning), with English accuracy unchanged. The bench did its job — it made the bug measurable and impossible to ignore — but the conclusion "auto-detect is fundamentally fragile" was wrong. I've left the original text below intact and annotated the spots it affects. Details: [SPEC-021 / #63](https://github.com/larryxiao/openquack/pull/63).
+> **Update (2026-05-31):** Finding 1 has a resolution, and it's a good lesson in not trusting your own conclusion. The "WhisperKit hallucinates on non-English audio" result was a config bug on my end — `DecodingOptions.detectLanguage` defaults to `false`, so my engine never ran detection and the decoder translated non-English speech to English. One line (`detectLanguage = true`) took WhisperKit `medium` from 253% to 16.7% WER, matching Lightning. The bench did its job — it made the bug impossible to ignore — but my read of it ("auto-detect is fundamentally fragile") was wrong. Original text left intact below; [SPEC-021 / #63](https://github.com/larryxiao/openquack/pull/63) has the details.
 
 I needed to pick a default Whisper size for a Mac dictation app I built, and I didn't trust the published numbers. Most Whisper benchmarks publish one WER on one corpus on one machine. The choice of model size, the choice of engine implementation, and the kinds of audio someone actually feeds a dictation app — none of that gets crossed in a single matrix.
 
@@ -46,9 +46,9 @@ A WER of 253% means the transcript is almost three times longer than the referen
 
 Same weights, very different multilingual robustness. That makes this an implementation difference, not a fundamental Whisper limitation. The decoder parameters are the prime suspect: `suppress_tokens`, `no_speech_threshold`, language-token forcing, sample length. I haven't traced it down yet. If anyone has shipped a LangID pre-pass in production or has a working WhisperKit decoder config for short multilingual audio, I'd like to compare notes (issue or PR welcome).
 
-> **Resolved (see the update at the top).** The suspect was language-token forcing, sort of — but the actual cause was simpler than any of the tuning knobs above. WhisperKit's `DecodingOptions.detectLanguage` defaults to `false` (it's `!usePrefillPrompt`, and prefill is on by default). So with no language pinned, the decoder skipped detection and prefilled the English token, which on non-English audio produces a translation. Lightning runs a detect pass by default; that's the whole gap. One line — `options.detectLanguage = true` on the auto path — took WhisperKit `medium` from 253% to 16.7% WER. The in-decoder detect reuses the encoder output it already computed, so it's nearly free.
+> **Resolved (see the update up top):** the cause was simpler than any tuning knob — `detectLanguage` was off by default, so detection never ran. One line fixed it; WhisperKit `medium` went 253% → 16.7%.
 
-The pragmatic fix shipped before the explanation did. The Settings pane surfaces an explicit Language picker, which is still the right call for anyone who dictates in one fixed language (it skips the detection pass entirely). But auto-detect is no longer the liability this finding made it out to be — with detection actually enabled, it's a sound default, which is what alpha.17 ships.
+The pragmatic fix shipped before the explanation did: an explicit Language picker in Settings, still the right call for anyone who dictates in one language. But with detection actually enabled, auto-detect is a sound default — which is what alpha.17 ships.
 
 ## Finding 2: Distilled is not a free upgrade
 
@@ -78,7 +78,7 @@ Then add 10 dB SNR of pink noise:
 Three concrete decisions came out of the bench:
 
 - **Model selection.** `medium` is the default — it's the clearest winner in the bench. At 197 MB peak RSS it fits easily on any current Mac; the open question for 8 GB hardware is RTF on older chips, not memory headroom. M1/M2 bench results would settle this.
-- **Explicit language picker in Settings.** Shipped — and still useful for single-language users since it skips detection. (The premise that *auto-detect itself* was too fragile turned out to be a config bug, now fixed; see the update at the top. Auto-detect is the default again, and it works.)
+- **Explicit language picker in Settings.** Shipped, and still useful for single-language users since it skips detection — though the premise that auto-detect itself was too fragile turned out to be a config bug (see the update up top).
 - **Streaming for long audio.** Once `medium` was the default, the end-of-dictation wait got bad on long clips. A 5-minute clip finishes offline in 34.4 seconds wall-clock; without streaming the user experience was 30 seconds of staring at a "transcribing..." indicator.
 
 That last one is its own measurement. Streaming the audio in chunks while you speak, then finalising the tail when you stop, gave:
