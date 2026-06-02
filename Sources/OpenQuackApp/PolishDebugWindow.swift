@@ -20,6 +20,7 @@ final class PolishDebugWindow {
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
+            // Delivered on .main queue but not the @MainActor — hop onto it.
             Task { @MainActor in self?.syncVisibility() }
         }
     }
@@ -47,7 +48,7 @@ final class PolishDebugWindow {
 
         let panel = NSPanel(
             contentRect: host.frame,
-            styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
+            styleMask: [.titled, .utilityWindow, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -106,10 +107,10 @@ struct PolishDebugView: View {
     private var statusLine: String {
         guard let d = state.lastPolishDebug else { return "no polish yet" }
         if d.engineLabel == "off" { return "off · regex only" }
+        let secs = d.llmMillis.map { String(format: "%.2fs", Double($0) / 1000) } ?? "?"
         if d.llmSucceeded {
-            let secs = d.llmMillis.map { String(format: "%.2fs", Double($0) / 1000) } ?? "?"
             return "\(d.engineLabel) · LLM ran ✓ · \(secs)"
         }
-        return "\(d.engineLabel) · fell back to regex ⚠"
+        return "\(d.engineLabel) · fell back to regex (\(secs)) ⚠"
     }
 }
