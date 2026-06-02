@@ -86,7 +86,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     private var overlay: RecordingOverlay?
-    private var polishDebugWindow: PolishDebugWindow?
     private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
     let historyStore = HistoryStore()    // SPEC-014
@@ -114,6 +113,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let launchAtLoginLogger = Logger(
         subsystem: "org.openquack.OpenQuack",
         category: "LaunchAtLogin"
+    )
+
+    /// SPEC-007b — live polish debug stream. Each run logs one JSON object
+    /// (raw/polished/engine/llm/ms) at `.debug` level, so the stream is
+    /// newline-delimited JSON and trivially parseable. Debug level is inert
+    /// (not captured, not persisted) in normal use and costs nothing until a
+    /// developer explicitly tails it with `bash scripts/debug-listen.sh polish`
+    /// (which formats it) — or raw via:
+    ///   log stream --level debug --style ndjson --predicate 'subsystem == "org.openquack.OpenQuack" AND category == "polish"'
+    private static let polishLog = Logger(
+        subsystem: "org.openquack.OpenQuack",
+        category: "polish"
     )
 
     /// Persist the last recording so the user can verify capture quality
@@ -153,7 +164,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
-        polishDebugWindow = PolishDebugWindow(state: appState)
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
@@ -669,15 +679,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             regexEnabled: polishEnabled,
             context: PolishContext(language: defaultLanguage, timestamp: Date())
         )
-        if UserDefaults.standard.bool(forKey: "polishDebug") {
-            let debug = AppState.PolishDebug(
-                raw: scripted,
-                polished: result.text,
-                engine: engineKind,
-                llmSucceeded: result.llmSucceeded,
-                llmMillis: result.llmMillis
-            )
-            await MainActor.run { appState.lastPolishDebug = debug }
+        var record: [String: Any] = [
+            "raw": scripted,
+            "polished": result.text,
+            "engine": engineKind.rawValue,
+            "llm": result.llmSucceeded,
+        ]
+        if let ms = result.llmMillis { record["ms"] = ms }
+        if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
+           let json = String(data: data, encoding: .utf8) {
+            Self.polishLog.debug("\(json, privacy: .public)")
         }
         return result
     }
