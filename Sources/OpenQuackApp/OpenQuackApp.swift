@@ -645,21 +645,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - record → transcribe pipeline
 
+    /// The polish engine configured for the current dictation. Single source
+    /// for both engine construction and the live overlay's "will it polish?"
+    /// decision.
+    private var polishEngineKind: PolishEngineKind {
+        PolishEngineKind(rawValue: UserDefaults.standard.string(forKey: "polishEngine") ?? "off") ?? .off
+    }
+
     /// Runs the optional LLM polish + regex pipeline on a script-normalised
     /// transcript, reading the current polish settings. Shared by the live
-    /// dictation path and the crash-recovery path.
-    private func polishedTranscript(from scripted: String, animate: Bool) async -> PolishResult {
+    /// dictation path and the crash-recovery path. Drives no UI — the caller
+    /// owns the `.polishing` overlay phase.
+    private func polishedTranscript(from scripted: String) async -> PolishResult {
         let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
-        let engineKind = PolishEngineKind(
-            rawValue: UserDefaults.standard.string(forKey: "polishEngine") ?? "off"
-        ) ?? .off
+        let engineKind = polishEngineKind
         let engine: TextPolishEngine? = engineKind == .ollama
             ? OllamaPolishEngine(
                 model: UserDefaults.standard.string(forKey: "polishOllamaModel") ?? Self.defaultPolishModel)
             : nil
-        if animate, engine != nil {
-            await MainActor.run { appState.phase = .polishing }
-        }
         let result = await PolishPipeline.polish(
             scripted,
             engine: engine,
@@ -859,7 +862,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // script preference before any other text shaping.
                 let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
 
-                let polished = (await polishedTranscript(from: scripted, animate: true)).text
+                if polishEngineKind == .ollama {
+                    await MainActor.run { appState.phase = .polishing }
+                }
+                let polished = (await polishedTranscript(from: scripted)).text
 
                 // Hold the progress bar at full briefly so the user sees the
                 // transition land instead of jumping straight to "Pasted".
@@ -1110,7 +1116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 customWords: customWords
             )
             let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
-            let polished = (await polishedTranscript(from: scripted, animate: false)).text
+            let polished = (await polishedTranscript(from: scripted)).text
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
                 _ = PasteService.paste(polished)
