@@ -643,6 +643,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - record → transcribe pipeline
 
+    /// Runs the optional LLM polish + regex pipeline on a script-normalised
+    /// transcript, reading the current polish settings. Shared by the live
+    /// dictation path and the crash-recovery path.
+    private func polishedTranscript(from scripted: String) async -> String {
+        let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
+        let engineKind = PolishEngineKind(
+            rawValue: UserDefaults.standard.string(forKey: "polishEngine") ?? "off"
+        ) ?? .off
+        let engine: TextPolishEngine? = engineKind == .ollama
+            ? OllamaPolishEngine(
+                model: UserDefaults.standard.string(forKey: "polishOllamaModel") ?? Self.defaultPolishModel)
+            : nil
+        return await PolishPipeline.polish(
+            scripted,
+            engine: engine,
+            regexEnabled: polishEnabled,
+            context: PolishContext(language: defaultLanguage, timestamp: Date())
+        )
+    }
+
     private func startRecording() {
         Task {
             guard await AudioRecorder.requestPermission() else {
@@ -715,6 +735,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// faster than the eye can register, which defeats the point of having
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
+    private static let defaultPolishModel = "gemma4-textonly:Q4_K_M"
 
     /// SPEC-031 — map an AgentKickoffService error to a one-line user-
     /// facing label for the overlay's "ready" state.
@@ -822,12 +843,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // script preference before any other text shaping.
                 let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
 
-                // Smart formatting on raw Whisper output (capitalisation,
-                // end-punctuation, fillers). Toggle: Settings → General.
-                let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
-                let polished = polishEnabled
-                    ? TextPolisher.polish(scripted)
-                    : scripted
+                let polished = await polishedTranscript(from: scripted)
 
                 // Hold the progress bar at full briefly so the user sees the
                 // transition land instead of jumping straight to "Pasted".
@@ -1078,8 +1094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 customWords: customWords
             )
             let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
-            let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
-            let polished = polishEnabled ? TextPolisher.polish(scripted) : scripted
+            let polished = await polishedTranscript(from: scripted)
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
                 _ = PasteService.paste(polished)

@@ -288,6 +288,39 @@ to do, plus hand-crafted cases for failure modes Whisper doesn't reach.
 - **Custom system prompts** — power users will want to tune the prompt
   per-app ("when in Slack, keep it casual; when in Pages, format as
   prose"). That's the App Branch concept from voxt; defer to M3+.
+- **MLX runtime not viable for Gemma 4 yet (2026-06-01 recon).** The
+  planned `MLXLMPolishEngine` on `mlx-swift-lm` cannot ship Gemma 4
+  today, for three reasons:
+  1. `mlx-swift` / `mlx-swift-lm` don't register the `gemma4`
+     architecture — loading fails with "Model type gemma4 not
+     supported" ([mlx-swift#389](https://github.com/ml-explore/mlx-swift/issues/389),
+     still open; Python `mlx_lm`/`mlx-vlm` got it on launch day).
+  2. PLE (Per-Layer Embedding) quantisation landmine: standard 4-bit
+     MLX quants of Gemma 4 emit garbage (`ionoxffionoxff…`). Only
+     "PLE-safe" quants work and they keep PLE + encoders in bf16 →
+     ~7.6 GB at 4-bit (multimodal), not the 3.14 GB text-only GGUF.
+  3. No small, working, text-only MLX build exists — the Ollama
+     "strip multimodal → 3.14 GB" trick has no MLX equivalent.
+     A single-dev community port ([VincentGourbin/gemma-4-swift-mlx](https://github.com/VincentGourbin/gemma-4-swift-mlx),
+     ~3.6 GB E2B text-only, 97 tok/s) works but is a standalone CLI,
+     not a clean SPM dependency.
+  **Decision: the in-process ship engine is embedded `llama.cpp`, not
+  MLX.** SPEC-007a's "TurboQuant ~4× less memory" claim does not hold for
+  Gemma 4 (PLE breaks it). For this model GGUF is currently smaller *and*
+  working while MLX is bigger / broken / Swift-unsupported, so the
+  cleanest in-process path — no Ollama daemon dependency, the same
+  privacy story MLX promised — is to embed `llama.cpp` via a Swift
+  binding (e.g. [`mattt/llama.swift`](https://github.com/mattt/llama.swift)
+  or [`LocalLLMClient`](https://github.com/tattn/LocalLLMClient), which
+  wraps both llama.cpp and MLX behind one API). Runtime roadmap:
+  - **now (dev + shippable)** — `OllamaPolishEngine` (HTTP to a local
+    Ollama daemon); validates the prompt + pipeline with zero new deps.
+  - **ship (default, in-process)** — a `llama.cpp` engine implementing
+    the same `TextPolishEngine` protocol; no Ollama install required.
+  - **future** — an MLX engine, gated on `mlx-swift#389` landing and a
+    small PLE-safe text-only Gemma 4 build appearing.
+  All three implement `TextPolishEngine`, so swapping engines leaves
+  `PolishPipeline`, settings, and app wiring untouched.
 
 ## References
 

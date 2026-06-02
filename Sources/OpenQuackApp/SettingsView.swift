@@ -46,6 +46,7 @@ private struct GeneralPane: View {
     @ObservedObject var appState: AppState
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("polishText")          private var polishText: Bool = true
+    @AppStorage("polishEngine")        private var polishEngine: String = "off"
     @AppStorage("language")            private var language: String = "en"
     @AppStorage("chineseScript")       private var chineseScript: String = "auto"
     @AppStorage("playSounds")          private var playSounds: Bool = true
@@ -103,6 +104,11 @@ private struct GeneralPane: View {
                     .help("After transcription, OpenQuack simulates ⌘V to paste into whatever app you're in. Requires Accessibility access. If off, the transcript still goes to your clipboard and you press ⌘V yourself.")
                 Toggle("Smart formatting", isOn: $polishText)
                     .help("Capitalise sentences, add a period at the end, strip filler words (um, uh) before paste. Off = paste exactly what Whisper heard.")
+                Picker("Local LLM polish (experimental)", selection: $polishEngine) {
+                    Text("Off").tag("off")
+                    Text("Local LLM (Ollama)").tag("ollama")
+                }
+                .help("Runs an extra local LLM cleanup pass before paste, via a local Ollama daemon at http://localhost:11434. If Ollama isn't running, falls back to your Smart formatting setting (or raw text if that's off). Nothing leaves your Mac.")
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {
