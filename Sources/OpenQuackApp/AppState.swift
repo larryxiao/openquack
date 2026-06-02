@@ -9,6 +9,7 @@ public final class AppState: ObservableObject {
         case starting
         case recording
         case transcribing
+        case polishing
         case ready
         case error(String)
     }

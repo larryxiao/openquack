@@ -27,7 +27,7 @@ final class RecordingOverlay {
 
     private func handle(phase: AppState.Phase) {
         switch phase {
-        case .recording, .transcribing:
+        case .recording, .transcribing, .polishing:
             ensurePanel()
             showAnimated()
         case .ready:
@@ -151,6 +151,8 @@ struct OverlayPill: View {
             Image(systemName: "waveform.circle")
                 .font(.body)
                 .foregroundStyle(Theme.amber)
+        case .polishing:
+            PolishingIndicator()
         case .ready:
             if state.recordingMode == .agentKickoff {
                 Image(systemName: state.lastKickoffSucceeded
@@ -206,6 +208,7 @@ struct OverlayPill: View {
         case .recording:
             return state.recordingMode == .agentKickoff ? "Listening (kickoff)" : "Listening"
         case .transcribing: return "Thinking"
+        case .polishing:    return "Polishing"
         case .ready:
             if state.recordingMode == .agentKickoff {
                 return state.lastKickoffSucceeded ? "Launched claude" : "Kickoff failed"
@@ -221,6 +224,8 @@ struct OverlayPill: View {
             let secs = String(format: "%.1f", state.elapsedSeconds)
             return "\(secs)s · press to stop"
         case .transcribing:
+            return "On your Mac"
+        case .polishing:
             return "On your Mac"
         case .ready:
             if state.recordingMode == .agentKickoff, !state.lastKickoffSucceeded {
@@ -268,5 +273,19 @@ private struct VoiceLevel: View {
         let total = max(1, history.count - 1)
         let position = Double(index) / Double(total)  // 0 = oldest, 1 = newest
         return 0.55 + 0.45 * position  // older bars at 0.55, newest at 1.0
+    }
+}
+
+/// A gently pulsing amber wand — the "Polishing" overlay indicator.
+/// `sparkles` is intentionally avoided (it marks kickoff success).
+private struct PolishingIndicator: View {
+    @State private var pulse = false
+    var body: some View {
+        Image(systemName: "wand.and.rays")
+            .font(.body)
+            .foregroundStyle(Theme.amber)
+            .opacity(pulse ? 1.0 : 0.4)
+            .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulse)
+            .onAppear { pulse = true }
     }
 }

@@ -522,7 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .idle:                 return menuIconCache["idle"]
         case .ready:                return menuIconCache["ready"]
         case .starting, .recording: return menuIconCache["recording"]
-        case .transcribing:         return menuIconCache["transcribing"]
+        case .transcribing, .polishing: return menuIconCache["transcribing"]
         case .error:                return nil
         }
     }
@@ -566,7 +566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             startRecording()
         case .recording:
             stopAndTranscribe()
-        case .warming, .starting, .transcribing:
+        case .warming, .starting, .transcribing, .polishing:
             // Ignore — the user gets a hotkey-tap during a transition; we just drop it.
             NSSound.beep()
         }
@@ -588,7 +588,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Same hotkey or the dictation hotkey both stop; recordingMode
             // was set when recording began, so the dispatch path is fixed.
             stopAndTranscribe()
-        case .warming, .starting, .transcribing:
+        case .warming, .starting, .transcribing, .polishing:
             NSSound.beep()
         }
     }
