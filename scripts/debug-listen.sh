@@ -30,8 +30,12 @@ case "$topic" in
     *)      echo "unknown topic: $topic" >&2; usage ;;
 esac
 
+echo "● debug-listen ON — topic: $topic. Dictate in the app to see output; Ctrl-C to stop." >&2
+
 # Formatter: each ndjson line wraps our message in `eventMessage` (itself
-# JSON). Double-parse, then print a readable block. Single-quoted heredoc so
+# JSON). Double-parse, then print a readable block. Output uses CRLF because
+# `script` (below) puts the terminal in raw mode, where a bare LF would not
+# return the cursor to column 0 (staircase effect). Single-quoted heredoc so
 # the Python can use both quote styles freely.
 read -r -d '' FORMAT <<'PY' || true
 import sys, json
@@ -54,9 +58,9 @@ while True:
     llm = "ok" if d.get("llm") else "FELL BACK"
     ms = d.get("ms")
     ms_s = "%dms" % ms if ms is not None else "-"
-    print("\n[%s] %s · LLM %s · %s" % (t, d.get("engine", "?"), llm, ms_s))
-    print("  raw      : %s" % d.get("raw", ""))
-    print("  polished : %s" % d.get("polished", ""))
+    sys.stdout.write("\r\n[%s] %s · LLM %s · %s\r\n" % (t, d.get("engine", "?"), llm, ms_s))
+    sys.stdout.write("  raw      : %s\r\n" % d.get("raw", ""))
+    sys.stdout.write("  polished : %s\r\n" % d.get("polished", ""))
     sys.stdout.flush()
 PY
 
