@@ -646,7 +646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Runs the optional LLM polish + regex pipeline on a script-normalised
     /// transcript, reading the current polish settings. Shared by the live
     /// dictation path and the crash-recovery path.
-    private func polishedTranscript(from scripted: String) async -> String {
+    private func polishedTranscript(from scripted: String) async -> PolishResult {
         let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
         let engineKind = PolishEngineKind(
             rawValue: UserDefaults.standard.string(forKey: "polishEngine") ?? "off"
@@ -843,7 +843,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // script preference before any other text shaping.
                 let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
 
-                let polished = await polishedTranscript(from: scripted)
+                let polished = (await polishedTranscript(from: scripted)).text
 
                 // Hold the progress bar at full briefly so the user sees the
                 // transition land instead of jumping straight to "Pasted".
@@ -1094,7 +1094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 customWords: customWords
             )
             let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
-            let polished = await polishedTranscript(from: scripted)
+            let polished = (await polishedTranscript(from: scripted)).text
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
                 _ = PasteService.paste(polished)
