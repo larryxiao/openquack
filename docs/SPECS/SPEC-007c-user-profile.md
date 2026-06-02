@@ -148,6 +148,29 @@ errors; the polish sink covers what the decoder still gets wrong.
   summary; which the 4.6B model follows most faithfully under the
   latency budget.
 
+## Acceptance criteria
+
+The feature is validated when, on a build with the profile enabled:
+
+1. **Decoder benefit (measurable).** On a code-switch corpus (Mandarin
+   utterances containing the user's recurring English terms), domain-term
+   accuracy improves vs. the no-profile baseline, with no WER regression
+   on the general corpus —
+   `swift run openquack-bench --corpus bench/corpus/code-switch` reports a
+   non-negative domain-term delta and a non-positive WER delta.
+2. **Faithfulness (manual).** Across a fixed set of off-domain dictations,
+   the polished output introduces **zero** terms the user did not say
+   (no profile-driven hallucination). Reviewer follows the scripted
+   utterances and confirms verbatim content preservation.
+3. **Latency (measurable).** With the profile prior injected, the
+   speak→paste p95 stays within the SPEC-007b budget; the added prefill
+   does not regress perceived latency on the bench RTF.
+4. **Cold start (manual).** A fresh install with empty history behaves
+   exactly as today — empty `customWords`, no polish prior, no errors.
+5. **Transparency (manual).** The user can open the profile, see the
+   derived domain/vocabulary/register, and edit or clear it; edits take
+   effect on the next dictation.
+
 ## Relationship to SPEC-007
 
 - **SPEC-007** ships the polish engine and pipeline this layer plugs into.
@@ -156,3 +179,6 @@ errors; the polish sink covers what the decoder still gets wrong.
   surface extends that UX surface.
 - **SPEC-007c** (this) adds the personalisation layer feeding both the
   Whisper decoder and the polish step. Deferred to a later wave.
+- **SPEC-024** (per-app tone profiles) builds on this — the per-app tone
+  layer should land *after* the user-profile foundation here, since it
+  reuses the same offline-profiling and prompt-injection machinery.
