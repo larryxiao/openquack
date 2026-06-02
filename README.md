@@ -28,7 +28,7 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
-> 📢 **What's new — [v2.0.0-alpha.17](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.17):** Multilingual auto-detect is now reliable. Say *"bro 这个bug也太离谱了, 鸭鸭我直接躺平了 not today"* and get back exactly that — no language selection needed. ([past releases](https://github.com/larryxiao/openquack/releases))
+> 📢 **What's new — [v2.0.0-alpha.18](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.18):** Mixed Chinese/English now holds up across a long recording. Start a thought in English and finish it in Chinese — the Chinese comes back as Chinese instead of a botched English translation, normalised to your system's script (Simplified or Traditional). ([past releases](https://github.com/larryxiao/openquack/releases))
 
 ## What it is
 
