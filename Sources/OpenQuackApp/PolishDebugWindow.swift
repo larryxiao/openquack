@@ -106,11 +106,11 @@ struct PolishDebugView: View {
 
     private var statusLine: String {
         guard let d = state.lastPolishDebug else { return "no polish yet" }
-        if d.engineLabel == "off" { return "off · regex only" }
+        if d.engine == .off { return "off · regex only" }
         let secs = d.llmMillis.map { String(format: "%.2fs", Double($0) / 1000) } ?? "?"
         if d.llmSucceeded {
-            return "\(d.engineLabel) · LLM ran ✓ · \(secs)"
+            return "\(d.engine.rawValue) · LLM ran ✓ · \(secs)"
         }
-        return "\(d.engineLabel) · fell back to regex (\(secs)) ⚠"
+        return "\(d.engine.rawValue) · fell back to regex (\(secs)) ⚠"
     }
 }

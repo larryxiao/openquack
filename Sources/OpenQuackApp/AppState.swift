@@ -81,7 +81,7 @@ public final class AppState: ObservableObject {
     public struct PolishDebug: Equatable, Sendable {
         public let raw: String
         public let polished: String
-        public let engineLabel: String   // "ollama" / "off"
+        public let engine: PolishEngineKind
         public let llmSucceeded: Bool
         public let llmMillis: Int?
     }

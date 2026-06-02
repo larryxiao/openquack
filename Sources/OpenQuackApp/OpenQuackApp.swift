@@ -673,7 +673,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let debug = AppState.PolishDebug(
                 raw: scripted,
                 polished: result.text,
-                engineLabel: engineKind.rawValue,
+                engine: engineKind,
                 llmSucceeded: result.llmSucceeded,
                 llmMillis: result.llmMillis
             )
