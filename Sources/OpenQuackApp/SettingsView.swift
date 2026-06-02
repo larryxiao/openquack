@@ -47,6 +47,7 @@ private struct GeneralPane: View {
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
+    @AppStorage("polishDebug")         private var polishDebug: Bool = false
     @AppStorage("language")            private var language: String = "en"
     @AppStorage("chineseScript")       private var chineseScript: String = "auto"
     @AppStorage("playSounds")          private var playSounds: Bool = true
@@ -109,6 +110,8 @@ private struct GeneralPane: View {
                     Text("Local LLM (Ollama)").tag("ollama")
                 }
                 .help("Runs an extra local LLM cleanup pass before paste, via a local Ollama daemon at http://localhost:11434. If Ollama isn't running, falls back to your Smart formatting setting (or raw text if that's off). Nothing leaves your Mac.")
+                Toggle("Show polish debug panel", isOn: $polishDebug)
+                    .help("Developer aid. Opens a floating panel showing the latest raw vs. polished text, which engine ran, and how long it took. Read-only — does not change what gets pasted.")
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {

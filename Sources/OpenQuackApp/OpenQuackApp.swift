@@ -658,12 +658,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if animate, engine != nil {
             await MainActor.run { appState.phase = .polishing }
         }
-        return await PolishPipeline.polish(
+        let result = await PolishPipeline.polish(
             scripted,
             engine: engine,
             regexEnabled: polishEnabled,
             context: PolishContext(language: defaultLanguage, timestamp: Date())
         )
+        if UserDefaults.standard.bool(forKey: "polishDebug") {
+            let debug = AppState.PolishDebug(
+                raw: scripted,
+                polished: result.text,
+                engineLabel: engineKind.rawValue,
+                llmSucceeded: result.llmSucceeded,
+                llmMillis: result.llmMillis
+            )
+            await MainActor.run { appState.lastPolishDebug = debug }
+        }
+        return result
     }
 
     private func startRecording() {

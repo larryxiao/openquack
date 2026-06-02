@@ -24,6 +24,9 @@ public final class AppState: ObservableObject {
     }
 
     @Published public var phase: Phase = .warming(modelLabel: "medium")
+    /// Latest raw→polished pair for the read-only debug panel. Written only
+    /// when the `polishDebug` toggle is on; never affects paste.
+    @Published public var lastPolishDebug: PolishDebug?
     @Published public var recordingMode: RecordingMode = .dictation
     @Published public var elapsedSeconds: Double = 0
     @Published public var currentLevel: Float = 0  // 0…1 RMS, for the level meter
@@ -73,6 +76,14 @@ public final class AppState: ObservableObject {
     public var availableUpdate: UpdateChecker.ReleaseInfo? {
         if case .available(let release) = updateStatus { return release }
         return nil
+    }
+
+    public struct PolishDebug: Equatable, Sendable {
+        public let raw: String
+        public let polished: String
+        public let engineLabel: String   // "ollama" / "off"
+        public let llmSucceeded: Bool
+        public let llmMillis: Int?
     }
 
     public init() {}
