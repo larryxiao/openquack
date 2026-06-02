@@ -49,6 +49,10 @@ struct OpenQuackStreamBenchCommand: AsyncParsableCommand {
             help: "Streaming max chunk seconds. Default 28.")
     var maxChunk: Double = 28
 
+    @Option(name: .customLong("min-detect"),
+            help: "Shortest chunk the auto path re-detects on (SPEC-035). Default 10. A very large value (e.g. 9999) reproduces the old lock-to-first-chunk behaviour for A/B.")
+    var minDetect: Double = 10
+
     @Flag(name: .customLong("smoke"),
           help: "Streaming mode without real-time pacing — fastest correctness check; not a latency measurement.")
     var smoke: Bool = false
@@ -215,7 +219,8 @@ struct OpenQuackStreamBenchCommand: AsyncParsableCommand {
         let cfg = StreamingTranscriber.Config(
             streamingThreshold: 0,                // bench drives every clip; gate is the caller's job
             targetChunkSeconds: targetChunk,
-            maxChunkSeconds: maxChunk
+            maxChunkSeconds: maxChunk,
+            minDetectSeconds: minDetect
         )
         let streamer = StreamingTranscriber(pipe: pipe, config: cfg)
         await streamer.begin(language: resolvedLanguage, customWords: nil)

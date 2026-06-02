@@ -65,4 +65,60 @@ final class LanguageDecodePolicyTests: XCTestCase {
         XCTAssertFalse(LanguageDecodePolicy.decide(pinned: "en").detectLanguage)
         XCTAssertTrue(LanguageDecodePolicy.decide(pinned: nil).detectLanguage)
     }
+
+    // MARK: - decideStreamingChunk (SPEC-035 mixed-language)
+
+    func testStreamingPinnedForcesEvenOnShortChunk() {
+        // A user-pinned language always wins, regardless of chunk size / running.
+        let d = LanguageDecodePolicy.decideStreamingChunk(
+            pinned: "en", running: "zh", chunkSeconds: 2, minDetectSeconds: 10
+        )
+        XCTAssertEqual(d.language, "en")
+        XCTAssertFalse(d.detectLanguage)
+    }
+
+    func testStreamingFullChunkReDetectsDespiteRunning() {
+        // The un-locking: a full chunk re-detects even when a language is already
+        // running, so the language can switch at a chunk boundary.
+        let d = LanguageDecodePolicy.decideStreamingChunk(
+            pinned: nil, running: "en", chunkSeconds: 20, minDetectSeconds: 10
+        )
+        XCTAssertNil(d.language)
+        XCTAssertTrue(d.detectLanguage)
+    }
+
+    func testStreamingShortChunkInheritsRunning() {
+        // A short trailing chunk inherits the running language rather than risk a
+        // weak-detection flip to the "en" fallback.
+        let d = LanguageDecodePolicy.decideStreamingChunk(
+            pinned: nil, running: "zh", chunkSeconds: 3, minDetectSeconds: 10
+        )
+        XCTAssertEqual(d.language, "zh")
+        XCTAssertFalse(d.detectLanguage)
+    }
+
+    func testStreamingShortChunkWithNoRunningDetects() {
+        // Nothing to inherit (e.g. a short first chunk) → detect anyway.
+        let d = LanguageDecodePolicy.decideStreamingChunk(
+            pinned: nil, running: nil, chunkSeconds: 3, minDetectSeconds: 10
+        )
+        XCTAssertNil(d.language)
+        XCTAssertTrue(d.detectLanguage)
+    }
+
+    func testStreamingEmptyRunningTreatedAsAbsent() {
+        let d = LanguageDecodePolicy.decideStreamingChunk(
+            pinned: "", running: "", chunkSeconds: 3, minDetectSeconds: 10
+        )
+        XCTAssertNil(d.language)
+        XCTAssertTrue(d.detectLanguage)
+    }
+
+    func testStreamingThresholdIsInclusive() {
+        // chunkSeconds == minDetectSeconds re-detects (the boundary is reliable).
+        let d = LanguageDecodePolicy.decideStreamingChunk(
+            pinned: nil, running: "en", chunkSeconds: 10, minDetectSeconds: 10
+        )
+        XCTAssertTrue(d.detectLanguage)
+    }
 }

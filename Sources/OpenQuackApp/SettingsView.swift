@@ -46,8 +46,7 @@ private struct GeneralPane: View {
     @ObservedObject var appState: AppState
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("polishText")          private var polishText: Bool = true
-    @AppStorage("language")            private var language: String = "en"
-    @AppStorage("chineseScript")       private var chineseScript: String = "auto"
+    @AppStorage("language")            private var language: String = ""   // "" = auto-detect (SPEC-035)
     @AppStorage("playSounds")          private var playSounds: Bool = true
     @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
@@ -123,21 +122,9 @@ private struct GeneralPane: View {
                     Text("Italian (it)").tag("it")
                     Text("Portuguese (pt)").tag("pt")
                 }
-                Text("Auto-detect can be unreliable on short utterances. Set this to your primary language for the most consistent results.")
+                Text("Auto-detect identifies the spoken language for each recording. Pick a specific language only if you always dictate in the same one.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                if language == "zh" {
-                    Picker("Chinese script", selection: $chineseScript) {
-                        Text("Auto (Whisper default — often Traditional)").tag("auto")
-                        Text("Simplified (zh-Hans)").tag("simplified")
-                        Text("Traditional (zh-Hant)").tag("traditional")
-                    }
-                    .help("Whisper's Chinese output mixes Simplified and Traditional. Pick one to force a script.")
-                    Text("Character-level conversion only — region-specific vocabulary (e.g. 软件 vs. 軟體) isn't rewritten.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             } header: {
                 SectionHeader("Language")
             }
