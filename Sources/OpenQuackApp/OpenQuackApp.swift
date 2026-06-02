@@ -86,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     private var overlay: RecordingOverlay?
+    private var polishDebugWindow: PolishDebugWindow?
     private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
     let historyStore = HistoryStore()    // SPEC-014
@@ -152,6 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
+        polishDebugWindow = PolishDebugWindow(state: appState)
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
