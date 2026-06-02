@@ -95,7 +95,7 @@ struct StatusDot: View {
         case .warming:                 return Theme.amber
         case .idle, .ready:            return Theme.moss
         case .starting, .recording:    return Theme.coral
-        case .transcribing:            return Theme.amber
+        case .transcribing, .polishing: return Theme.amber
         case .error:                   return .secondary
         }
     }

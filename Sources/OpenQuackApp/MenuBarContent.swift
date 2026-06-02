@@ -198,6 +198,7 @@ struct MenuBarContent: View {
         case .starting:                 return "Starting…"
         case .recording:                return "Listening…"
         case .transcribing:             return "Thinking…"
+        case .polishing:                return "Polishing…"
         case .ready:
             return state.lastPasted ? "Pasted at cursor" : "On clipboard"
         case .error:                    return "Error"
@@ -224,6 +225,8 @@ struct MenuBarContent: View {
             return "Press to finish."
         case .transcribing:
             return "Wait a moment — transcribing locally."
+        case .polishing:
+            return "Polishing your text…"
         case .error(let msg):
             return msg
         }
