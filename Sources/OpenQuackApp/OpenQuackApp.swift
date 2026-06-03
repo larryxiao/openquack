@@ -669,10 +669,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func polishedTranscript(from scripted: String) async -> PolishResult {
         let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
         let engineKind = polishEngineKind
-        let engine: TextPolishEngine? = engineKind == .ollama
-            ? OllamaPolishEngine(
+        let engine: TextPolishEngine?
+        switch engineKind {
+        case .off:
+            engine = nil
+        case .ollama:
+            engine = OllamaPolishEngine(
                 model: UserDefaults.standard.string(forKey: "polishOllamaModel") ?? Self.defaultPolishModel)
-            : nil
+        case .llamaCpp:
+            let path = UserDefaults.standard.string(forKey: "polishLlamaModelPath")
+                ?? Self.defaultPolishLlamaModelPath.path
+            engine = LlamaCppPolishEngine(modelPath: URL(fileURLWithPath: path))
+        }
         let result = await PolishPipeline.polish(
             scripted,
             engine: engine,
@@ -766,6 +774,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
     private static let defaultPolishModel = "gemma4-textonly:Q4_K_M"
+    /// SPEC-007 spike — local GGUF path for the in-process engine. No download
+    /// UX yet; the developer places a GGUF here (or overrides `polishLlamaModelPath`).
+    private static let defaultPolishLlamaModelPath: URL = {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support
+            .appendingPathComponent("OpenQuack/models", isDirectory: true)
+            .appendingPathComponent("gemma4-e2b-text.Q4_K_M.gguf")
+    }()
 
     /// SPEC-031 — map an AgentKickoffService error to a one-line user-
     /// facing label for the overlay's "ready" state.
@@ -873,7 +889,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // script preference before any other text shaping.
                 let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
 
-                if polishEngineKind == .ollama {
+                if polishEngineKind != .off {
                     await MainActor.run { appState.phase = .polishing }
                 }
                 let polished = (await polishedTranscript(from: scripted)).text
