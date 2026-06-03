@@ -5,6 +5,7 @@ final class PolishEngineKindTests: XCTestCase {
     func testParsesKnownRawValues() {
         XCTAssertEqual(PolishEngineKind(rawValue: "off"), .off)
         XCTAssertEqual(PolishEngineKind(rawValue: "ollama"), .ollama)
+        XCTAssertEqual(PolishEngineKind(rawValue: "llamaCpp"), .llamaCpp)
     }
 
     func testUnknownRawValueIsNil() {
@@ -12,6 +13,6 @@ final class PolishEngineKindTests: XCTestCase {
     }
 
     func testAllCasesCovered() {
-        XCTAssertEqual(Set(PolishEngineKind.allCases), [.off, .ollama])
+        XCTAssertEqual(Set(PolishEngineKind.allCases), [.off, .ollama, .llamaCpp])
     }
 }

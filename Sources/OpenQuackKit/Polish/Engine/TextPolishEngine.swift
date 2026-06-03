@@ -17,9 +17,10 @@ public struct PolishContext: Sendable {
     }
 }
 
-/// Which polish engine runs. `llamaCppEmbed` / `mlxLM` are future cases that
-/// will implement `TextPolishEngine`; this slice ships only `.ollama`.
+/// Which polish engine runs. `mlxLM` is a future case that will implement
+/// `TextPolishEngine` once MLX supports Gemma 4.
 public enum PolishEngineKind: String, CaseIterable, Sendable {
     case off
     case ollama
+    case llamaCpp
 }
