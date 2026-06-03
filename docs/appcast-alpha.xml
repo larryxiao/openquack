@@ -1,0 +1,44 @@
+<?xml version="1.0" standalone="yes"?>
+<!--
+    SPEC-026 — Alpha-channel appcast for OpenQuack.
+
+    Sparkle's `feedURLString(for:)` delegate routes prerelease users
+    (`receivePrereleases == true`, the first-launch default for -alpha /
+    -beta builds) to THIS feed. Until it existed, that request 404'd and
+    Sparkle auto-update was silently dead for every alpha DMG user — the
+    in-popover banner (UpdateChecker → GitHub Releases) was their only
+    update surface.
+
+    Empty for now: no <item> blocks until a signed release populates them.
+    Real items require SUPublicEDKey in the app's Info.plist (still absent)
+    + `sign_update` on each DMG, both landed by PR-C. A valid-but-empty
+    feed makes Sparkle resolve cleanly to "no updates" instead of erroring.
+
+    PR-C's release script, for each new signed DMG, will:
+      1. read the DMG's byte length
+      2. run Sparkle's `sign_update` against the maintainer's EdDSA key
+      3. prepend a new <item> here (the alpha feed carries EVERY release)
+      4. commit + push (GitHub Pages serves /docs)
+
+    Item shape (per Sparkle docs):
+        <item>
+          <title>v2.0.0-alpha.19</title>
+          <sparkle:version>2.0.0.19</sparkle:version>
+          <sparkle:shortVersionString>2.0.0-alpha.19</sparkle:shortVersionString>
+          <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+          <enclosure url="…/OpenQuack-2.0.0-alpha.19.dmg"
+            length="9123456" type="application/octet-stream"
+            sparkle:edSignature="…base64…" />
+        </item>
+
+    `sparkle:version` is the dotted build number Sparkle orders by;
+    `sparkle:shortVersionString` carries the human tag.
+-->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>OpenQuack — Alpha</title>
+        <link>https://larryxiao.github.io/openquack/appcast-alpha.xml</link>
+        <description>In-app updates for pre-release (alpha/beta) OpenQuack builds on the DMG path. Carries every release. Brew users upgrade via `brew upgrade --cask openquack`.</description>
+        <language>en</language>
+    </channel>
+</rss>
