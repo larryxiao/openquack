@@ -28,7 +28,11 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 ---
 
-> 📢 **What's new — [v2.0.0-alpha.18](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.18):** Mixed Chinese/English now holds up across a long recording. Start a thought in English and finish it in Chinese — the Chinese comes back as Chinese instead of a botched English translation, normalised to your system's script (Simplified or Traditional). ([past releases](https://github.com/larryxiao/openquack/releases))
+> 📢 **What's new** — full notes on the [Releases page →](https://github.com/larryxiao/openquack/releases)
+>
+> - 🌏 **[v2.0.0-alpha.18](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.18) — code-switch without the chaos.** Start a sentence in English and finish it in 中文: your Chinese now comes back as Chinese across a whole recording, not a garbled English "translation," and it's tidied into your system's script (简体 or 繁體).
+> - 🎧 **[v2.0.0-alpha.17](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.17) — auto-detect that actually detects.** Just talk in any language, no menu-fiddling. Non-English speech stopped getting silently translated to English (253% → 17% WER on the multilingual set).
+> - 🦆 **[v2.0.0-alpha.16](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.16) — updates that get out of your way.** Homebrew upgrades run quietly in the background and relaunch the duck for you — no surprise Terminal window.
 
 ## What it is
 
