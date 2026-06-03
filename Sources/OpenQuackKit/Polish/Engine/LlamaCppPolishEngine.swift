@@ -85,7 +85,9 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         guard count > 0 else { throw PolishError.loadFailed }
 
         // Prefill the prompt.
-        let decodeResult = llama_decode(ctx, llama_batch_get_one(&tokens, count))
+        let decodeResult = tokens.withUnsafeMutableBufferPointer {
+            llama_decode(ctx, llama_batch_get_one($0.baseAddress, count))
+        }
         guard decodeResult == 0 else { throw PolishError.loadFailed }
 
         // Greedy decode loop.
@@ -111,8 +113,10 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
             }
 
             var next = tok
-            let stepResult = llama_decode(ctx, llama_batch_get_one(&next, 1))
-            guard stepResult == 0 else { break }
+            let stepResult = withUnsafeMutablePointer(to: &next) {
+                llama_decode(ctx, llama_batch_get_one($0, 1))
+            }
+            guard stepResult == 0 else { throw PolishError.loadFailed }
         }
 
         return String(bytes: outputBytes, encoding: .utf8) ?? String(outputBytes.map { Character(UnicodeScalar($0)) })
