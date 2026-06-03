@@ -25,19 +25,28 @@ public actor StreamingTranscriber {
         /// Cap on chunks transcribing at once. Default 1: bumping it gives
         /// headroom against RTF spikes at the cost of double peak RAM.
         public var maxInFlightChunks: Int
+        /// Shortest chunk the auto path trusts to re-detect language on
+        /// (SPEC-035). Interior chunks are ≥ `targetChunkSeconds` and always
+        /// re-detect; a trailing chunk shorter than this inherits the running
+        /// language instead of risking a weak-detection flip. Default 10 s —
+        /// comfortably above Whisper's reliable language-ID floor while still
+        /// well under a full chunk, so only genuinely short tails inherit.
+        public var minDetectSeconds: TimeInterval
 
         public init(
             streamingThreshold: TimeInterval = 30,
             targetChunkSeconds: TimeInterval = 20,
             maxChunkSeconds: TimeInterval = 28,
             silenceEnergyThreshold: Float = 0.02,
-            maxInFlightChunks: Int = 1
+            maxInFlightChunks: Int = 1,
+            minDetectSeconds: TimeInterval = 10
         ) {
             self.streamingThreshold = streamingThreshold
             self.targetChunkSeconds = targetChunkSeconds
             self.maxChunkSeconds = maxChunkSeconds
             self.silenceEnergyThreshold = silenceEnergyThreshold
             self.maxInFlightChunks = maxInFlightChunks
+            self.minDetectSeconds = minDetectSeconds
         }
     }
 
@@ -59,11 +68,11 @@ public actor StreamingTranscriber {
     private var bufferStartSample: Int = 0
     private var beginTime: Date?
     private var language: String?
-    /// On the auto path (`language == nil`), the language detected on the first
-    /// chunk, reused for every subsequent chunk so the whole utterance decodes
-    /// in one consistent language instead of WhisperKit re-detecting (and
-    /// possibly flipping) per chunk (SPEC-021).
-    private var resolvedLanguage: String?
+    /// On the auto path (`language == nil`), the language detected on the most
+    /// recent *full* chunk. Full chunks re-detect (so a mid-recording language
+    /// switch is honoured); a short trailing chunk inherits this instead of
+    /// risking a weak-detection flip (SPEC-035, `decideStreamingChunk`).
+    private var runningLanguage: String?
     private var promptTokens: [Int]?
     private var ended: Bool = false
     private var cancelled: Bool = false
@@ -110,7 +119,7 @@ public actor StreamingTranscriber {
         cancelled = false
         beginTime = Date()
         self.language = language
-        self.resolvedLanguage = nil
+        self.runningLanguage = nil
         self.promptTokens = encodePrompt(customWords: customWords)
     }
 
@@ -163,7 +172,7 @@ public actor StreamingTranscriber {
         buffer.removeAll(keepingCapacity: false)
         chunkOutcomes.removeAll()
         beginTime = nil
-        resolvedLanguage = nil
+        runningLanguage = nil
     }
 
     // MARK: - cut-point logic
@@ -242,25 +251,24 @@ public actor StreamingTranscriber {
             options.promptTokens = p
         }
 
-        // Detect-then-lock on the auto path (SPEC-021), via the shared policy.
-        // WhisperKit only detects when `language == nil && detectLanguage`
-        // (the latter defaults false), so without this every chunk silently
-        // prefills English and translates non-English audio. The first auto
-        // chunk detects (reusing its own encoder pass — no extra cost); the
-        // result is locked into `resolvedLanguage` below so later chunks reuse
-        // it and the utterance can't flip language mid-stream. A pinned language
-        // skips detection entirely.
-        //
-        // Limitation: WhisperKit reports `Constants.defaultLanguageCode` ("en")
-        // rather than nil when detection is weak, so we only lock from a chunk
-        // that produced real text (see the `!text.isEmpty` guard below) — a
-        // leading-silence or empty chunk leaves `resolvedLanguage` nil so the
-        // next, content-bearing chunk re-detects instead of pinning "en". The
-        // first emitted chunk is a full ~20s window (`targetChunkSeconds`) where
-        // detection is reliable; pinning a language in Settings removes the risk
-        // entirely. The auto streaming path is not yet benched (no stream-bench
-        // auto option) — tracked in docs/research/accuracy-en-zh-mixed-plan.md.
-        let decision = LanguageDecodePolicy.decide(pinned: language, locked: resolvedLanguage)
+        // Per-chunk language decision on the auto path (SPEC-035). WhisperKit
+        // only detects when `language == nil && detectLanguage` (the latter
+        // defaults false), so without this every chunk silently prefills English
+        // and translates non-English audio (SPEC-021). Rather than lock the whole
+        // session to the first chunk — which forces a mid-recording language
+        // switch back to the original language — each *full* chunk re-detects,
+        // and only a short trailing chunk inherits the running language (it can
+        // be too short for reliable detection, and WhisperKit returns the "en"
+        // fallback when unsure). A pinned language skips detection entirely. See
+        // `decideStreamingChunk` for the rationale and SPEC-035 §Streaming for
+        // the before/after bench.
+        let chunkSeconds = Double(samples.count) / Double(sampleRate)
+        let decision = LanguageDecodePolicy.decideStreamingChunk(
+            pinned: language,
+            running: runningLanguage,
+            chunkSeconds: chunkSeconds,
+            minDetectSeconds: config.minDetectSeconds
+        )
         options.language = decision.language
         options.detectLanguage = decision.detectLanguage
 
@@ -268,11 +276,12 @@ public actor StreamingTranscriber {
             let results = try await pipe.transcribe(audioArray: samples, decodeOptions: options)
             let text = results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             let detected = results.first?.language
-            // Lock the auto-detected language for the rest of the session, but
-            // only from a chunk that actually transcribed something — an empty
-            // (silence) chunk yields the "en" fallback and must not pin English.
-            if language == nil, resolvedLanguage == nil, !text.isEmpty, let detected {
-                resolvedLanguage = detected
+            // Update the running language only from a chunk that actually
+            // re-detected (a full chunk) and produced text — a short inherited
+            // chunk must not overwrite it, and an empty (silence) chunk yields
+            // the "en" fallback and must not pin English.
+            if language == nil, decision.detectLanguage, !text.isEmpty, let detected {
+                runningLanguage = detected
             }
             return ChunkOutcome(text: text, detectedLanguage: detected, succeeded: true)
         } catch {

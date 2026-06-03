@@ -55,10 +55,11 @@ column tracks *implementation* state, which is what the roadmap drives against:
 | [SPEC-031](SPEC-031-agent-kickoff.md) | Agent kickoff (one-shot voice-to-action) | shipped | M2 |
 | [SPEC-031a](SPEC-031a-voice-reply.md) | Voice reply to live agent sessions | draft | M2 |
 | [SPEC-032](SPEC-032-engine-prompt-token-cache.md) | Engine prompt-token cache (offline path parity) | draft | M1 |
+| [SPEC-035](SPEC-035-chinese-script-system-default.md) | Auto-normalise Chinese script + mixed-language streaming detection | shipped | M3 |
 
-> Next free spec IDs: **SPEC-033, SPEC-034** (reserved for the two open docs PRs
-> #41 Pages analytics → 033 and #42 install-count → 034, pending renumber). IDs
-> are global and monotonic — never reuse 028/029/031/032.
+> Next free spec ID: **SPEC-036**. SPEC-033 / SPEC-034 stay reserved for the two
+> open docs PRs (#41 Pages analytics → 033, #42 install-count → 034, pending
+> renumber). IDs are global and monotonic — never reuse 028/029/031/032/035.
 
 ## Spec lifecycle
 
