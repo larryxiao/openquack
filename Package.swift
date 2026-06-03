@@ -50,6 +50,10 @@ let package = Package(
         // OpenQuackApp. `from: "2.6.0"` floats up through 2.x; do not pin a
         // branch.
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.0"),
+        // SPEC-007 — in-process llama.cpp polish engine. Thin binding: a
+        // binaryTarget over the official llama.cpp xcframework, tracked daily.
+        // We write the inference loop ourselves (see LlamaCppPolishEngine).
+        .package(url: "https://github.com/mattt/llama.swift", .upToNextMajor(from: "2.9488.0")),
     ],
     targets: [
         .target(
@@ -72,6 +76,7 @@ let package = Package(
                 "OpenQuackStreaming",
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
+                .product(name: "LlamaSwift", package: "llama.swift"),
             ],
             path: "Sources/OpenQuackKit"
         ),
