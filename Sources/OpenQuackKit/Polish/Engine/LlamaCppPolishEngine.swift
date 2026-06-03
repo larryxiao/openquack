@@ -73,6 +73,9 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         guard let model, let ctx else { throw PolishError.loadFailed }
         let vocab = llama_model_get_vocab(model)
 
+        // Reset KV state so each dictation starts from an empty sequence (ctx is kept warm).
+        llama_memory_clear(llama_get_memory(ctx), true)
+
         // Tokenise: first call with n_tokens_max=0 returns the negative count needed.
         let textLen = Int32(prompt.utf8.count)
         let needed = -llama_tokenize(vocab, prompt, textLen, nil, 0, true, true)
