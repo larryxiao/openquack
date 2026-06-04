@@ -39,6 +39,9 @@ echo "● debug-listen ON — topic: $topic. Dictate in the app to see output; C
 # the Python can use both quote styles freely.
 read -r -d '' FORMAT <<'PY' || true
 import sys, json
+TTY = sys.stdout.isatty()  # skip color when piped to a file
+def c(code, s):
+    return "\033[%sm%s\033[0m" % (code, s) if TTY else s
 try:
     while True:
         line = sys.stdin.readline()
@@ -56,12 +59,12 @@ try:
             continue
         ts = entry.get("timestamp", "")
         t = ts[11:19] if len(ts) >= 19 else ts
-        llm = "ok" if d.get("llm") else "FELL BACK"
+        llm = c("32", "ok") if d.get("llm") else c("31", "FELL BACK")
         ms = d.get("ms")
         ms_s = "%dms" % ms if ms is not None else "-"
         sys.stdout.write("\n[%s] %s · LLM %s · %s\n" % (t, d.get("engine", "?"), llm, ms_s))
-        sys.stdout.write("  raw      : %s\n" % d.get("raw", ""))
-        sys.stdout.write("  polished : %s\n" % d.get("polished", ""))
+        sys.stdout.write("  raw      : %s\n" % c("33", d.get("raw", "")))
+        sys.stdout.write("  polished : %s\n" % c("32", d.get("polished", "")))
         sys.stdout.flush()
 except KeyboardInterrupt:
     pass

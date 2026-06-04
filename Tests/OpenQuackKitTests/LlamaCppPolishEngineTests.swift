@@ -28,4 +28,20 @@ final class LlamaCppPolishEngineTests: XCTestCase {
         XCTAssertTrue(r.llmRan)
         XCTAssertFalse(r.llmSucceeded)
     }
+
+    func testUnloadBeforeLoadIsSafe() async {
+        let engine = LlamaCppPolishEngine(modelPath: URL(fileURLWithPath: "/tmp/never-loaded.gguf"))
+        await engine.unload()   // must be a no-op, not a crash, when nothing was loaded
+    }
+
+    func testWarmMissingModelThrows() async {
+        let engine = LlamaCppPolishEngine(
+            modelPath: URL(fileURLWithPath: "/tmp/openquack-no-such-model-\(UUID().uuidString).gguf"))
+        do {
+            try await engine.warm()
+            XCTFail("expected warm to throw when the GGUF is absent")
+        } catch {
+            // expected — same modelNotFound path polish() relies on for regex fallback.
+        }
+    }
 }

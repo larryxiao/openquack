@@ -38,6 +38,20 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         return out
     }
 
+    /// Warm-on-record entry point; idempotent (ensureLoaded() returns early if warm).
+    public func warm() throws {
+        try ensureLoaded()
+    }
+
+    /// Free model + context so the ~3 GB is reclaimed; the next warm()/polish()
+    /// reloads. Leaves the process-global llama backend alone (owned by backendInitOnce).
+    public func unload() {
+        if let ctx { llama_free(ctx) }
+        if let model { llama_model_free(model) }
+        ctx = nil
+        model = nil
+    }
+
     /// This Gemma 4 build's chat tokens are `<|turn>{role}` / `<turn|>` — NOT the
     /// Gemma 2/3 `<start_of_turn>`/`<end_of_turn>`. parse_special maps these to the
     /// real control tokens; the wrong markers tokenise as junk text and the model
