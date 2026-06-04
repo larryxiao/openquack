@@ -85,6 +85,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor lazy var responseWindow = ResponseWindowController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
+    // SPEC-007 — in-process polish engine kept warm across dictations: warmed on
+    // record-start, idle-unloaded after polishIdleUnload of no dictation.
+    private var polishEngine: LlamaCppPolishEngine?
+    private var polishEngineModelPath: URL?
+    private var polishIdleTimer: Timer?
     private var overlay: RecordingOverlay?
     private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
@@ -773,6 +778,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// faster than the eye can register, which defeats the point of having
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
+    private static let polishIdleUnload: TimeInterval = 300   // 5 min
     private static let defaultPolishModel = "gemma4-textonly:Q4_K_M"
     /// SPEC-007 spike — local GGUF path for the in-process engine. No download
     /// UX yet; the developer places a GGUF here (or overrides `polishLlamaModelPath`).
@@ -1029,6 +1035,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 appState.phase = .error("Failed to load Whisper: \(error)")
             }
         }
+    }
+
+    // MARK: - SPEC-007 polish engine warmup / keep-warm / idle-unload
+
+    /// The configured GGUF path — single read point so the retained instance's
+    /// path comparison can't drift from what polish() builds.
+    @MainActor
+    private var configuredLlamaModelPath: URL {
+        UserDefaults.standard.string(forKey: "polishLlamaModelPath")
+            .map { URL(fileURLWithPath: $0) } ?? Self.defaultPolishLlamaModelPath
+    }
+
+    /// Retained engine for the configured path; rebuilds if absent or path changed.
+    @MainActor
+    private func retainedLlamaEngine(path: URL) -> LlamaCppPolishEngine {
+        if let engine = polishEngine, polishEngineModelPath == path {
+            return engine
+        }
+        unloadPolishEngine()
+        let engine = LlamaCppPolishEngine(modelPath: path)
+        polishEngine = engine
+        polishEngineModelPath = path
+        return engine
+    }
+
+    /// Record-start hook: drop the engine if the user switched away from llamaCpp,
+    /// else retain one and load it in the background so the ~3 GB load hides behind
+    /// the record+transcribe window.
+    @MainActor
+    private func warmPolishEngineIfNeeded() {
+        guard polishEngineKind == .llamaCpp else {
+            unloadPolishEngine()
+            return
+        }
+        let engine = retainedLlamaEngine(path: configuredLlamaModelPath)
+        Task { try? await engine.warm() }
+    }
+
+    @MainActor
+    private func unloadPolishEngine() {
+        guard let engine = polishEngine else { return }
+        polishEngine = nil
+        polishEngineModelPath = nil
+        Task.detached { await engine.unload() }
+    }
+
+    /// Arm the debounce: unload the warm model after polishIdleUnload with no new
+    /// dictation. Called when a dictation completes; cancelled at record-start.
+    @MainActor
+    private func schedulePolishIdleUnload() {
+        polishIdleTimer?.invalidate()
+        polishIdleTimer = Timer.scheduledTimer(withTimeInterval: Self.polishIdleUnload,
+                                               repeats: false) { [weak self] _ in
+            self?.unloadPolishEngine()
+        }
+    }
+
+    @MainActor
+    private func cancelPolishIdleUnload() {
+        polishIdleTimer?.invalidate()
+        polishIdleTimer = nil
     }
 
     private func startElapsedTimer() {
