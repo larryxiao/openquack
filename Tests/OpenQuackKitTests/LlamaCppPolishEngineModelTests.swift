@@ -23,4 +23,19 @@ final class LlamaCppPolishEngineModelTests: XCTestCase {
         XCTAssertFalse(out.contains("<<<END>>>") || out.contains("turn|>"),
                        "scaffold/turn markers leaked into output; got: \(out)")
     }
+
+    func testReloadAfterUnloadStillPolishes() async throws {
+        guard let path = ProcessInfo.processInfo.environment["OQ_LLAMA_MODEL"] else {
+            throw XCTSkip("set OQ_LLAMA_MODEL=<gguf path> to run")
+        }
+        let engine = LlamaCppPolishEngine(modelPath: URL(fileURLWithPath: path))
+        try await engine.warm()
+        await engine.unload()
+        try await engine.warm()   // reload from the same path — this is the idle-unload cycle
+        let out = try await engine.polish("um so like the thing is kind of broken",
+                                          context: PolishContext(language: "en", timestamp: Date()))
+        XCTAssertFalse(out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       "reload-then-polish produced empty output; got: \(out)")
+        XCTAssertFalse(out.contains("turn|>"), "turn markers leaked after reload; got: \(out)")
+    }
 }
