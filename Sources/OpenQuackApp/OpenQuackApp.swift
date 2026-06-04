@@ -682,9 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             engine = OllamaPolishEngine(
                 model: UserDefaults.standard.string(forKey: "polishOllamaModel") ?? Self.defaultPolishModel)
         case .llamaCpp:
-            let path = UserDefaults.standard.string(forKey: "polishLlamaModelPath")
-                ?? Self.defaultPolishLlamaModelPath.path
-            engine = LlamaCppPolishEngine(modelPath: URL(fileURLWithPath: path))
+            engine = await MainActor.run { self.retainedLlamaEngine(path: self.configuredLlamaModelPath) }
         }
         let result = await PolishPipeline.polish(
             scripted,
@@ -714,7 +712,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return
             }
-            await MainActor.run { appState.phase = .starting }
+            await MainActor.run {
+                appState.phase = .starting
+                cancelPolishIdleUnload()
+                warmPolishEngineIfNeeded()
+            }
 
             // SPEC-012: wire the streamer before start() so we don't miss the
             // first tap buffer. We always wire even for short utterances —
@@ -768,6 +770,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let streamer { await streamer.cancel() }
                 await MainActor.run {
                     appState.phase = .error("Recording failed: \(error)")
+                    schedulePolishIdleUnload()
                 }
             }
         }
@@ -975,6 +978,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.accessibilityTrusted = PasteService.isAccessibilityTrusted()
                     appState.phase = .ready
                     playSound("Pop")
+                    schedulePolishIdleUnload()
                 }
 
                 // SPEC-013/014 — record stats and persist history. Best-effort:
@@ -1003,6 +1007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await MainActor.run {
                     appState.phase = .error("Transcription failed: \(error)")
+                    schedulePolishIdleUnload()
                 }
             }
             // Recording is kept for inspection — we let the next start() overwrite it.
@@ -1217,6 +1222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 PasteService.copyToClipboard(polished)
             }
+            schedulePolishIdleUnload()
             try? await historyStore.markTranscribed(entry.id, transcript: polished)
             await usageStats.record(transcript: polished, audioSeconds: result.audioSeconds)
         } catch {
