@@ -38,9 +38,13 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         return out
     }
 
-    /// Gemma has no system role — fold system + user into one user turn.
+    /// This Gemma 4 build's chat tokens are `<|turn>{role}` / `<turn|>` — NOT the
+    /// Gemma 2/3 `<start_of_turn>`/`<end_of_turn>`. parse_special maps these to the
+    /// real control tokens; the wrong markers tokenise as junk text and the model
+    /// emits boilerplate. Hardcoded to this model — deriving the format from the
+    /// model is a SPEC-007 follow-up.
     private static func gemmaPrompt(system: String, user: String) -> String {
-        "<start_of_turn>user\n\(system)\n\n\(user)<end_of_turn>\n<start_of_turn>model\n"
+        "<|turn>system\n\(system)<turn|>\n<|turn>user\n\(user)<turn|>\n<|turn>model\n"
     }
 
     /// Lazily load + cache model and context. Throws before any C call if the
