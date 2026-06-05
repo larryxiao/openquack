@@ -63,6 +63,8 @@ public struct ModelDownloader: ModelDownloading {
 
 /// URLSession data delegate: appends chunks to the partial file, tracks progress,
 /// resets to a fresh file if the server ignored our Range (200 instead of 206).
+/// `@unchecked Sendable` is safe because URLSession serializes a task's delegate
+/// callbacks onto one queue — the mutable state is never touched concurrently.
 private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let partial: URL
     private let expectedBytes: Int64
