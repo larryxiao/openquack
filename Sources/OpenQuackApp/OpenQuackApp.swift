@@ -678,9 +678,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch engineKind {
         case .off:
             engine = nil
-        case .ollama:
-            engine = OllamaPolishEngine(
-                model: UserDefaults.standard.string(forKey: "polishOllamaModel") ?? Self.defaultPolishModel)
         case .llamaCpp:
             engine = await MainActor.run { self.retainedLlamaEngine(path: self.configuredLlamaModelPath) }
         }
@@ -782,7 +779,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
     private static let polishIdleUnload: TimeInterval = 300   // 5 min
-    private static let defaultPolishModel = "gemma4-textonly:Q4_K_M"
     /// SPEC-007 spike — local GGUF path for the in-process engine. No download
     /// UX yet; the developer places a GGUF here (or overrides `polishLlamaModelPath`).
     private static let defaultPolishLlamaModelPath: URL = {

@@ -21,6 +21,5 @@ public struct PolishContext: Sendable {
 /// `TextPolishEngine` once MLX supports Gemma 4.
 public enum PolishEngineKind: String, CaseIterable, Sendable {
     case off
-    case ollama
     case llamaCpp
 }

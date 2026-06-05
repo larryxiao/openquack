@@ -4,8 +4,7 @@ import LlamaSwift
 /// In-process polish via an embedded llama.cpp model (GGUF) loaded from a local
 /// file. An actor because the loaded model/context are stateful C handles kept
 /// warm across dictations — load is seconds + GBs, paid once. Any failure
-/// throws so the caller falls back to the regex pipeline — same contract as
-/// OllamaPolishEngine.
+/// throws so the caller falls back to the regex pipeline.
 public actor LlamaCppPolishEngine: TextPolishEngine {
     private let modelPath: URL
     private var model: OpaquePointer?    // llama_model *

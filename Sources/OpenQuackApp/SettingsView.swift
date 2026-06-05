@@ -106,9 +106,9 @@ private struct GeneralPane: View {
                     .help("Capitalise sentences, add a period at the end, strip filler words (um, uh) before paste. Off = paste exactly what Whisper heard.")
                 Picker("Local LLM polish (experimental)", selection: $polishEngine) {
                     Text("Off").tag("off")
-                    Text("Local LLM (Ollama)").tag("ollama")
+                    Text("Local LLM (llama.cpp)").tag("llamaCpp")
                 }
-                .help("Runs an extra local LLM cleanup pass before paste, via a local Ollama daemon at http://localhost:11434. If Ollama isn't running, falls back to your Smart formatting setting (or raw text if that's off). Nothing leaves your Mac.")
+                .help("Runs an extra local LLM cleanup pass before paste, using an in-process model on your Mac. If the model isn't available, falls back to your Smart formatting setting (or raw text if that's off). Nothing leaves your Mac.")
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {
