@@ -69,7 +69,12 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
             throw PolishError.modelNotFound(modelPath)
         }
         _ = Self.backendInitOnce
-        let mparams = llama_model_default_params()
+        var mparams = llama_model_default_params()
+        // Load weights into resident (anonymous) RAM, not mmap. mmap pages are
+        // clean/file-backed, so the OS reclaims them within seconds of warming —
+        // the next decode re-faults ~3 GB from disk (slow). use_mmap=false keeps
+        // them resident across the keep-warm window; idle-unload frees them later.
+        mparams.use_mmap = false
         guard let m = llama_model_load_from_file(modelPath.path, mparams) else {
             throw PolishError.loadFailed
         }
@@ -85,11 +90,11 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         warmupDecode()
     }
 
-    /// One forward pass to fault the weights into RAM. With mmap on (the default)
-    /// the load only maps the file — the ~3 GB of weights page in lazily on first
-    /// access, which would otherwise be the first polish(). Decoding a single BOS
-    /// token touches every weight matrix, so that cost lands here (i.e. during
-    /// warm-on-record) instead. Best-effort; KV cleared so polish() starts empty.
+    /// One forward pass at warm time so the first real polish() is fast. Weights
+    /// are already resident (use_mmap=false reads them in during load), but the
+    /// first llama_decode still triggers one-time Metal compute-pipeline
+    /// compilation — this moves that cost to warm-on-record. Best-effort; KV
+    /// cleared so polish() starts from an empty sequence.
     private func warmupDecode() {
         guard let model, let ctx else { return }
         let vocab = llama_model_get_vocab(model)
