@@ -779,14 +779,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
     private static let polishIdleUnload: TimeInterval = 300   // 5 min
-    /// SPEC-007 spike — local GGUF path for the in-process engine. No download
-    /// UX yet; the developer places a GGUF here (or overrides `polishLlamaModelPath`).
-    private static let defaultPolishLlamaModelPath: URL = {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support
-            .appendingPathComponent("OpenQuack/models", isDirectory: true)
-            .appendingPathComponent("gemma4-e2b-text.Q4_K_M.gguf")
-    }()
+    /// SPEC-007 — default GGUF location is the catalog's download target;
+    /// `polishLlamaModelPath` UserDefaults still overrides it for devs.
+    private static var defaultPolishLlamaModelPath: URL { PolishModelCatalog.localURL }
 
     /// SPEC-031 — map an AgentKickoffService error to a one-line user-
     /// facing label for the overlay's "ready" state.
