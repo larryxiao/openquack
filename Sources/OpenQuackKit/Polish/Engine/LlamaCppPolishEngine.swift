@@ -82,6 +82,23 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         }
         model = m
         ctx = c
+        warmupDecode()
+    }
+
+    /// One forward pass to fault the weights into RAM. With mmap on (the default)
+    /// the load only maps the file — the ~3 GB of weights page in lazily on first
+    /// access, which would otherwise be the first polish(). Decoding a single BOS
+    /// token touches every weight matrix, so that cost lands here (i.e. during
+    /// warm-on-record) instead. Best-effort; KV cleared so polish() starts empty.
+    private func warmupDecode() {
+        guard let model, let ctx else { return }
+        let vocab = llama_model_get_vocab(model)
+        var tok = llama_vocab_bos(vocab)
+        guard tok >= 0 else { return }
+        _ = withUnsafeMutablePointer(to: &tok) {
+            llama_decode(ctx, llama_batch_get_one($0, 1))
+        }
+        llama_memory_clear(llama_get_memory(ctx), true)
     }
 
     /// `llama_backend_init()` must run exactly once per process.
