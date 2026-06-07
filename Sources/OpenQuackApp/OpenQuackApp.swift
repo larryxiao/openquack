@@ -7,6 +7,7 @@ import ServiceManagement
 import Sparkle
 import UserNotifications
 import OpenQuackKit
+import OpenQuackPlatform
 
 // SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
 //
@@ -68,6 +69,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastVoiceAt: Date?
     private static let voiceThreshold: Float = 0.06
     private static let vadMinDuration: Double = 0.8
+
+    /// SPEC-036 — set when the current recording was force-stopped by an audio
+    /// device/route change (vs. a user stop / VAD). Reset at each `startRecording`.
+    private var recordingInterrupted = false
+    /// SPEC-036 — summary of the most recent recording for the bug-report dump.
+    private var lastRecordingDiag: DiagnosticsReport.LastRecording?
 
     private let appState = AppState()
     private let recorder = AudioRecorder()
@@ -132,6 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // SPEC-033 — read sentinel before any code that could crash, then arm
+        // it for this session. Value stays true if we crash; cleared on clean exit.
+        let priorSessionCrashed = checkAndMarkCrashSentinel()
+
         NSApp.setActivationPolicy(.accessory)
         appState.installMethod = InstallMethodDetector.detect()
         installSparkleUpdater()
@@ -172,6 +183,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // SPEC-036 — when the audio engine reconfigures mid-recording (device /
+        // route change — Bluetooth, device switch, sample-rate change), the tap
+        // stops and the UI would otherwise freeze. Auto-stop-and-transcribe so
+        // the user gets the partial result with a clear notice instead. Fires on
+        // the main queue.
+        recorder.interruptionHandler = { [weak self] in
+            guard let self else { return }
+            guard case .recording = self.appState.phase else { return }
+            self.recordingInterrupted = true
+            self.appState.lastNotice = "Recording interrupted by an audio device change"
+            Diagnostics.shared.log(.recording, .warn, "interruption → auto-stopping mid-recording")
+            self.stopAndTranscribe()
+        }
+
         // Refresh permission state on launch and every 5 s while running so
         // the popover banner reflects reality even if the user grants AX
         // through System Settings without coming back to the app first.
@@ -206,9 +231,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await pollForUpdate() }
 
         // SPEC-014 — sweep retention + offer crash-recovery on launch.
+        // SPEC-033 — offer bug report if sentinel indicates unclean prior exit.
         let history = historyStore
         Task { @MainActor in
             await history.enforceRetention()
+            if priorSessionCrashed { await self.offerCrashBugReport() }
             await self.offerRecoveryIfNeeded()
         }
 
@@ -438,6 +465,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuSendFeedback() {
         // SPEC-018. Opens the GitHub issue chooser; user picks bug report
         // or feature request from there. No app-side network IO.
+        // SPEC-036 — also drop a diagnostics file in Finder to attach.
+        writeDiagnosticsFileAndReveal()
         guard let url = URL(string: "https://github.com/larryxiao/openquack/issues/new/choose") else {
             return
         }
@@ -692,6 +721,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
                     appState.resetLevels()
+                    appState.lastNotice = nil          // SPEC-036
+                    recordingInterrupted = false       // SPEC-036
                     lastVoiceAt = nil
                     startElapsedTimer()
                     playSound("Tink")
@@ -794,9 +825,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // sees every frame; cancel() is fine to call after teardown
                 // (any frames still queued become a no-op once cancelled).
                 let result: EngineTranscription
+                // SPEC-036 — streaming-only stats for the diagnostics summary.
+                let pathLabel: String
+                var chunkCount: Int?
+                var chunkFailures: Int?
                 if audioDuration >= Self.streamingThreshold, let streamer {
                     await tearDownFramesPump()
                     let r = try await streamer.finish()
+                    chunkCount = r.chunkCount
+                    chunkFailures = r.chunkFailures
+                    pathLabel = "streaming"
                     result = EngineTranscription(
                         text: r.text,
                         detectedLanguage: r.detectedLanguage,
@@ -807,12 +845,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     await tearDownFramesPump()
                     if let streamer { await streamer.cancel() }
+                    pathLabel = "offline"
                     result = try await engine.transcribe(
                         audioFile: url,
                         language: defaultLanguage,
                         customWords: customWords
                     )
                 }
+
+                // SPEC-036 — recording-health + transcription summary. `captured`
+                // survives `recorder.stop()` (reset only on the next start), so it
+                // reflects this recording. A large wall-vs-captured shortfall is
+                // the freeze signature (the tap stopped mid-recording).
+                let captured = recorder.capturedSeconds
+                let health = RecordingHealth.assess(wallSeconds: audioDuration, capturedSeconds: captured)
+                let diag = DiagnosticsReport.LastRecording(
+                    wallSeconds: audioDuration,
+                    capturedSeconds: captured,
+                    health: health,
+                    path: pathLabel,
+                    chunkCount: chunkCount,
+                    chunkFailures: chunkFailures,
+                    transcribeWallSeconds: result.wallSeconds,
+                    audioSeconds: result.audioSeconds,
+                    detectedLanguage: result.detectedLanguage,
+                    interrupted: recordingInterrupted
+                )
+                lastRecordingDiag = diag
+                let rtfText = DiagnosticsReport.rtf(transcribe: result.wallSeconds, audio: result.audioSeconds)
+                    .map { String(format: "%.2f", $0) } ?? "-"
+                Diagnostics.shared.log(
+                    .transcription,
+                    health.isIncomplete ? .error : .info,
+                    "stop: wall \(String(format: "%.1f", audioDuration))s captured \(String(format: "%.1f", captured))s"
+                    + " \(pathLabel) rtf=\(rtfText) lang=\(result.detectedLanguage ?? "-")"
+                    + (health.isIncomplete ? " ⚠ INCOMPLETE" : "")
+                    + (recordingInterrupted ? " (interrupted)" : "")
+                )
 
                 // Whisper's `zh` output mixes Hant/Hans; normalise detected
                 // Chinese to the system-language script before any other text
@@ -1038,6 +1107,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (samples, format.sampleRate)
     }
 
+    // MARK: - SPEC-033: crash-sentinel bug-report prompt
+
+    /// Reads the crash sentinel and immediately re-arms it for this session.
+    /// Returns true if the prior session didn't exit cleanly.
+    @MainActor
+    private func checkAndMarkCrashSentinel() -> Bool {
+        let didCrash = UserDefaults.standard.bool(forKey: "crashSentinel")
+        UserDefaults.standard.set(true, forKey: "crashSentinel")
+        return didCrash
+    }
+
+    @MainActor
+    private func offerCrashBugReport() async {
+        let alert = NSAlert()
+        alert.messageText = "OpenQuack didn't exit cleanly last time."
+        alert.informativeText = "This is usually a crash or force-quit. Filing a report helps us fix it. We'll open a diagnostics file in Finder you can drag into the issue."
+        alert.addButton(withTitle: "Report Bug")
+        alert.addButton(withTitle: "Dismiss")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        writeDiagnosticsFileAndReveal()   // SPEC-036
+        guard let url = URL(string: "https://github.com/larryxiao/openquack/issues/new?template=bug_report.yml") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// SPEC-036 — write a plain-text diagnostics file and reveal it in Finder so
+    /// the user can attach it to a GitHub issue. No network IO; contains
+    /// durations, counts, RTF, a detected-language code, and event labels —
+    /// never transcript text. Returns the file URL (nil on write failure).
+    @MainActor
+    @discardableResult
+    private func writeDiagnosticsFileAndReveal() -> URL? {
+        let report = DiagnosticsReport.render(
+            appVersion: OpenQuackKit.version,
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            chip: Self.chipString(),
+            model: appState.modelLabel,
+            lastRecording: lastRecordingDiag,
+            events: Diagnostics.shared.recentEvents(),
+            generatedAt: Date()
+        )
+        let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Logs/OpenQuack", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("diagnostics-\(Self.fileTimestamp()).txt")
+        do {
+            try report.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            Diagnostics.shared.log(.app, .error, "diagnostics write failed: \(error)")
+            return nil
+        }
+        Diagnostics.shared.log(.app, .info, "wrote diagnostics to \(url.lastPathComponent)")
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        return url
+    }
+
+    /// CPU brand string (e.g. "Apple M4") for the diagnostics header.
+    private static func chipString() -> String {
+        var size = 0
+        sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0)
+        guard size > 0 else { return "unknown CPU" }
+        var buf = [CChar](repeating: 0, count: size)
+        sysctlbyname("machdep.cpu.brand_string", &buf, &size, nil, 0)
+        return String(cString: buf)
+    }
+
+    private static func fileTimestamp() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return f.string(from: Date())
+    }
+
     /// On launch, surface any recordings that didn't complete transcription.
     /// Spec calls for a non-modal popover anchored to the menu-bar icon;
     /// alpha.5 ships an NSAlert as the simpler MVP. Replace in a follow-up.
@@ -1109,6 +1250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // kill the sessions; user can re-enter them via `claude
         // agents` or `claude attach <id>` next time they want to.
         agentSessions.stopTrackingAll()
+        // SPEC-033 — clean exit: disarm the crash sentinel.
+        UserDefaults.standard.set(false, forKey: "crashSentinel")
     }
 }
 

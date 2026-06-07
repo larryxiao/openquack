@@ -57,6 +57,10 @@ public final class AppState: ObservableObject {
     /// SPEC-031 — short error label for failed kickoffs, shown in the
     /// "ready" overlay state.
     @Published public var lastKickoffError: String?
+    /// SPEC-036 — a transient notice shown in the "ready" overlay subline,
+    /// e.g. "Recording interrupted by an audio device change". Takes priority
+    /// over the transcript preview when set; cleared at the next recording.
+    @Published public var lastNotice: String?
     @Published public var accessibilityTrusted: Bool = false
     @Published public var modelLabel: String = "medium"
     /// Lifecycle of an update check — drives both the menu-bar 🦆⬆

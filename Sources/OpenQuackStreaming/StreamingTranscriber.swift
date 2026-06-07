@@ -272,6 +272,7 @@ public actor StreamingTranscriber {
         options.language = decision.language
         options.detectLanguage = decision.detectLanguage
 
+        let t0 = Date()
         do {
             let results = try await pipe.transcribe(audioArray: samples, decodeOptions: options)
             let text = results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -283,8 +284,27 @@ public actor StreamingTranscriber {
             if language == nil, decision.detectLanguage, !text.isEmpty, let detected {
                 runningLanguage = detected
             }
+            // SPEC-036 — per-chunk timing/RTF + language decision. Chunks are
+            // ~20 s apart so this is cheap; it's what lets us confirm "slow"
+            // (RTF, and detect-every-chunk doubling cost) and "inaccurate"
+            // (a language flip on an interior chunk) from a user's session.
+            let wall = Date().timeIntervalSince(t0)
+            let rtf = chunkSeconds > 0 ? wall / chunkSeconds : 0
+            Diagnostics.shared.log(.streaming, .info, String(
+                format: "chunk %.1fs detect=%@ lang=%@ → wall %.2fs rtf %.2f detected=%@ %dchars",
+                chunkSeconds,
+                decision.detectLanguage ? "y" : "n",
+                decision.language ?? "auto",
+                wall, rtf,
+                detected ?? "-",
+                text.count
+            ))
             return ChunkOutcome(text: text, detectedLanguage: detected, succeeded: true)
         } catch {
+            let wall = Date().timeIntervalSince(t0)
+            Diagnostics.shared.log(.streaming, .error, String(
+                format: "chunk %.1fs FAILED after %.2fs: %@", chunkSeconds, wall, "\(error)"
+            ))
             return ChunkOutcome(text: "", detectedLanguage: nil, succeeded: false)
         }
     }
