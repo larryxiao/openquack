@@ -1075,9 +1075,9 @@ private struct PolishModelDownloadSheet: View {
                     Button("Download") { model.confirm() }
                         .keyboardShortcut(.defaultAction)
                 }
-            case .downloading(let fraction):
-                ProgressView(value: fraction)
-                Text("\(Int(fraction * 100))% of \(PolishModelCatalog.sizeLabel)")
+            case .downloading(let stats):
+                ProgressView(value: stats.fraction)
+                Text(Self.progressCaption(stats))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Spacer()
@@ -1095,5 +1095,24 @@ private struct PolishModelDownloadSheet: View {
         }
         .padding(20)
         .frame(width: 380)
+    }
+
+    private static func progressCaption(_ s: PolishModelDownload.DownloadStats) -> String {
+        if s.reconnecting { return "Reconnecting…" }
+        var parts = ["\(Int(s.fraction * 100))% of \(PolishModelCatalog.sizeLabel)"]
+        if let bps = s.bytesPerSecond {
+            parts.append(String(format: "%.1f MB/s", bps / 1_000_000))
+        }
+        if let eta = s.eta {
+            parts.append("~\(Self.formatETA(eta)) left")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func formatETA(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds.rounded()))
+        if s < 60 { return "\(s) sec" }
+        let m = (s + 30) / 60
+        return "\(m) min"
     }
 }

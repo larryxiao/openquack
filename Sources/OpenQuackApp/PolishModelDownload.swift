@@ -8,8 +8,15 @@ import OpenQuackKit
 final class PolishModelDownload: ObservableObject {
     enum Phase: Equatable {
         case confirming
-        case downloading(Double)
+        case downloading(DownloadStats)
         case failed(String)
+    }
+
+    struct DownloadStats: Equatable {
+        var fraction: Double
+        var bytesPerSecond: Double?
+        var eta: TimeInterval?
+        var reconnecting: Bool
     }
 
     @Published var isPresented = false
@@ -17,6 +24,8 @@ final class PolishModelDownload: ObservableObject {
 
     private let downloader: ModelDownloading
     private var task: Task<Void, Never>?
+    private var estimator = DownloadRateEstimator()
+    private var baseline: Int64 = 0
 
     init(downloader: ModelDownloading = ModelDownloader()) {
         self.downloader = downloader
@@ -30,7 +39,10 @@ final class PolishModelDownload: ObservableObject {
 
     func confirm() {
         task?.cancel()
-        phase = .downloading(0)
+        estimator = DownloadRateEstimator()
+        baseline = 0
+        phase = .downloading(DownloadStats(fraction: 0, bytesPerSecond: nil, eta: nil, reconnecting: true))
+        let start = Date()
         task = Task {
             do {
                 try await downloader.download(
@@ -38,9 +50,7 @@ final class PolishModelDownload: ObservableObject {
                     to: PolishModelCatalog.localURL,
                     expectedBytes: PolishModelCatalog.expectedBytes
                 ) { progress in
-                    Task { @MainActor in
-                        if case .downloading = self.phase { self.phase = .downloading(progress.fraction) }
-                    }
+                    Task { @MainActor in self.ingest(progress, since: start) }
                 }
                 UserDefaults.standard.set("llamaCpp", forKey: "polishEngine")
                 isPresented = false
@@ -50,6 +60,23 @@ final class PolishModelDownload: ObservableObject {
                 phase = .failed(Self.message(for: error))
             }
         }
+    }
+
+    /// Fold one progress sample into the published stats. The first sample is
+    /// the resume baseline (emitted before the network call); `reconnecting`
+    /// stays true until a sample arrives with more bytes than that baseline.
+    private func ingest(_ progress: DownloadProgress, since start: Date) {
+        guard case .downloading = phase else { return }
+        if baseline == 0, progress.completed > 0 { baseline = progress.completed }
+        let elapsed = Date().timeIntervalSince(start)
+        estimator.add(completed: progress.completed, at: elapsed)
+        let reconnecting = progress.completed <= baseline
+        phase = .downloading(DownloadStats(
+            fraction: progress.fraction,
+            bytesPerSecond: estimator.bytesPerSecond,
+            eta: estimator.eta(completed: progress.completed, total: progress.total),
+            reconnecting: reconnecting
+        ))
     }
 
     func retry() { confirm() }
