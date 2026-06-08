@@ -675,7 +675,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .off:
             engine = nil
         case .llamaCpp:
-            engine = await MainActor.run { self.retainedLlamaEngine(path: self.configuredLlamaModelPath) }
+            engine = await MainActor.run { self.retainedLlamaEngine(path: PolishModelCatalog.localURL) }
         }
         let result = await PolishPipeline.polish(
             scripted,
@@ -775,10 +775,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
     private static let polishIdleUnload: TimeInterval = 300   // 5 min
-    /// SPEC-007 — default GGUF location is the catalog's download target;
-    /// `polishLlamaModelPath` UserDefaults still overrides it for devs.
-    private static var defaultPolishLlamaModelPath: URL { PolishModelCatalog.localURL }
-
     /// SPEC-031 — map an AgentKickoffService error to a one-line user-
     /// facing label for the overlay's "ready" state.
     static func kickoffErrorLabel(_ error: Swift.Error) -> String {
@@ -1040,14 +1036,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - SPEC-007 polish engine warmup / keep-warm / idle-unload
 
-    /// The configured GGUF path — single read point so the retained instance's
-    /// path comparison can't drift from what polish() builds.
-    @MainActor
-    private var configuredLlamaModelPath: URL {
-        UserDefaults.standard.string(forKey: "polishLlamaModelPath")
-            .map { URL(fileURLWithPath: $0) } ?? Self.defaultPolishLlamaModelPath
-    }
-
     /// Retained engine for the configured path; rebuilds if absent or path changed.
     @MainActor
     private func retainedLlamaEngine(path: URL) -> LlamaCppPolishEngine {
@@ -1070,7 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             unloadPolishEngine()
             return
         }
-        let engine = retainedLlamaEngine(path: configuredLlamaModelPath)
+        let engine = retainedLlamaEngine(path: PolishModelCatalog.localURL)
         Task { try? await engine.warm() }
     }
 
