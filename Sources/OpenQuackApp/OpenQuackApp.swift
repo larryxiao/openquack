@@ -1079,6 +1079,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached { await engine.unload() }
     }
 
+    /// SPEC-007 — reclaim the ~2.9 GB GGUF. Sets the engine off, unloads any
+    /// warm instance, then removes the file. `use_mmap=false` means a loaded
+    /// engine keeps working until unload; we unload first so RAM is freed too.
+    @MainActor
+    func deletePolishModel() {
+        UserDefaults.standard.set("off", forKey: "polishEngine")
+        unloadPolishEngine()
+        try? FileManager.default.removeItem(at: PolishModelCatalog.localURL)
+    }
+
     /// Arm the debounce: unload the warm model after polishIdleUnload with no new
     /// dictation. Called when a dictation completes; cancelled at record-start.
     @MainActor

@@ -128,6 +128,12 @@ private struct GeneralPane: View {
                             .font(.caption)
                     }
                 }
+                if PolishModelCatalog.isInstalled() {
+                    Button("Delete model (\(PolishModelCatalog.sizeLabel))…", role: .destructive) {
+                        confirmDeletePolishModel()
+                    }
+                    .help("Remove the downloaded Local LLM model to reclaim disk space. Re-selecting Local LLM will download it again.")
+                }
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {
@@ -299,6 +305,18 @@ private struct GeneralPane: View {
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 s
             lastChecked = controller.updater.lastUpdateCheckDate
         }
+    }
+
+    @MainActor
+    private func confirmDeletePolishModel() {
+        let alert = NSAlert()
+        alert.messageText = "Delete the Local LLM model?"
+        alert.informativeText = "This frees ~2.9 GB. Local LLM polish turns off; re-selecting it downloads the model again."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        (NSApp.delegate as? AppDelegate)?.deletePolishModel()
+        polishEngine = "off"     // reflect immediately in the picker binding
     }
 
     /// SPEC-023 §Toggle write path. Synchronous SMAppService IO on the
