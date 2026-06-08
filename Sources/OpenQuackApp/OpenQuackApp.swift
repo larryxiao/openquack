@@ -872,6 +872,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     interrupted: recordingInterrupted
                 )
                 lastRecordingDiag = diag
+                // SPEC-036 — also push to the session ring AppState exposes to
+                // Settings → Stats → "Recording health" (opt-in display).
+                await MainActor.run { appState.pushRecentRecording(diag) }
                 let rtfText = DiagnosticsReport.rtf(transcribe: result.wallSeconds, audio: result.audioSeconds)
                     .map { String(format: "%.2f", $0) } ?? "-"
                 Diagnostics.shared.log(
@@ -1135,9 +1138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the user can attach it to a GitHub issue. No network IO; contains
     /// durations, counts, RTF, a detected-language code, and event labels —
     /// never transcript text. Returns the file URL (nil on write failure).
+    /// Internal (not `private`) so Settings → Stats → "Recording health" can
+    /// drive the reveal flow via the `(NSApp.delegate as? AppDelegate)` handle,
+    /// mirroring how StatsPane reaches `usageStats` (SPEC-036).
     @MainActor
     @discardableResult
-    private func writeDiagnosticsFileAndReveal() -> URL? {
+    func writeDiagnosticsFileAndReveal() -> URL? {
         let report = DiagnosticsReport.render(
             appVersion: OpenQuackKit.version,
             osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
