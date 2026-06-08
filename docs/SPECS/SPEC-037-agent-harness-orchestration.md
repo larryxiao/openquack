@@ -92,7 +92,7 @@ dictation or agent-dispatch hot path.
 Preserves the `docs/VISION.md` contract. The harness operates on repo source,
 specs, and the GitHub API — no audio, transcript text, or user data. The
 field-feedback loop the harness might one day consume stays consented and
-opt-in (SPEC-036 / 033 / 034 own that); SPEC-037 does not collect or transmit
+opt-in (SPEC-036 / 039 / 040 own that); SPEC-037 does not collect or transmit
 anything from users. The `gtm/` workspace stays gitignored and local; no role
 may stage it. No new network call enters the dictation or agent-dispatch hot
 path.

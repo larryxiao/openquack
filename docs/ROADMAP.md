@@ -134,7 +134,7 @@ model on the short corpus only, so quality regressions pass unseen.
 | 🔵 | Committed `.claude/` agent harness — named roles, saved workflows, trigger + permissions model with human gates on irreversible steps | SPEC-037 | spec proposal |
 | 🔵 | CI eval-gate — fetchable corpus, medium-model WER/RTF thresholds on every quality-path PR | SPEC-038 | spec proposal |
 | 🟡 | Signed, tag-triggered release pipeline — the cut a release-bot can only PREP today | SPEC-025 | partial |
-| ⚪ | Privacy-preserving field-feedback loop — local self-diagnosis → consented reports → opt-in aggregates | SPEC-036 / 033 / 034 | building on shipped diagnostics |
+| ⚪ | Privacy-preserving field-feedback loop — local self-diagnosis → consented reports → opt-in aggregates | SPEC-036 / 039 / 040 | building on shipped diagnostics |
 
 **Autonomy ceilings, per domain.**
 
