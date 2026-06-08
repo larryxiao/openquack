@@ -169,6 +169,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
 
+        // SPEC-007 — wire the download controller to AppState (so progress
+        // drives the menu-bar banner) and resume any interrupted download
+        // from a previous launch.
+        polishDownload.appState = appState
+        polishDownload.reconcileOnLaunch()
+
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
         // routed correctly; register the category so the action
