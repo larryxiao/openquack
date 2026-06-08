@@ -118,6 +118,16 @@ private struct GeneralPane: View {
                     Text("Local LLM (llama.cpp)").tag("llamaCpp")
                 }
                 .help("Runs an extra local LLM cleanup pass before paste, using an in-process model on your Mac. If the model isn't available, falls back to your Smart formatting setting (or raw text if that's off). Nothing leaves your Mac.")
+                if case .downloading(let stats) = modelDownload.phase, !modelDownload.isPresented {
+                    HStack(spacing: Theme.s8) {
+                        ProgressView(value: stats.fraction).frame(maxWidth: 160)
+                        Text(PolishModelDownloadSheet.progressCaption(stats))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Show") { modelDownload.resurface() }
+                            .font(.caption)
+                    }
+                }
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {
@@ -1099,7 +1109,7 @@ private struct PolishModelDownloadSheet: View {
         .frame(width: 380)
     }
 
-    private static func progressCaption(_ s: PolishModelDownloadController.DownloadStats) -> String {
+    static func progressCaption(_ s: PolishModelDownloadController.DownloadStats) -> String {
         if s.reconnecting { return "Reconnecting…" }
         var parts = ["\(Int(s.fraction * 100))% of \(PolishModelCatalog.sizeLabel)"]
         if let bps = s.bytesPerSecond {
