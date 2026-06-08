@@ -1,5 +1,7 @@
 # What I learned benchmarking Whisper on Apple Silicon for a Mac dictation app
 
+> **Update (2026-05-31):** Finding 1 has a resolution, and it's a good lesson in not trusting your own conclusion. The "WhisperKit hallucinates on non-English audio" result was a config bug on my end — `DecodingOptions.detectLanguage` defaults to `false`, so my engine never ran detection and the decoder translated non-English speech to English. One line (`detectLanguage = true`) took WhisperKit `medium` from 253% to 16.7% WER, matching Lightning. The bench did its job — it made the bug impossible to ignore — but my read of it ("auto-detect is fundamentally fragile") was wrong. Original text left intact below; [SPEC-021 / #63](https://github.com/larryxiao/openquack/pull/63) has the details.
+
 I needed to pick a default Whisper size for a Mac dictation app I built, and I didn't trust the published numbers. Most Whisper benchmarks publish one WER on one corpus on one machine. The choice of model size, the choice of engine implementation, and the kinds of audio someone actually feeds a dictation app — none of that gets crossed in a single matrix.
 
 So I built one. Five Whisper sizes (`tiny`, `base`, `small`, `medium`, `distil-large-v3`), two engines (WhisperKit and Lightning-Whisper-MLX), and 177 clips spanning real human speech, multi-accent English TTS, six non-English languages, and noise-augmented variants at three SNRs. Single host, M4 / 16 GB / macOS 15. The numbers and the raw CSVs are all in the repo.
@@ -44,7 +46,9 @@ A WER of 253% means the transcript is almost three times longer than the referen
 
 Same weights, very different multilingual robustness. That makes this an implementation difference, not a fundamental Whisper limitation. The decoder parameters are the prime suspect: `suppress_tokens`, `no_speech_threshold`, language-token forcing, sample length. I haven't traced it down yet. If anyone has shipped a LangID pre-pass in production or has a working WhisperKit decoder config for short multilingual audio, I'd like to compare notes (issue or PR welcome).
 
-The pragmatic fix shipped before the explanation did. The Settings pane now surfaces an explicit Language picker; auto-detect is off by default for users who have configured a language. The bench result was load-bearing for that decision. Without it, the natural default was "let Whisper figure it out", which would have been unusable for anyone outside English.
+> **Resolved (see the update up top):** the cause was simpler than any tuning knob — `detectLanguage` was off by default, so detection never ran. One line fixed it; WhisperKit `medium` went 253% → 16.7%.
+
+The pragmatic fix shipped before the explanation did: an explicit Language picker in Settings, still the right call for anyone who dictates in one language. But with detection actually enabled, auto-detect is a sound default — which is what alpha.17 ships.
 
 ## Finding 2: Distilled is not a free upgrade
 
@@ -67,14 +71,14 @@ Then add 10 dB SNR of pink noise:
 | `base` | 5.9% | 24.0% |
 | `tiny` | 7.2% | 27.3% |
 
-`tiny` and `base` go from "marginal" to "unusable" the moment you introduce real-world noise. People dictate near A/C, in cafés, with HVAC running. Quoting only the clean-speech number for these sizes would have been misleading. The OpenQuack default for 8 GB Macs is `small`, not `base` — that's the smallest size that survives the noisy bucket with WER under 12%.
+`tiny` and `base` go from "marginal" to "unusable" the moment you introduce real-world noise. People dictate near A/C, in cafés, with HVAC running. Quoting only the clean-speech number for these sizes would have been misleading. On 8 GB Macs, `small` is the conservative starting point — it's the smallest size that stays under 12% noisy WER. The gap versus `medium` (6.3% vs 11.4% on noise) is significant, and memory isn't the bottleneck: `medium` peaks at 197 MB RSS, roughly 2% of 8 GB. The open question is RTF — whether WhisperKit `medium` runs at comparable speed on M1/M2 8 GB chips as it does on M4. That data doesn't exist yet. See the contribute section if you're on older hardware.
 
 ## What this changed
 
 Three concrete decisions came out of the bench:
 
-- **Default model per hardware tier.** `medium` for 16 GB+, `small` for 8 GB. Earlier defaults followed model-size ergonomics; the bench made it about ceiling accuracy.
-- **Explicit language picker in Settings.** Auto-detect is too fragile on short non-English audio for an app that has to feel reliable on the first try.
+- **Model selection.** `medium` is the default — it's the clearest winner in the bench. At 197 MB peak RSS it fits easily on any current Mac; the open question for 8 GB hardware is RTF on older chips, not memory headroom. M1/M2 bench results would settle this.
+- **Explicit language picker in Settings.** Shipped, and still useful for single-language users since it skips detection — though the premise that auto-detect itself was too fragile turned out to be a config bug (see the update up top).
 - **Streaming for long audio.** Once `medium` was the default, the end-of-dictation wait got bad on long clips. A 5-minute clip finishes offline in 34.4 seconds wall-clock; without streaming the user experience was 30 seconds of staring at a "transcribing..." indicator.
 
 That last one is its own measurement. Streaming the audio in chunks while you speak, then finalising the tail when you stop, gave:
@@ -100,3 +104,5 @@ The local-LLM polish step — taking a raw transcript and tightening it into som
 - Corpus composition + how to reproduce: [`bench/corpus/`](https://github.com/larryxiao/openquack/tree/main/bench/corpus)
 
 If you have a non-M4 Mac (M1, M2, M3, Intel, 8 GB, 24 GB+), the bench script smoke-passes in CI and the corpus is checked in. PRs to `bench/out/` are the most useful contribution this project can take. The matrix is one host wide right now; it should be many.
+
+The most wanted data point right now: `medium` RTF on M1/M2 8 GB. Memory isn't the constraint (197 MB fits easily); the question is whether older Apple Silicon runs `medium` at comparable speed. If you have an M1 or M2 Mac, that's the run we're missing.

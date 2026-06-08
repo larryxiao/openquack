@@ -98,6 +98,10 @@ public enum AgentKickoffService {
     public static func startClaudeKickoff(prompt: String) throws -> KickoffSession {
         let cleaned = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { throw Error.emptyPrompt }
+        // Whisper emits canonical blank-audio markers + classic
+        // hallucinations when there's no actual speech. Don't burn a
+        // claude session on those.
+        guard !looksLikeBlankAudio(cleaned) else { throw Error.emptyPrompt }
         guard !cleaned.contains("\0") else { throw Error.invalidPrompt }
         guard let claudeURL = resolveClaudePath() else { throw Error.claudeCLIMissing }
 
@@ -183,6 +187,64 @@ public enum AgentKickoffService {
     /// `--bg --permission-mode bypassPermissions` requires.
     public static func openDisclaimerTerminal() throws {
         try spawnCommandFile(shellCommand: "claude --dangerously-skip-permissions")
+    }
+
+    // MARK: - Blank-audio detection
+
+    /// True if the transcript looks like Whisper had nothing real to
+    /// say — canonical blank-audio token, parenthesised silence
+    /// markers, the classic "you" / "Thanks for watching" / "Bye"
+    /// hallucinations, or strings with no alphanumeric content at all.
+    ///
+    /// Used by `startClaudeKickoff` to skip spawning a claude session
+    /// on accidental hotkey presses. We err toward false-negatives:
+    /// a legitimate "yes" or "okay" must pass through, so we only
+    /// match Whisper's specific known-blank outputs, not all short
+    /// utterances.
+    static func looksLikeBlankAudio(_ s: String) -> Bool {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        // No alphanumeric content at all → silence / pure punctuation.
+        if trimmed.range(of: #"[A-Za-z0-9\p{L}]"#, options: .regularExpression) == nil {
+            return true
+        }
+        // Canonical Whisper blank-audio markers + bracketed silence.
+        let lower = trimmed.lowercased()
+        let exactBlankMarkers: Set<String> = [
+            "[blank_audio]",
+            "[ blank_audio ]",
+            "[silence]",
+            "[ silence ]",
+            "(silence)",
+            "( silence )",
+            "[music]",
+            "(music)",
+            "[applause]",
+            "(applause)",
+            "[no audio]",
+            "(no audio)",
+            "[no speech]",
+            "(no speech)",
+        ]
+        if exactBlankMarkers.contains(lower) { return true }
+        // Classic Whisper-on-silence hallucinations (small models
+        // especially). Treat as blank ONLY if they appear in isolation —
+        // a real prompt containing the phrase passes through.
+        let isolatedHallucinations: Set<String> = [
+            "you",
+            "you.",
+            "thank you.",
+            "thanks.",
+            "thanks for watching.",
+            "thanks for watching!",
+            "bye.",
+            "bye!",
+            ".",
+            "...",
+            "…",
+        ]
+        if isolatedHallucinations.contains(lower) { return true }
+        return false
     }
 
     // MARK: - Internal helpers (exposed for tests)

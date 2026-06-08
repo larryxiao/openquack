@@ -70,7 +70,7 @@ macOS Dictation sends audio to Apple's servers by default. OpenQuack runs fully 
 OpenQuack pastes at wherever your cursor is — including the prompt bars of Claude Code, Cursor, Windsurf, or any terminal. Press the hotkey, speak the prompt, press again, and it appears.
 
 **What languages does it support?**
-99 Whisper languages. English is the default; to switch, open Settings → Language. Auto-detect works best on clips longer than 3 seconds and is most reliable when paired with a configured fallback language.
+99 Whisper languages with reliable auto-detect as of [v2.0.0-alpha.17](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.17) — speak Mandarin, Cantonese, Japanese, Korean, French, Spanish, or any of the 99, and OpenQuack identifies and transcribes it correctly without manual selection. Mixed-language dictation (e.g. "*Mon dieu, this PR has 一百 comments*") also works. If you want extra accuracy on very short clips or have a fixed working language, pick it explicitly in Settings → Language.
 
 **Why does the first launch take a long time?**
 The speech model downloads once on first run and is cached permanently in `~/Library/Application Support/OpenQuack/models/`. Every subsequent launch is instant.

@@ -48,8 +48,7 @@ private struct GeneralPane: View {
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
     @StateObject private var modelDownload = PolishModelDownload()
-    @AppStorage("language")            private var language: String = "en"
-    @AppStorage("chineseScript")       private var chineseScript: String = "auto"
+    @AppStorage("language")            private var language: String = ""   // "" = auto-detect (SPEC-035)
     @AppStorage("playSounds")          private var playSounds: Bool = true
     @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
@@ -139,21 +138,9 @@ private struct GeneralPane: View {
                     Text("Italian (it)").tag("it")
                     Text("Portuguese (pt)").tag("pt")
                 }
-                Text("Auto-detect can be unreliable on short utterances. Set this to your primary language for the most consistent results.")
+                Text("Auto-detect identifies the spoken language for each recording. Pick a specific language only if you always dictate in the same one.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-
-                if language == "zh" {
-                    Picker("Chinese script", selection: $chineseScript) {
-                        Text("Auto (Whisper default — often Traditional)").tag("auto")
-                        Text("Simplified (zh-Hans)").tag("simplified")
-                        Text("Traditional (zh-Hant)").tag("traditional")
-                    }
-                    .help("Whisper's Chinese output mixes Simplified and Traditional. Pick one to force a script.")
-                    Text("Character-level conversion only — region-specific vocabulary (e.g. 软件 vs. 軟體) isn't rewritten.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             } header: {
                 SectionHeader("Language")
             }
@@ -343,8 +330,8 @@ private struct ShortcutPane: View {
     var body: some View {
         Form {
             Section {
-                KeyboardShortcuts.Recorder("Hotkey:", name: .toggleRecording)
-                Text("Press once to start dictating, again to stop. ⌃Space is the default and works in most apps.")
+                FnAwareShortcutRecorder()
+                Text("Press once to start dictating, again to stop. ⌃⇧Space is the default and works in most apps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -353,7 +340,7 @@ private struct ShortcutPane: View {
 
             Section {
                 KeyboardShortcuts.Recorder("Kickoff:", name: .agentKickoff)
-                Text("Voice → fresh background Claude Code session. Press the hotkey, dictate a task, release; the agent runs unattended with **full permission bypass** (any shell command, any file, any app) and you get a macOS notification when it's done. Default ⌃⇧Space; first press shows a consent prompt that spells out what the agent can do — until you accept it, nothing leaves your Mac. Routes through Anthropic.")
+                Text("Voice → fresh background Claude Code session. Press the hotkey, dictate a task, release; the agent runs unattended with **full permission bypass** (any shell command, any file, any app) and you get a macOS notification when it's done. Default ⌃Space; first press shows a consent prompt that spells out what the agent can do — until you accept it, nothing leaves your Mac. Routes through Anthropic.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 ClaudeCodeStatusRow()
@@ -556,7 +543,7 @@ private struct AboutPane: View {
             HStack(spacing: 4) {
                 Text("·").foregroundStyle(.tertiary)
                 Button {
-                    UpgradeAction.run(release: release, installMethod: appState.installMethod)
+                    UpgradeAction.run(release: release, installMethod: appState.installMethod, appState: appState)
                 } label: {
                     Label("v\(release.version) ready", systemImage: "arrow.down.circle.fill")
                         .labelStyle(.titleAndIcon)
@@ -564,6 +551,14 @@ private struct AboutPane: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.moss)
+            }
+        case .upgrading:
+            HStack(spacing: 4) {
+                Text("·").foregroundStyle(.tertiary)
+                ProgressView().controlSize(.mini)
+                Text("Installing…")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
         case .failed:
             EmptyView()

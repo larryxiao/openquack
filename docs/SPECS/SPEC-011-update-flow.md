@@ -54,6 +54,109 @@ Open questions for next session:
 - How loud is "intriguing" — bounce on first detection only, or pulse
   every N hours until acknowledged?
 
+## Phase B.5 — silent brew upgrade (no Terminal window)
+
+Status: implemented (see PR that cites this SPEC section).
+
+### Goal
+
+When the user clicks Upgrade and OpenQuack was installed via Homebrew,
+run `brew upgrade --cask openquack` silently in the background — no
+Terminal window, no clipboard dance. The duck disappears for ~30
+seconds, then the new version relaunches itself.
+
+### Design constraints
+
+**Quit-first, relaunch-after.** The running binary must exit *before*
+brew swaps the bundle, not after. Keeping the app alive during the
+upgrade means brew can move resource files out from under the running
+process; any bundle load that happens in that window (icon refresh,
+sound, popover open) can crash, and if it does there is no parent
+process left to do `open -a OpenQuack`. The sequence must be:
+
+```
+click Upgrade
+  └─ write + launch detached /tmp/openquack-upgrade-*.sh
+  └─ appState.updateStatus = .upgrading   (banner → "Installing…")
+  └─ NSApp.terminate after 1.5 s          (old binary exits cleanly)
+
+[old process gone]
+
+detached script (reparented to launchd):
+  └─ brew upgrade --cask openquack
+  └─ open -a OpenQuack                    (new binary starts)
+  └─ rm -- "$0"
+```
+
+The 1.5 s window is long enough for the "Installing update…" banner to
+render and give the user a moment to see what's happening before the
+duck disappears. It is short enough that the script is already running
+before the parent exits.
+
+**No conflict between old and new instance.** The old process exits at
+t ≈ 1.5 s; `open -a OpenQuack` fires at t ≈ 30–60 s (brew network
+latency). There is no overlap. macOS single-instance behaviour
+(`applicationShouldHandleReopen`) is not exercised because the old
+process is already gone.
+
+**Detached script, not an in-process `Process`.** Running brew inside
+the live app and quitting on `terminationHandler` completion is
+attractive for live progress but inherits the bundle-swap risk above.
+A detached shell script survives the parent's exit (reparented to
+launchd), eliminates the race, and keeps `UpgradeAction` stateless.
+
+**Explicit PATH.** GUI-launched processes inherit a sparse PATH
+(`/usr/bin:/bin:/usr/sbin:/sbin`). `brew` itself is reachable by
+absolute path (`<prefix>/bin/brew`), but brew shells out to `curl`,
+`git`, and sometimes `gpg`. The script env sets:
+
+```
+PATH=<prefix>/bin:/usr/bin:/bin:/usr/sbin:/sbin
+HOMEBREW_PREFIX=<prefix>
+```
+
+### State machine change
+
+`UpdateCheckStatus` gains a new case `.upgrading` (no associated value).
+It is active from the moment the script is launched until the process
+exits (~1.5 s). `hasAvailableUpdate` returns `false` for `.upgrading`
+so the `⬆` status-item badge clears immediately on click.
+
+UI surfaces:
+- **Popover banner**: replaces the "Upgrade" button row with a
+  `ProgressView` + "Installing update… Duck will be back in ~30 seconds."
+- **Settings → About chip**: shows `ProgressView` + "Installing…" text.
+
+### Error handling
+
+- Script write fails → restore `.available(release)`; user can retry.
+- `/bin/bash` exec fails → same; also remove the partially-written script.
+- brew exits non-zero → `open -a OpenQuack` runs anyway (semicolon, not
+  `&&`), so the duck comes back. The new instance will re-poll for
+  updates on launch; if the version is unchanged it shows `.upToDate`.
+
+### Acceptance criteria
+
+1. Brew-installed OpenQuack: click Upgrade in the popover. No Terminal
+   window opens. The banner changes to "Installing update… Duck will be
+   back in ~30 seconds." The duck disappears ≈ 1.5 s later.
+2. After brew finishes (≈ 30–60 s on a typical connection), OpenQuack
+   relaunches. `About` shows the new version string.
+3. If the cask is already at the latest version, OpenQuack still
+   relaunches cleanly (exit 0 from brew, `open -a` fires).
+4. Manual (DMG) installs: Upgrade button still opens the DMG URL in the
+   browser; no change to that path.
+5. Simulate a script-write failure (e.g. chmod 000 /tmp momentarily):
+   the Upgrade button reappears; no crash.
+
+### Out of scope
+
+- Progress percentage during the brew download (brew has no structured
+  progress API; best-effort stdout parsing is deferred).
+- Notification when the new version is ready (the duck reappearing is
+  the signal; a `UNUserNotification` is a stretch for a future PR).
+- DMG users: still manual; Sparkle handles this path in Phase C.
+
 ## Phase C — proper auto-update via Sparkle
 
 Deferred to **M3** (signed builds).

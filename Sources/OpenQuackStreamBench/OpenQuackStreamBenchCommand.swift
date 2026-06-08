@@ -26,8 +26,16 @@ struct OpenQuackStreamBenchCommand: AsyncParsableCommand {
     var mode: String = "both"
 
     @Option(name: .customLong("language"),
-            help: "Force language code (en, zh, …). Default: en for the long corpus.")
+            help: "Force language code (en, zh, …), or 'auto' for engine auto-detect. Default: en for the long corpus.")
     var language: String? = "en"
+
+    /// `--language auto` (or empty) → nil, so the engine's auto-detect path
+    /// (SPEC-021 detect-then-lock) is exercised. Any other value is forced.
+    private var resolvedLanguage: String? {
+        guard let language else { return nil }
+        let l = language.trimmingCharacters(in: .whitespaces).lowercased()
+        return (l == "auto" || l.isEmpty) ? nil : language
+    }
 
     @Option(name: .customLong("chunking"),
             help: "Offline only: vad | none. Default vad. (Streaming always silence-cuts.)")
@@ -40,6 +48,10 @@ struct OpenQuackStreamBenchCommand: AsyncParsableCommand {
     @Option(name: .customLong("max-chunk"),
             help: "Streaming max chunk seconds. Default 28.")
     var maxChunk: Double = 28
+
+    @Option(name: .customLong("min-detect"),
+            help: "Shortest chunk the auto path re-detects on (SPEC-035). Default 10. A very large value (e.g. 9999) reproduces the old lock-to-first-chunk behaviour for A/B.")
+    var minDetect: Double = 10
 
     @Flag(name: .customLong("smoke"),
           help: "Streaming mode without real-time pacing — fastest correctness check; not a latency measurement.")
@@ -95,7 +107,7 @@ struct OpenQuackStreamBenchCommand: AsyncParsableCommand {
         if let first = clipURLs.first {
             stderr("◇ warm-up on \(first.lastPathComponent)…")
             _ = try? await transcribeOffline(pipe: pipe, url: first,
-                                              language: language,
+                                              language: resolvedLanguage,
                                               chunkStrategy: chunkStrategy)
             stderr("  ✓ warm")
         }
@@ -112,14 +124,14 @@ struct OpenQuackStreamBenchCommand: AsyncParsableCommand {
 
             if runOffline {
                 let r = try await transcribeOffline(pipe: pipe, url: url,
-                                                     language: language,
+                                                     language: resolvedLanguage,
                                                      chunkStrategy: chunkStrategy)
                 off = ModeResult(text: r.text, postStopWait: r.wall, totalWall: r.wall, chunkCount: nil, ttft: r.ttft)
             }
 
             if runStreaming {
                 let r = try await transcribeStreaming(pipe: pipe, url: url,
-                                                       language: language,
+                                                       language: resolvedLanguage,
                                                        paced: !smoke)
                 stm = ModeResult(text: r.text, postStopWait: r.postStopWait, totalWall: r.totalWall, chunkCount: r.chunkCount, ttft: nil)
             }
@@ -207,10 +219,11 @@ struct OpenQuackStreamBenchCommand: AsyncParsableCommand {
         let cfg = StreamingTranscriber.Config(
             streamingThreshold: 0,                // bench drives every clip; gate is the caller's job
             targetChunkSeconds: targetChunk,
-            maxChunkSeconds: maxChunk
+            maxChunkSeconds: maxChunk,
+            minDetectSeconds: minDetect
         )
         let streamer = StreamingTranscriber(pipe: pipe, config: cfg)
-        await streamer.begin(language: language, customWords: nil)
+        await streamer.begin(language: resolvedLanguage, customWords: nil)
 
         let pacingStart = Date()
         var idx = 0

@@ -386,6 +386,92 @@ final class AgentKickoffServiceTests: XCTestCase {
         XCTAssertLessThanOrEqual(min, ClaudeVersion(major: 2, minor: 1, patch: 200))
     }
 
+    // MARK: - Blank-audio detection
+
+    func testLooksLikeBlankAudioCanonicalMarkers() {
+        for marker in [
+            "[BLANK_AUDIO]",
+            "[ BLANK_AUDIO ]",
+            "[blank_audio]",
+            "[Silence]",
+            "[silence]",
+            "[ silence ]",
+            "(silence)",
+            "[music]",
+            "(applause)",
+            "[no audio]",
+            "[no speech]",
+        ] {
+            XCTAssertTrue(
+                AgentKickoffService.looksLikeBlankAudio(marker),
+                "expected blank-audio match for: \(marker.debugDescription)"
+            )
+        }
+    }
+
+    func testLooksLikeBlankAudioClassicHallucinations() {
+        // Whisper-on-silence hallucinations seen in the wild (small
+        // models especially).
+        for token in ["you", "You.", "thanks for watching.", "Bye.", "...", "…", "."] {
+            XCTAssertTrue(
+                AgentKickoffService.looksLikeBlankAudio(token),
+                "expected hallucination match for: \(token.debugDescription)"
+            )
+        }
+    }
+
+    func testLooksLikeBlankAudioPunctuationOnly() {
+        XCTAssertTrue(AgentKickoffService.looksLikeBlankAudio("   "))
+        XCTAssertTrue(AgentKickoffService.looksLikeBlankAudio("?!!"))
+        XCTAssertTrue(AgentKickoffService.looksLikeBlankAudio("—"))
+    }
+
+    func testLooksLikeBlankAudioPassesLegitShortUtterances() {
+        // Short but meaningful single-word prompts must pass through —
+        // false-positives here are worse than false-negatives.
+        for prompt in [
+            "yes",
+            "okay",
+            "stop",
+            "set a timer",
+            "what time is it",
+            "compile",
+        ] {
+            XCTAssertFalse(
+                AgentKickoffService.looksLikeBlankAudio(prompt),
+                "must NOT block legit prompt: \(prompt.debugDescription)"
+            )
+        }
+    }
+
+    func testLooksLikeBlankAudioPassesPromptsContainingHallucinationPhrase() {
+        // A real prompt that includes "you" as part of a sentence
+        // should pass — only isolated occurrences are filtered.
+        XCTAssertFalse(
+            AgentKickoffService.looksLikeBlankAudio("can you set me a reminder")
+        )
+        XCTAssertFalse(
+            AgentKickoffService.looksLikeBlankAudio("thanks for watching the build")
+        )
+    }
+
+    func testStartRejectsBlankAudio() {
+        do {
+            _ = try AgentKickoffService.startClaudeKickoff(prompt: "[BLANK_AUDIO]")
+            XCTFail("expected emptyPrompt error for blank-audio marker")
+        } catch let error as AgentKickoffService.Error {
+            // emptyPrompt covers both empty-string + blank-audio.
+            // claudeCLIMissing is acceptable on a test box without
+            // claude installed.
+            XCTAssertTrue(
+                error == .emptyPrompt || error == .claudeCLIMissing,
+                "got \(error)"
+            )
+        } catch {
+            XCTFail("unexpected: \(error)")
+        }
+    }
+
     // MARK: - KickoffSession paths
 
     func testKickoffSessionStateFilePath() {

@@ -38,15 +38,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.string(forKey: "model") ?? "medium"
     }
     private var defaultLanguage: String? {
-        let raw = UserDefaults.standard.string(forKey: "language") ?? "en"
+        let raw = UserDefaults.standard.string(forKey: "language") ?? ""  // default: auto-detect (SPEC-035)
         return raw.isEmpty ? nil : raw  // empty string = auto-detect
     }
     private var customWords: String? {
         UserDefaults.standard.string(forKey: "customWords")
-    }
-    private var chineseScript: ChineseScript {
-        let raw = UserDefaults.standard.string(forKey: "chineseScript") ?? ""
-        return ChineseScript(rawValue: raw) ?? .auto
     }
     private var soundsEnabled: Bool {
         UserDefaults.standard.object(forKey: "playSounds") as? Bool ?? true
@@ -885,9 +881,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                 }
 
-                // Whisper's `zh` output mixes Hant/Hans; honour the user's
-                // script preference before any other text shaping.
-                let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
+                // Whisper's `zh` output mixes Hant/Hans; normalise detected
+                // Chinese to the system-language script before any other text
+                // shaping. Gated on `zh` so Japanese/Korean Han is untouched
+                // (SPEC-035).
+                let scripted = ChineseScriptConverter.normalize(
+                    result.text,
+                    language: result.detectedLanguage,
+                    preferredLanguages: Locale.preferredLanguages
+                )
 
                 if polishEngineKind != .off {
                     await MainActor.run { appState.phase = .polishing }
@@ -1025,6 +1027,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let active = defaultModel
             Task.detached(priority: .background) {
                 _ = WhisperKitEngine.cleanupOtherModels(keeping: active)
+            }
+            Task.detached(priority: .background) {
+                await WhisperKitEngine.refreshModelInBackground(model: active)
             }
         } catch {
             await MainActor.run {
@@ -1205,7 +1210,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: entry.language,
                 customWords: customWords
             )
-            let scripted = ChineseScriptConverter.convert(result.text, to: chineseScript)
+            let scripted = ChineseScriptConverter.normalize(
+                result.text,
+                language: result.detectedLanguage,
+                preferredLanguages: Locale.preferredLanguages
+            )
             let polished = (await polishedTranscript(from: scripted)).text
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
