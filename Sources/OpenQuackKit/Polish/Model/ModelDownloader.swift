@@ -9,7 +9,7 @@ public enum DownloadError: Error, Equatable {
 
 public protocol ModelDownloading: Sendable {
     func download(from url: URL, to dest: URL, expectedBytes: Int64,
-                  onProgress: @escaping @Sendable (Double) -> Void) async throws
+                  onProgress: @escaping @Sendable (DownloadProgress) -> Void) async throws
 }
 
 /// Streams a file to `<dest>.partial` (resuming via Range if a partial exists),
@@ -21,13 +21,17 @@ public struct ModelDownloader: ModelDownloading {
     public init(session: URLSession = .shared) { self.session = session }
 
     public func download(from url: URL, to dest: URL, expectedBytes: Int64,
-                         onProgress: @escaping @Sendable (Double) -> Void) async throws {
+                         onProgress: @escaping @Sendable (DownloadProgress) -> Void) async throws {
         let fm = FileManager.default
         let partial = dest.appendingPathExtension("partial")
         try? fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
 
         var have = PolishModelCatalog.fileSize(partial) ?? 0
         if have > expectedBytes { try? fm.removeItem(at: partial); have = 0 }
+
+        // Emit the resumed baseline immediately so the UI shows the real %
+        // at once instead of 0%-then-jump after reconnect (SPEC-007 #1).
+        onProgress(DownloadProgress(completed: have, total: expectedBytes))
 
         var req = URLRequest(url: url)
         if have > 0 { req.setValue("bytes=\(have)-", forHTTPHeaderField: "Range") }
@@ -68,13 +72,13 @@ public struct ModelDownloader: ModelDownloading {
 private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private let partial: URL
     private let expectedBytes: Int64
-    private let onProgress: @Sendable (Double) -> Void
+    private let onProgress: @Sendable (DownloadProgress) -> Void
     private var handle: FileHandle?
     private var received: Int64
     var finish: ((Result<Void, Error>) -> Void)?
 
     init(partial: URL, expectedBytes: Int64, alreadyHave: Int64,
-         onProgress: @escaping @Sendable (Double) -> Void) {
+         onProgress: @escaping @Sendable (DownloadProgress) -> Void) {
         self.partial = partial
         self.expectedBytes = expectedBytes
         self.received = alreadyHave
@@ -109,7 +113,7 @@ private final class DownloadDelegate: NSObject, URLSessionDataDelegate, @uncheck
         // A write failure (e.g. disk full) stops appending; the final size check then fails → sizeMismatch.
         do { try handle.write(contentsOf: data) } catch { return }
         received += Int64(data.count)
-        onProgress(min(1.0, Double(received) / Double(expectedBytes)))
+        onProgress(DownloadProgress(completed: received, total: expectedBytes))
     }
 
     func urlSession(_ s: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

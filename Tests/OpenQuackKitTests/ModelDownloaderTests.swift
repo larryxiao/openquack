@@ -63,11 +63,24 @@ final class ModelDownloaderTests: XCTestCase {
 
     func testNormalDownloadWritesFileAndReportsProgress() async throws {
         StubURLProtocol.body = Data((0..<1000).map { UInt8($0 & 0xff) })
-        var last = 0.0
+        var last = DownloadProgress(completed: 0, total: 0)
         try await downloader.download(from: url, to: dest, expectedBytes: 1000) { last = $0 }
         XCTAssertEqual(PolishModelCatalog.fileSize(dest), 1000)
-        XCTAssertEqual(last, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(last.completed, 1000)
+        XCTAssertEqual(last.total, 1000)
+        XCTAssertEqual(last.fraction, 1.0, accuracy: 0.0001)
         XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathExtension("partial").path))
+    }
+
+    func testEmitsResumeBaselineBeforeNetwork() async throws {
+        StubURLProtocol.body = Data((0..<1000).map { UInt8($0 & 0xff) })
+        let partial = dest.appendingPathExtension("partial")
+        try StubURLProtocol.body.prefix(400).write(to: partial)
+        var progresses: [DownloadProgress] = []
+        try await downloader.download(from: url, to: dest, expectedBytes: 1000) { progresses.append($0) }
+        // The very first callback must report the 400 bytes already on disk,
+        // so the bar shows the resumed % immediately instead of 0%.
+        XCTAssertEqual(progresses.first?.completed, 400)
     }
 
     func testSizeMismatchThrowsAndLeavesNoFinalFile() async {

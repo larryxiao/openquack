@@ -37,9 +37,9 @@ final class PolishModelDownload: ObservableObject {
                     from: PolishModelCatalog.remoteURL,
                     to: PolishModelCatalog.localURL,
                     expectedBytes: PolishModelCatalog.expectedBytes
-                ) { fraction in
+                ) { progress in
                     Task { @MainActor in
-                        if case .downloading = self.phase { self.phase = .downloading(fraction) }
+                        if case .downloading = self.phase { self.phase = .downloading(progress.fraction) }
                     }
                 }
                 UserDefaults.standard.set("llamaCpp", forKey: "polishEngine")
