@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // SPEC-033 — read sentinel before any code that could crash, then arm
+        // SPEC-039 — read sentinel before any code that could crash, then arm
         // it for this session. Value stays true if we crash; cleared on clean exit.
         let priorSessionCrashed = checkAndMarkCrashSentinel()
 
@@ -231,7 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await pollForUpdate() }
 
         // SPEC-014 — sweep retention + offer crash-recovery on launch.
-        // SPEC-033 — offer bug report if sentinel indicates unclean prior exit.
+        // SPEC-039 — offer bug report if sentinel indicates unclean prior exit.
         let history = historyStore
         Task { @MainActor in
             await history.enforceRetention()
@@ -1110,7 +1110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (samples, format.sampleRate)
     }
 
-    // MARK: - SPEC-033: crash-sentinel bug-report prompt
+    // MARK: - SPEC-039: crash-sentinel bug-report prompt
 
     /// Reads the crash sentinel and immediately re-arms it for this session.
     /// Returns true if the prior session didn't exit cleanly.
@@ -1256,7 +1256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // kill the sessions; user can re-enter them via `claude
         // agents` or `claude attach <id>` next time they want to.
         agentSessions.stopTrackingAll()
-        // SPEC-033 — clean exit: disarm the crash sentinel.
+        // SPEC-039 — clean exit: disarm the crash sentinel.
         UserDefaults.standard.set(false, forKey: "crashSentinel")
     }
 }

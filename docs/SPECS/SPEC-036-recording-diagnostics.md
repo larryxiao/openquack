@@ -19,7 +19,7 @@ Concretely:
    of freezing.
 4. **Attachable bug reports**: a diagnostics `.txt` (app/OS/chip, last-recording
    wall-vs-captured, chunk count/failures, RTF, detected language, recent events)
-   written and revealed in Finder from the existing "Report Bug" (SPEC-033) and
+   written and revealed in Finder from the existing "Report Bug" (SPEC-039) and
    "Send feedback" (SPEC-018) entry points.
 
 ## Background
@@ -34,8 +34,7 @@ recover, or even log it. The bug is environment-triggered, so it is hard to
 reproduce and hard to attribute to a release.
 
 There is no per-recording instrumentation today, so "slow" / "inaccurate" reports
-(e.g. SPEC-035's per-chunk language re-detection roughly doubling per-chunk
-inference) can't be confirmed from a user's session either.
+(e.g. SPEC-035's per-chunk language re-detection) can't be confirmed from a user's session either.
 
 ## Mechanism
 

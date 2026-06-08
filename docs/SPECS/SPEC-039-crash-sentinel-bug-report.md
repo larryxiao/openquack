@@ -1,4 +1,4 @@
-# SPEC-033 — Crash-sentinel bug-report prompt
+# SPEC-039 — Crash-sentinel bug-report prompt
 
 ## Goal
 
