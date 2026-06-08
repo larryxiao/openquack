@@ -15,6 +15,7 @@ struct MenuBarContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.s12) {
             updateBanner
+            downloadBanner
             accessibilityBanner
             heroSection
             transcriptSection
@@ -87,6 +88,30 @@ struct MenuBarContent: View {
     private func handleUpdateAction() {
         guard let update = state.availableUpdate else { return }
         UpgradeAction.run(release: update, installMethod: state.installMethod, appState: state)
+    }
+
+    @ViewBuilder
+    private var downloadBanner: some View {
+        if case .downloading(let fraction) = state.polishDownload {
+            HStack(alignment: .top, spacing: Theme.s8) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.title3)
+                    .foregroundStyle(Theme.moss)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Downloading Local LLM model")
+                        .font(.caption.weight(.semibold))
+                    ProgressView(value: fraction)
+                        .frame(maxWidth: .infinity)
+                }
+                Spacer(minLength: Theme.s4)
+                Button("Show") {
+                    SettingsWindowController.show(appState: state)
+                    (NSApp.delegate as? AppDelegate)?.polishDownload.resurface()
+                }
+                .buttonStyle(.oqPrimarySmall)
+            }
+            .oqBanner(tint: Theme.moss)
+        }
     }
 
     @ViewBuilder
@@ -215,6 +240,7 @@ struct MenuBarContent: View {
         case .starting:                 return "Starting…"
         case .recording:                return "Listening…"
         case .transcribing:             return "Thinking…"
+        case .polishing:                return "Polishing…"
         case .ready:
             return state.lastPasted ? "Pasted at cursor" : "On clipboard"
         case .error:                    return "Error"
@@ -241,6 +267,8 @@ struct MenuBarContent: View {
             return "Press to finish."
         case .transcribing:
             return "Wait a moment — transcribing locally."
+        case .polishing:
+            return "Polishing your text…"
         case .error(let msg):
             return msg
         }

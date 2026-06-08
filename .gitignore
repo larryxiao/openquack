@@ -42,3 +42,6 @@ mlx_models/
 # Python venv (kept locally for bench/engines/lightning_runner.py)
 .venv/
 bench/engines/.venv/
+
+# Zed editor (local per-developer LSP/index config)
+.zed/
