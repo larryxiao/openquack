@@ -45,8 +45,10 @@ final class PolishModelDownloadController: ObservableObject {
         self.downloader = downloader
     }
 
-    /// Open the sheet at the confirm step (picker → llama.cpp, model absent).
+    /// Open the sheet. If a download is already running (e.g. backgrounded),
+    /// re-surface its live progress instead of resetting to the confirm step.
     func begin() {
+        guard task == nil else { resurface(); return }
         phase = .confirming
         isPresented = true
     }
