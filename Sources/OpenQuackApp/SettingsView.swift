@@ -47,7 +47,7 @@ private struct GeneralPane: View {
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
-    @StateObject private var modelDownload = PolishModelDownload()
+    @ObservedObject private var modelDownload = (NSApp.delegate as! AppDelegate).polishDownload
     @AppStorage("language")            private var language: String = ""   // "" = auto-detect (SPEC-035)
     @AppStorage("playSounds")          private var playSounds: Bool = true
     @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
@@ -256,7 +256,7 @@ private struct GeneralPane: View {
         .onChange(of: receivePrereleases) { _ in
             handleCheckNowTap()
         }
-        .sheet(isPresented: $modelDownload.isPresented, onDismiss: { modelDownload.cancel() }) {
+        .sheet(isPresented: $modelDownload.isPresented, onDismiss: { modelDownload.detachToBackground() }) {
             PolishModelDownloadSheet(model: modelDownload)
         }
     }
@@ -1056,7 +1056,7 @@ private struct HistoryPane: View {
 // MARK: - SPEC-007 polish model download sheet
 
 private struct PolishModelDownloadSheet: View {
-    @ObservedObject var model: PolishModelDownload
+    @ObservedObject var model: PolishModelDownloadController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1082,6 +1082,8 @@ private struct PolishModelDownloadSheet: View {
                 HStack {
                     Spacer()
                     Button("Cancel") { model.cancel() }
+                    Button("Download in Background") { model.detachToBackground() }
+                        .keyboardShortcut(.defaultAction)
                 }
             case .failed(let message):
                 Text(message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
@@ -1097,7 +1099,7 @@ private struct PolishModelDownloadSheet: View {
         .frame(width: 380)
     }
 
-    private static func progressCaption(_ s: PolishModelDownload.DownloadStats) -> String {
+    private static func progressCaption(_ s: PolishModelDownloadController.DownloadStats) -> String {
         if s.reconnecting { return "Reconnecting…" }
         var parts = ["\(Int(s.fraction * 100))% of \(PolishModelCatalog.sizeLabel)"]
         if let bps = s.bytesPerSecond {

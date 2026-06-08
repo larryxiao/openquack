@@ -79,6 +79,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor lazy var agentSessions = AgentSessionManager()
     /// SPEC-031 — opens on notification click.
     @MainActor lazy var responseWindow = ResponseWindowController()
+    /// SPEC-007 — long-lived owner of the polish-model download (survives the
+    /// Settings sheet). Wired to `appState` + reconciled in didFinishLaunching.
+    @MainActor lazy var polishDownload = PolishModelDownloadController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     // SPEC-007 — in-process polish engine kept warm across dictations: warmed on
