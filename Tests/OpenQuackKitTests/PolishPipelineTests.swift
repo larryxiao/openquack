@@ -57,4 +57,10 @@ final class PolishPipelineTests: XCTestCase {
         XCTAssertEqual(r.text, "um hello")
         XCTAssertFalse(r.llmRan)
     }
+
+    func testMultiLineOutputIsJoinedToSingleLine() async {
+        let engine = StubEngine(outcome: .success("first line\n\nsecond line\nthird line"))
+        let r = await PolishPipeline.polish("raw", engine: engine, regexEnabled: false, context: ctx)
+        XCTAssertEqual(r.text, "first line second line third line")
+    }
 }

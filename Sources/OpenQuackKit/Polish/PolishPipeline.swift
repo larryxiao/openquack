@@ -34,7 +34,18 @@ public enum PolishPipeline {
             }
             llmMillis = Int(Date().timeIntervalSince(start) * 1000)
         }
-        let final = regexEnabled ? TextPolisher.polish(text) : text
+        let cleaned = regexEnabled ? TextPolisher.polish(text) : text
+        let final = joinToSingleLine(cleaned)
         return PolishResult(text: final, llmRan: llmRan, llmSucceeded: llmSucceeded, llmMillis: llmMillis)
+    }
+
+    /// Backstop: the pasted transcript is always one line. The LLM may add
+    /// paragraph/line breaks, and the regex pass only collapses runs of 2+
+    /// whitespace — a lone `\n` survives both — so flatten unconditionally.
+    private static func joinToSingleLine(_ s: String) -> String {
+        s.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 }
