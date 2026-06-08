@@ -15,6 +15,7 @@ struct MenuBarContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.s12) {
             updateBanner
+            downloadBanner
             accessibilityBanner
             heroSection
             transcriptSection
@@ -87,6 +88,30 @@ struct MenuBarContent: View {
     private func handleUpdateAction() {
         guard let update = state.availableUpdate else { return }
         UpgradeAction.run(release: update, installMethod: state.installMethod, appState: state)
+    }
+
+    @ViewBuilder
+    private var downloadBanner: some View {
+        if case .downloading(let fraction) = state.polishDownload {
+            HStack(alignment: .top, spacing: Theme.s8) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.title3)
+                    .foregroundStyle(Theme.moss)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Downloading Local LLM model")
+                        .font(.caption.weight(.semibold))
+                    ProgressView(value: fraction)
+                        .frame(maxWidth: .infinity)
+                }
+                Spacer(minLength: Theme.s4)
+                Button("Show") {
+                    SettingsWindowController.show(appState: state)
+                    (NSApp.delegate as? AppDelegate)?.polishDownload.resurface()
+                }
+                .buttonStyle(.oqPrimarySmall)
+            }
+            .oqBanner(tint: Theme.moss)
+        }
     }
 
     @ViewBuilder
