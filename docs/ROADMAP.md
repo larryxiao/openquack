@@ -108,6 +108,52 @@ These have SPECs and are ready to claim, but we're **holding new feature scope**
 
 ---
 
+## Becoming autonomous
+
+> North-star reflection, **not a committed milestone**. No item below is claimed,
+> dated, or gated on the Adoption focus band. It records where the repo would have
+> to change to let agents run the contribution loop on their own — so the gaps are
+> written down, not rediscovered.
+
+**What exists — the contract.** Specs-as-law (`AGENTS.md`), four bench harnesses
+(`openquack-bench` / `-stream-bench` / `-polish-bench` / `-bias-bench`), issue +
+PR templates, the GTM trackers and playbooks, and persistent agent memory. An
+agent that reads these knows *what* good work looks like and *how* it is judged.
+
+**The meta-gap — no machinery.** The contract is human-readable, not
+machine-executable. `.claude/` holds only `worktrees/` — no committed
+`agents/`, `commands/`, `workflows/`, or `settings`. `AGENTS.md` is a manual a
+human (or a prompted agent) follows by hand; nothing *runs* the
+backlog → claim → branch → implement → draft-PR loop. CI smoke-tests the tiny
+model on the short corpus only, so quality regressions pass unseen.
+
+**Three unlocks.**
+
+| | Unlock | Spec | State |
+|---|---|---|---|
+| 🔵 | Committed `.claude/` agent harness — named roles, saved workflows, trigger + permissions model with human gates on irreversible steps | SPEC-037 | spec proposal |
+| 🔵 | CI eval-gate — fetchable corpus, medium-model WER/RTF thresholds on every quality-path PR | SPEC-038 | spec proposal |
+| 🟡 | Signed, tag-triggered release pipeline — the cut a release-bot can only PREP today | SPEC-025 | partial |
+| ⚪ | Privacy-preserving field-feedback loop — local self-diagnosis → consented reports → opt-in aggregates | SPEC-036 / 039 / 040 | building on shipped diagnostics |
+
+**Autonomy ceilings, per domain.**
+
+- **Product** — privacy-capped. No telemetry by design, so field validation
+  never closes to a metric automatically; the loop ends at a *consented*,
+  human-attached report. Self-diagnosis can be autonomous; collection cannot.
+- **Ops** — needs signing. Release stays manual (DMG + appcast + cask SHA)
+  until SPEC-025 lands a notarised, tag-triggered cut. A bot may prep the
+  release; a human gates it.
+- **GTM** — assisted, not autonomous. Platform anti-bot defences and fragile
+  community trust (see the flagged HN launch) make autonomous public posting a
+  liability. Target is agent-*assisted*: draft, schedule, scan, measure — with a
+  human gate on every outward post.
+
+**Realistic target.** Agents run the loop; humans gate the irreversible and
+outward steps — merge, release, public post.
+
+---
+
 ## How to claim a task
 
 1. **Pick from Adoption focus first.** Move to Feature backlog only if Adoption is empty.
