@@ -88,16 +88,18 @@ final class OnboardingState: ObservableObject {
         // user grants in System Settings — they may not return to OpenQuack).
         let micJustGranted = oldMic != .authorized && micStatus == .authorized
         let axJustGranted  = !oldAX && accessibilityTrusted
-        if (step == .microphone && micJustGranted) || (step == .accessibility && axJustGranted) {
-            // Bring our window forward so the user sees the progression.
+        if step == .microphone && micJustGranted {
+            // Mic just granted — bring our window forward so the user sees the
+            // device picker + test the mic step now shows. Deliberately do NOT
+            // auto-advance: we want them to pick and verify a working mic here.
+            NSApp.activate(ignoringOtherApps: true)
+        } else if step == .accessibility && axJustGranted {
+            // AX is granted in System Settings; the user may not return, so
+            // auto-advance once it flips.
             NSApp.activate(ignoringOtherApps: true)
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 700_000_000)
-                switch step {
-                case .microphone where micStatus == .authorized:    advance()
-                case .accessibility where accessibilityTrusted:     advance()
-                default:                                             break
-                }
+                if accessibilityTrusted { advance() }
             }
         }
     }
@@ -145,8 +147,8 @@ final class OnboardingState: ObservableObject {
         try? await Task.sleep(nanoseconds: 1_200_000_000)
         guard !Task.isCancelled else { return }
         switch step {
-        case .microphone where micStatus == .authorized:
-            advance()
+        // Microphone deliberately omitted — the mic step lets the user pick and
+        // test a device, so we stay there even when permission is already granted.
         case .accessibility where accessibilityTrusted:
             advance()
         default:
@@ -372,6 +374,9 @@ private struct WelcomeStep: View {
 
 private struct MicrophoneStep: View {
     @ObservedObject var state: OnboardingState
+    @AppStorage("inputDeviceUID") private var inputDeviceUID: String = ""
+    @StateObject private var micTest = MicTestModel()
+    @State private var devices: [AudioInputDevice] = []
 
     var body: some View {
         VStack(spacing: Theme.s16) {
@@ -382,12 +387,56 @@ private struct MicrophoneStep: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: 400)
             Spacer().frame(height: Theme.s8)
-            statusBadge
+
+            if state.micStatus == .authorized {
+                deviceChooser
+            } else {
+                statusBadge
+            }
             Spacer()
         }
-        .task {
-            await state.autoAdvanceIfAlreadyGranted()
+        .onAppear { devices = AudioInputDevices.list() }
+        .onDisappear { micTest.stop() }
+    }
+
+    /// Picker + Test so the user confirms a working mic on day one — this is
+    /// where the "silent default device → 'You.'" bug bites hardest.
+    private var deviceChooser: some View {
+        VStack(spacing: Theme.s12) {
+            Picker("Microphone", selection: $inputDeviceUID) {
+                Text("System default").tag("")
+                ForEach(devices) { device in
+                    Text(device.name).tag(device.uid)
+                }
+            }
+            .frame(maxWidth: 360)
+            .onChange(of: inputDeviceUID) { _ in
+                if micTest.isTesting { micTest.start(deviceUID: inputDeviceUID) }
+            }
+
+            HStack(spacing: Theme.s8) {
+                Button(micTest.isTesting ? "Stop" : "Test mic") {
+                    micTest.toggle(deviceUID: inputDeviceUID)
+                }
+                .buttonStyle(.bordered)
+                if micTest.isTesting {
+                    MicLevelMeter(levels: micTest.levels)
+                }
+            }
+
+            Group {
+                if micTest.sawSignal {
+                    Label("Sounds good — that mic is picking you up.", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.moss)
+                } else if micTest.isTesting {
+                    Text("Speak — the bars should move.").foregroundStyle(.secondary)
+                } else {
+                    Text("Pick your mic and hit Test to make sure it hears you.").foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
         }
+        .frame(maxWidth: 400)
     }
 
     private var glyph: String {
@@ -401,7 +450,7 @@ private struct MicrophoneStep: View {
     private var bodyCopy: String {
         switch state.micStatus {
         case .authorized:
-            return "Microphone access is already enabled — moving on."
+            return "Pick the microphone OpenQuack should listen to, then test it."
         case .denied, .restricted:
             return "Microphone access was denied. Open System Settings → Privacy & Security → Microphone to enable it."
         case .notDetermined:
@@ -414,10 +463,6 @@ private struct MicrophoneStep: View {
     @ViewBuilder
     private var statusBadge: some View {
         switch state.micStatus {
-        case .authorized:
-            Label("Granted", systemImage: "checkmark.circle.fill")
-                .font(.body.weight(.medium))
-                .foregroundStyle(Theme.moss)
         case .denied, .restricted:
             Button("Open System Settings") {
                 NSWorkspace.shared.open(URL(string:
@@ -425,10 +470,8 @@ private struct MicrophoneStep: View {
                 )!)
             }
             .buttonStyle(.bordered)
-        case .notDetermined:
+        default:
             EmptyView()  // Continue button drives the prompt
-        @unknown default:
-            EmptyView()
         }
     }
 }

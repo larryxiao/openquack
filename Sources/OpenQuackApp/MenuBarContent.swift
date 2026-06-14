@@ -16,6 +16,7 @@ struct MenuBarContent: View {
         VStack(alignment: .leading, spacing: Theme.s12) {
             updateBanner
             downloadBanner
+            micIssueBanner
             accessibilityBanner
             heroSection
             transcriptSection
@@ -111,6 +112,32 @@ struct MenuBarContent: View {
                 .buttonStyle(.oqPrimarySmall)
             }
             .oqBanner(tint: Theme.moss)
+        }
+    }
+
+    @ViewBuilder
+    private var micIssueBanner: some View {
+        if state.lastCaptureSilent {
+            HStack(alignment: .top, spacing: Theme.s8) {
+                Image(systemName: "mic.slash")
+                    .font(.title3)
+                    .foregroundStyle(Theme.amber)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No sound from \(state.lastSilentDeviceName ?? "your microphone")")
+                        .font(.caption.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("That recording was silent. Pick a different microphone and test it.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: Theme.s4)
+                Button("Switch mic") {
+                    SettingsWindowController.show(appState: state)
+                }
+                .buttonStyle(.oqPrimarySmall)
+            }
+            .oqBanner(tint: Theme.amber)
         }
     }
 
