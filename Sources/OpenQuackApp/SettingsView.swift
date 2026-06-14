@@ -140,6 +140,12 @@ private struct GeneralPane: View {
                     }
                     Spacer()
                 }
+                if let err = micTest.errorMessage {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Theme.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Text("The mic OpenQuack records from. \"System default\" follows macOS. If recordings come back blank or as \"You.\", pick your real mic here and hit Test. Takes effect on the next recording.")
                     .font(.caption)
