@@ -758,7 +758,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             do {
-                _ = try recorder.start(outputURL: lastRecordingURL)
+                let inputUID = UserDefaults.standard.string(forKey: "inputDeviceUID")
+                _ = try recorder.start(outputURL: lastRecordingURL, inputDeviceUID: inputUID)
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0

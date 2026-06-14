@@ -88,7 +88,12 @@ public final class AudioRecorder {
     /// Start capture. If `outputURL` is omitted, writes to a fresh temp file.
     /// Pass an explicit URL (e.g. `~/Library/Application Support/.../last-recording.wav`)
     /// to keep the WAV around for inspection between runs.
-    public func start(outputURL: URL? = nil) throws -> URL {
+    ///
+    /// `inputDeviceUID` routes capture to a specific input device (resolved via
+    /// `AudioInputDevices`); pass nil/empty for the system default. If the UID
+    /// no longer resolves to a present device, we silently fall back to the
+    /// system default rather than failing the recording.
+    public func start(outputURL: URL? = nil, inputDeviceUID: String? = nil) throws -> URL {
         lock.lock(); defer { lock.unlock() }
 
         if _isRecording, let url = _outputURL {
@@ -111,6 +116,26 @@ public final class AudioRecorder {
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+        // Route to the chosen device BEFORE reading the format — the input
+        // node's format follows whatever device is current. Must touch the
+        // node's audio unit first so it instantiates.
+        if let uid = inputDeviceUID, !uid.isEmpty,
+           let deviceID = AudioInputDevices.deviceID(forUID: uid),
+           let unit = inputNode.audioUnit {
+            var dev = deviceID
+            let status = AudioUnitSetProperty(
+                unit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &dev,
+                UInt32(MemoryLayout<AudioDeviceID>.size))
+            if status != noErr {
+                FileHandle.standardError.write(
+                    "[AudioRecorder] could not select input device \(uid): \(status)\n"
+                        .data(using: .utf8) ?? Data())
+            }
+        }
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         // WAV at the input device's native sample rate and channel count.
