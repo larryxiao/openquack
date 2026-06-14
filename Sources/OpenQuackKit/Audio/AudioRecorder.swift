@@ -142,7 +142,19 @@ public final class AudioRecorder {
                 "[AudioRecorder] could not select input device \(uid)\n"
                     .data(using: .utf8) ?? Data())
         }
+        // Prepare BEFORE reading the format: after a device switch the input
+        // node only reconciles its output format once the engine is prepared.
+        // Reading it earlier returns the *previous* device's format, and then
+        // installTap(format:) raises an uncatchable Objective-C exception
+        // (AVAudioIONodeImpl::SetOutputFormat) → SIGABRT on record start.
+        engine.prepare()
         let inputFormat = inputNode.outputFormat(forBus: 0)
+        // A not-ready / disconnected device can report a 0-rate / 0-channel
+        // format; installTap would crash on it. Surface a Swift error instead.
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw RecorderError.engineFailed(
+                "input device has no usable audio format (sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount))")
+        }
 
         // WAV at the input device's native sample rate and channel count.
         // Stored as Int16 PCM (compact, broadly compatible). WhisperKit
@@ -208,7 +220,6 @@ public final class AudioRecorder {
             }
         }
 
-        engine.prepare()
         do {
             try engine.start()
         } catch {
