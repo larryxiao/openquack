@@ -134,24 +134,13 @@ public final class AudioRecorder {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         // Route to the chosen device BEFORE reading the format — the input
-        // node's format follows whatever device is current. Must touch the
-        // node's audio unit first so it instantiates.
+        // node's format follows whatever device is current. Empty/unknown UID
+        // leaves the system default in place.
         if let uid = inputDeviceUID, !uid.isEmpty,
-           let deviceID = AudioInputDevices.deviceID(forUID: uid),
-           let unit = inputNode.audioUnit {
-            var dev = deviceID
-            let status = AudioUnitSetProperty(
-                unit,
-                kAudioOutputUnitProperty_CurrentDevice,
-                kAudioUnitScope_Global,
-                0,
-                &dev,
-                UInt32(MemoryLayout<AudioDeviceID>.size))
-            if status != noErr {
-                FileHandle.standardError.write(
-                    "[AudioRecorder] could not select input device \(uid): \(status)\n"
-                        .data(using: .utf8) ?? Data())
-            }
+           !AudioInputDevices.route(inputNode, toUID: uid) {
+            FileHandle.standardError.write(
+                "[AudioRecorder] could not select input device \(uid)\n"
+                    .data(using: .utf8) ?? Data())
         }
         let inputFormat = inputNode.outputFormat(forBus: 0)
 

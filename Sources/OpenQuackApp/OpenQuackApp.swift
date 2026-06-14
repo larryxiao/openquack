@@ -835,6 +835,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// short audio). Mirrors `StreamingTranscriber.Config.streamingThreshold`.
     private static let streamingThreshold: TimeInterval = 30
 
+    /// Display name of the input device the next recording will use: the
+    /// user's picked device, or the system default. Used in the silent-capture
+    /// banner/notification copy.
+    private static func currentInputDeviceName() -> String {
+        let uid = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? ""
+        if !uid.isEmpty, let match = AudioInputDevices.list().first(where: { $0.uid == uid }) {
+            return match.name
+        }
+        return "the system default microphone"
+    }
+
+    /// SPEC-031-style local notification: fires even if OpenQuack is in the
+    /// background so the user notices a dead-mic recording without opening the
+    /// popover. Best-effort — silently no-ops if notifications are denied.
+    private static func postSilentCaptureNotification(deviceName: String) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "No sound detected"
+            content.body = "OpenQuack heard nothing from \(deviceName). Open OpenQuack to switch microphones."
+            content.sound = .default
+            let request = UNNotificationRequest(
+                identifier: "openquack.capture.silent",
+                content: content,
+                trigger: nil
+            )
+            center.add(request)
+        }
+    }
+
     private func stopAndTranscribe() {
         stopElapsedTimer()
         let audioDuration = recorder.elapsedSeconds
@@ -846,13 +877,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let url = recorder.stop() else { return }
 
         if capturePeakRMS < AudioRecorder.silenceRMSThreshold {
+            let deviceName = Self.currentInputDeviceName()
             Task {
                 await tearDownFramesPump()
                 if let streamer { await streamer.cancel() }
                 await MainActor.run {
-                    appState.phase = .error("No sound detected. Check your microphone in System Settings → Sound → Input, and that OpenQuack has mic permission.")
+                    appState.phase = .error("No sound detected. Pick your microphone in Settings → General, or check System Settings → Sound → Input.")
+                    appState.lastCaptureSilent = true
+                    appState.lastSilentDeviceName = deviceName
                     schedulePolishIdleUnload()
                 }
+                Self.postSilentCaptureNotification(deviceName: deviceName)
                 try? FileManager.default.removeItem(at: url)
             }
             return
@@ -863,6 +898,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await MainActor.run {
                 appState.phase = .transcribing
                 appState.transcriptionProgress = 0
+                appState.lastCaptureSilent = false   // a non-silent capture clears the warning
             }
 
             guard let engine = transcriber else {

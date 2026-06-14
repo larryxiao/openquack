@@ -59,6 +59,13 @@ public final class AppState: ObservableObject {
     /// "ready" overlay state.
     @Published public var lastKickoffError: String?
     @Published public var accessibilityTrusted: Bool = false
+    /// Set when the most-recent recording came back silent (mic captured no
+    /// usable audio — wrong/muted device). Drives the "Switch microphone"
+    /// banner in the popover; cleared at the start of the next transcription.
+    @Published public var lastCaptureSilent: Bool = false
+    /// Name of the input device that produced the silent capture, for the
+    /// banner/notification copy ("No sound from <device>").
+    @Published public var lastSilentDeviceName: String?
     @Published public var modelLabel: String = "medium"
     /// Lifecycle of an update check — drives both the menu-bar 🦆⬆
     /// indicator and the Settings → About status line. Single source of

@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreAudio
 import Foundation
 
@@ -37,6 +38,28 @@ public enum AudioInputDevices {
     /// if that device is no longer present (unplugged, removed).
     public static func deviceID(forUID uid: String) -> AudioDeviceID? {
         list().first { $0.uid == uid }?.id
+    }
+
+    /// Route an `AVAudioEngine` input node to the device identified by `uid`.
+    /// Must be called before reading the node's format — the format follows
+    /// whatever device is current. Returns true on success; false (leaving the
+    /// system default in place) if the UID is empty/unresolved or the audio
+    /// unit rejects the change. Shared by `AudioRecorder` and `MicMonitor`.
+    @discardableResult
+    public static func route(_ inputNode: AVAudioInputNode, toUID uid: String) -> Bool {
+        guard !uid.isEmpty,
+              let deviceID = deviceID(forUID: uid),
+              let unit = inputNode.audioUnit
+        else { return false }
+        var dev = deviceID
+        let status = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &dev,
+            UInt32(MemoryLayout<AudioDeviceID>.size))
+        return status == noErr
     }
 
     // MARK: - CoreAudio helpers
