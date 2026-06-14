@@ -75,6 +75,9 @@ OpenQuack pastes at wherever your cursor is — including the prompt bars of Cla
 **Why does the first launch take a long time?**
 The speech model downloads once on first run and is cached permanently in `~/Library/Application Support/OpenQuack/models/`. Every subsequent launch is instant.
 
+**Why is my transcript just "You.", "Thank you.", or "Thanks for watching"?**
+That short, oddly generic output is Whisper hallucinating on *silent* audio — those exact phrases leak from its training data when it's given little or no speech. It almost always means OpenQuack recorded silence instead of your voice. Check, in order: (1) while recording, watch the level meter in the recording overlay — if the bars don't move when you talk, no audio is reaching the app; (2) open **System Settings → Privacy & Security → Microphone** and make sure OpenQuack is listed and enabled (after granting it, restart OpenQuack so the grant takes effect); (3) confirm your active input device under **System Settings → Sound → Input** is the mic you're actually speaking into, not a silent virtual device. To hear exactly what was captured, play back the last recording at `~/Library/Application Support/OpenQuack/last-recording.wav`.
+
 **Is there a Windows or Linux version?**
 Not currently. OpenQuack uses WhisperKit and CoreML, which are Apple-platform technologies.
 
