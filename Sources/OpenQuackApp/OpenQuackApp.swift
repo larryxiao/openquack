@@ -441,6 +441,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         feedback.target = self
         menu.addItem(feedback)
 
+        let faq = NSMenuItem(title: "FAQ / Help…", action: #selector(menuOpenFAQ), keyEquivalent: "")
+        faq.target = self
+        menu.addItem(faq)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit OpenQuack", action: #selector(menuQuitApp), keyEquivalent: "q")
@@ -465,6 +469,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SPEC-018. Opens the GitHub issue chooser; user picks bug report
         // or feature request from there. No app-side network IO.
         guard let url = URL(string: "https://github.com/larryxiao/openquack/issues/new/choose") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Opens the docs-site FAQ (includes the "blank/'You.' transcript" and
+    /// permission troubleshooting entries). No app-side network IO; hands off
+    /// to the default browser.
+    @MainActor
+    @objc private func menuOpenFAQ() {
+        guard let url = URL(string: "https://larryxiao.github.io/openquack/#faq") else {
             return
         }
         NSWorkspace.shared.open(url)

@@ -56,7 +56,7 @@ In our experience, the first transcription takes ~10-30 s even on `medium`; the 
 
 ## How do I prevent silence-induced hallucinations?
 
-Whisper occasionally produces fluent text for silent audio — e.g. "Thanks for watching!" or "Subtitles by [name]" from Whisper's training data leaking through. Causes and mitigations:
+Whisper occasionally produces fluent text for silent audio — e.g. a bare "You.", "Thank you.", "Thanks for watching!", or "Subtitles by [name]" from Whisper's training data leaking through. Causes and mitigations:
 
 1. **VAD prefilter.** Strip silence before sending to Whisper. OpenQuack's auto-stop-after-silence uses a simple energy threshold; production systems use Silero VAD or similar. Strip leading and trailing silence; on long clips, strip mid-recording silence too.
 2. **`no_speech_threshold` parameter.** Whisper exposes a probability threshold below which it returns empty. Default is around 0.6; you can raise it to 0.8 or higher if hallucinations are frequent.
@@ -64,6 +64,8 @@ Whisper occasionally produces fluent text for silent audio — e.g. "Thanks for 
 4. **Clip-length lower bound.** Audio shorter than ~0.5 s often produces nonsense regardless. Reject sub-half-second clips at the application layer.
 
 Whisper-mini-tier models hallucinate more under silence than the larger ones; if you're seeing this on `tiny` or `base`, model size may be a faster fix than parameter-tuning.
+
+**If you're an end user seeing this on every recording:** the trigger usually isn't the model at all — it's an empty recording. A bare "You." or "Thank you." almost always means the mic captured silence. Confirm the recording overlay's level meter moves when you speak, and that the app has Microphone permission (System Settings → Privacy & Security → Microphone; restart OpenQuack after granting it). Play back `~/Library/Application Support/OpenQuack/last-recording.wav` to hear exactly what was captured.
 
 ## Can I bias Whisper toward specific words (proper nouns, jargon, project names)?
 
