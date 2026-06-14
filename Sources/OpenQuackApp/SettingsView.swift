@@ -54,7 +54,12 @@ private struct GeneralPane: View {
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
     @AppStorage("customWords")         private var customWords: String = ""
     @AppStorage("model")               private var model: String = "medium"
+    @AppStorage("inputDeviceUID")      private var inputDeviceUID: String = ""  // "" = system default
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
+
+    /// Input devices for the Microphone picker; loaded `.onAppear` and
+    /// refreshed when the picker is interacted with.
+    @State private var inputDevices: [AudioInputDevice] = []
 
     // SPEC-026 PR-B — Updates section state.
     @AppStorage("receivePrereleases") private var receivePrereleases: Bool = false
@@ -97,6 +102,27 @@ private struct GeneralPane: View {
                     .foregroundStyle(.secondary)
             } header: {
                 SectionHeader("Speech-to-text")
+            }
+
+            Section {
+                Picker("Microphone", selection: $inputDeviceUID) {
+                    Text("System default").tag("")
+                    ForEach(inputDevices) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                    // Keep the saved choice visible even if the device is gone,
+                    // so the picker doesn't silently blank out.
+                    if !inputDeviceUID.isEmpty,
+                       !inputDevices.contains(where: { $0.uid == inputDeviceUID }) {
+                        Text("Selected device (disconnected)").tag(inputDeviceUID)
+                    }
+                }
+                .onAppear { inputDevices = AudioInputDevices.list() }
+                Text("The mic OpenQuack records from. \"System default\" follows macOS. If recordings come back blank or as \"You.\", pick your real mic here. Takes effect on the next recording.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Microphone")
             }
 
             Section {
