@@ -10,6 +10,9 @@ final class MicTestModel: ObservableObject {
     /// Flips true once a clearly-above-idle level is seen — drives the
     /// "Sounds good" confirmation.
     @Published var sawSignal = false
+    /// Non-nil when the test couldn't start (permission denied, engine failed),
+    /// so the UI can explain instead of silently doing nothing.
+    @Published var errorMessage: String?
 
     static let barCount = 11
     private static let autoStopSeconds: UInt64 = 8
@@ -22,11 +25,30 @@ final class MicTestModel: ObservableObject {
     }
 
     func start(deviceUID: String) {
+        errorMessage = nil
+        // The monitor needs mic permission just like recording does. The
+        // engine won't prompt on its own, so request access first; without
+        // this a notDetermined/denied state just produced "nothing happens".
+        Task { [weak self] in
+            let granted = await AudioRecorder.requestPermission()
+            await MainActor.run {
+                guard let self else { return }
+                guard granted else {
+                    self.errorMessage = "Microphone access is off. Enable OpenQuack in System Settings → Privacy & Security → Microphone."
+                    return
+                }
+                self.beginMonitoring(deviceUID: deviceUID)
+            }
+        }
+    }
+
+    private func beginMonitoring(deviceUID: String) {
         monitor.levelHandler = { [weak self] level in self?.push(level) }
         do {
             try monitor.start(deviceUID: deviceUID)
         } catch {
-            return  // engine couldn't start (no permission/device); leave isTesting false
+            errorMessage = "Couldn't start the microphone: \(error.localizedDescription)"
+            return
         }
         isTesting = true
         sawSignal = false

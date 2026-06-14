@@ -425,7 +425,11 @@ private struct MicrophoneStep: View {
             }
 
             Group {
-                if micTest.sawSignal {
+                if let err = micTest.errorMessage {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.amber)
+                        .multilineTextAlignment(.center)
+                } else if micTest.sawSignal {
                     Label("Sounds good — that mic is picking you up.", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(Theme.moss)
                 } else if micTest.isTesting {
