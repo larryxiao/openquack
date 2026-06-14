@@ -43,6 +43,23 @@ public final class AudioRecorder {
     private var _outputURL: URL?
     private var _startTime: Date?
     private var _isRecording = false
+    private var _peakRMS: Float = 0
+
+    /// Peak raw-RMS (float32, ~0…1) seen across the current or most recent
+    /// recording. Reset on `start()`, retained after `stop()` so callers can
+    /// inspect it. Conversational speech peaks well above
+    /// `silenceRMSThreshold`; a dead/muted mic or a virtual input device that
+    /// emits silence stays near zero — letting callers warn the user instead
+    /// of feeding silence to Whisper (which hallucinates "You." / "Thank you.").
+    public var peakRMS: Float {
+        lock.lock(); defer { lock.unlock() }
+        return _peakRMS
+    }
+
+    /// Captures whose peak RMS stays under this are treated as "no usable
+    /// audio". Conversational speech sits at RMS ~0.02–0.1; ambient room
+    /// noise and silent virtual devices are well below this floor.
+    public static let silenceRMSThreshold: Float = 0.005
 
     /// Called on the main queue with each buffer's RMS level (0…1, gently
     /// scaled for UI). Set this before calling `start` to drive a level meter.
@@ -145,7 +162,7 @@ public final class AudioRecorder {
         let framesHandler = self.framesHandler
         let inputSampleRate = inputFormat.sampleRate
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
             do {
                 try file.write(from: buffer)
             } catch {
@@ -154,9 +171,14 @@ public final class AudioRecorder {
                 )
             }
 
+            // One RMS pass per buffer, reused for both the silence detector and
+            // the UI meter.
+            let rms = Self.rawRMS(from: buffer)
+            self?.recordPeak(rms)
+
             // Emit a UI-friendly level if anyone is subscribed.
             if let levelHandler {
-                let level = Self.uiLevel(from: buffer)
+                let level = Self.uiLevel(fromRMS: rms)
                 DispatchQueue.main.async { levelHandler(level) }
             }
 
@@ -185,7 +207,15 @@ public final class AudioRecorder {
         self._outputURL = url
         self._startTime = Date()
         self._isRecording = true
+        self._peakRMS = 0
         return url
+    }
+
+    /// Audio-thread hook: fold this buffer's RMS into the running peak. Held
+    /// under the same lock as start/stop; the critical section is a single
+    /// `max`, so contention with the (infrequent) lifecycle calls is negligible.
+    private func recordPeak(_ rms: Float) {
+        lock.lock(); _peakRMS = max(_peakRMS, rms); lock.unlock()
     }
 
     /// Stop capture; returns the URL of the finalised WAV (caller owns cleanup).
@@ -211,22 +241,25 @@ public final class AudioRecorder {
         try? FileManager.default.removeItem(at: url)
     }
 
-    /// Compute a 0…1 UI level from a PCM buffer. Conversational speech sits
-    /// around RMS 0.02–0.1 in float32. Loudness is roughly logarithmic so
-    /// raw amplitude × constant feels dead — sqrt + a healthy multiplier
-    /// makes a normal speaking voice swing across most of the meter.
-    private static func uiLevel(from buffer: AVAudioPCMBuffer) -> Float {
+    /// Raw RMS of a PCM buffer in float32 amplitude (0…~1). Subsamples every
+    /// 4th frame — plenty for both the meter and the silence detector.
+    static func rawRMS(from buffer: AVAudioPCMBuffer) -> Float {
         guard let channelData = buffer.floatChannelData?[0],
               buffer.frameLength > 0 else { return 0 }
         let count = Int(buffer.frameLength)
         var sumSq: Float = 0
-        for i in stride(from: 0, to: count, by: 4) {  // every 4th sample is plenty for a meter
+        for i in stride(from: 0, to: count, by: 4) {
             let s = channelData[i]
             sumSq += s * s
         }
-        let rms = sqrt(sumSq / Float(count / 4 + 1))
-        // sqrt(rms) approximates a perceptual curve; ×3 spreads conversational
-        // voice (RMS ~0.02–0.1) across roughly 0.4–0.95 of the meter.
+        return sqrt(sumSq / Float(count / 4 + 1))
+    }
+
+    /// Map a raw RMS to a 0…1 UI level. Loudness is roughly logarithmic so
+    /// raw amplitude × constant feels dead — sqrt + a healthy multiplier makes
+    /// a normal speaking voice swing across most of the meter. ×3 spreads
+    /// conversational voice (RMS ~0.02–0.1) across roughly 0.4–0.95.
+    static func uiLevel(fromRMS rms: Float) -> Float {
         let scaled = sqrt(rms) * 3.0
         return max(0, min(1.0, scaled))
     }
