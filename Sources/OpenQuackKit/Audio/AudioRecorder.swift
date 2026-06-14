@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import OQObjCSupport
 
 public enum RecorderError: Error, CustomStringConvertible {
     case permissionDenied
@@ -131,116 +132,143 @@ public final class AudioRecorder {
                 .appendingPathComponent("openquack-\(UUID().uuidString).wav")
         }
 
+        // Graceful degradation: try the chosen device, then the system default.
+        // A device whose formats all fail to install a tap degrades to the next
+        // candidate instead of aborting the process.
+        let deviceAttempts: [String?]
+        if let uid = inputDeviceUID, !uid.isEmpty {
+            deviceAttempts = [uid, nil]
+        } else {
+            deviceAttempts = [nil]
+        }
+
+        var lastError: Error?
+        for deviceUID in deviceAttempts {
+            do {
+                let engine = try startEngineLocked(url: url, inputDeviceUID: deviceUID)
+                self.engine = engine
+                self._outputURL = url
+                self._startTime = Date()
+                self._isRecording = true
+                return url
+            } catch {
+                lastError = error
+                FileHandle.standardError.write(
+                    "[AudioRecorder] device \(deviceUID ?? "<default>") failed: \(error)\n"
+                        .data(using: .utf8) ?? Data())
+            }
+        }
+        throw lastError ?? RecorderError.engineFailed("no usable input device")
+    }
+
+    /// Build + start a capture engine for one device. Caller holds `lock`.
+    /// Routes to `inputDeviceUID` (nil = system default), then installs the tap
+    /// trying a chain of candidate formats — each guarded by `OQTryCatch` so a
+    /// format/hardware mismatch surfaces as a Swift error instead of an
+    /// uncatchable Objective-C exception (SIGABRT). The WAV file is created
+    /// lazily from the first buffer's real format, so it always matches whatever
+    /// format actually wins — no rate/channel mismatch, no wrong-speed audio.
+    private func startEngineLocked(url: URL, inputDeviceUID: String?) throws -> AVAudioEngine {
+        outputFile = nil
+        _peakRMS = 0
+
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
-        // Route to the chosen device BEFORE reading the format — the input
-        // node's format follows whatever device is current. Empty/unknown UID
-        // leaves the system default in place.
         if let uid = inputDeviceUID, !uid.isEmpty,
            !AudioInputDevices.route(inputNode, toUID: uid) {
-            FileHandle.standardError.write(
-                "[AudioRecorder] could not select input device \(uid)\n"
-                    .data(using: .utf8) ?? Data())
+            throw RecorderError.engineFailed("could not select input device \(uid)")
         }
-        // Prepare BEFORE reading the format: after a device switch the input
-        // node only reconciles its output format once the engine is prepared.
-        // Reading it earlier returns the *previous* device's format, and then
-        // installTap(format:) raises an uncatchable Objective-C exception
-        // (AVAudioIONodeImpl::SetOutputFormat) → SIGABRT on record start.
+        // Prepare so the node reconciles to the (possibly just-switched) device
+        // before we read its formats.
         engine.prepare()
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        // A not-ready / disconnected device can report a 0-rate / 0-channel
-        // format; installTap would crash on it. Surface a Swift error instead.
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            throw RecorderError.engineFailed(
-                "input device has no usable audio format (sampleRate=\(inputFormat.sampleRate), channels=\(inputFormat.channelCount))")
-        }
-
-        // WAV at the input device's native sample rate and channel count.
-        // Stored as Int16 PCM (compact, broadly compatible). WhisperKit
-        // resamples internally on read; the bench reads through the same path.
-        let fileSettings: [String: Any] = [
-            AVFormatIDKey:             kAudioFormatLinearPCM,
-            AVSampleRateKey:           inputFormat.sampleRate,
-            AVNumberOfChannelsKey:     Int(inputFormat.channelCount),
-            AVLinearPCMBitDepthKey:    16,
-            AVLinearPCMIsFloatKey:     false,
-            AVLinearPCMIsBigEndianKey: false,
-        ]
-
-        // Match the file's processing format to the tap format (Float32
-        // non-interleaved at the input's native rate). `write(from:)` only has
-        // a bit-depth conversion to do (Float32 → Int16) — same rate, same
-        // channels — which it handles cleanly.
-        let file: AVAudioFile
-        do {
-            file = try AVAudioFile(
-                forWriting: url,
-                settings: fileSettings,
-                commonFormat: .pcmFormatFloat32,
-                interleaved: false
-            )
-        } catch {
-            throw RecorderError.fileWriteFailed("\(error)")
-        }
 
         let levelHandler = self.levelHandler
         let framesHandler = self.framesHandler
-        let inputSampleRate = inputFormat.sampleRate
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            do {
-                try file.write(from: buffer)
-            } catch {
-                FileHandle.standardError.write(
-                    "[AudioRecorder] write error: \(error)\n".data(using: .utf8) ?? Data()
-                )
+        let tapBlock: AVAudioNodeTapBlock = { [weak self] buffer, _ in
+            guard let self else { return }
+            self.lock.lock()
+            if self.outputFile == nil {
+                self.outputFile = Self.makeWAVFile(at: url, matching: buffer.format)
             }
-
-            // One RMS pass per buffer, reused for both the silence detector and
-            // the UI meter.
+            let file = self.outputFile
             let rms = Self.rawRMS(from: buffer)
-            self?.recordPeak(rms)
+            self._peakRMS = max(self._peakRMS, rms)
+            self.lock.unlock()
 
-            // Emit a UI-friendly level if anyone is subscribed.
+            if let file {
+                do { try file.write(from: buffer) }
+                catch {
+                    FileHandle.standardError.write(
+                        "[AudioRecorder] write error: \(error)\n".data(using: .utf8) ?? Data())
+                }
+            }
             if let levelHandler {
                 let level = Self.uiLevel(fromRMS: rms)
                 DispatchQueue.main.async { levelHandler(level) }
             }
-
-            // SPEC-012 streaming: emit raw float samples on the audio thread.
-            // Consumer (StreamingTranscriber) is an actor; it'll re-enter on
-            // its own queue, so this stays cheap on the capture thread.
             if let framesHandler,
                let channelData = buffer.floatChannelData?[0],
                buffer.frameLength > 0 {
                 let count = Int(buffer.frameLength)
                 let samples = Array(UnsafeBufferPointer(start: channelData, count: count))
-                framesHandler(samples, inputSampleRate)
+                framesHandler(samples, buffer.format.sampleRate)
             }
+        }
+
+        // Candidate tap formats, most-likely-correct first. installTap asserts
+        // the passed format's sampleRate/channelCount against the hardware
+        // format, so the hardware input format is the safest explicit choice;
+        // `nil` lets the node pick its own; outputFormat is a last resort.
+        let hwFormat = inputNode.inputFormat(forBus: 0)
+        let outFormat = inputNode.outputFormat(forBus: 0)
+        var candidates: [AVAudioFormat?] = []
+        if hwFormat.sampleRate > 0, hwFormat.channelCount > 0 { candidates.append(hwFormat) }
+        candidates.append(nil)
+        if outFormat.sampleRate > 0, outFormat.channelCount > 0,
+           outFormat.sampleRate != hwFormat.sampleRate {
+            candidates.append(outFormat)
+        }
+
+        var installed = false
+        for fmt in candidates {
+            let err = OQTryCatch {
+                inputNode.installTap(onBus: 0, bufferSize: 4096, format: fmt, block: tapBlock)
+            }
+            if err == nil { installed = true; break }
+            // The failed attempt installed nothing, but be defensive before retry.
+            _ = OQTryCatch { inputNode.removeTap(onBus: 0) }
+        }
+        guard installed else {
+            throw RecorderError.engineFailed("could not install an audio tap on this input device")
         }
 
         do {
             try engine.start()
         } catch {
-            inputNode.removeTap(onBus: 0)
+            _ = OQTryCatch { inputNode.removeTap(onBus: 0) }
             throw RecorderError.engineFailed("\(error)")
         }
-
-        self.engine = engine
-        self.outputFile = file
-        self._outputURL = url
-        self._startTime = Date()
-        self._isRecording = true
-        self._peakRMS = 0
-        return url
+        return engine
     }
 
-    /// Audio-thread hook: fold this buffer's RMS into the running peak. Held
-    /// under the same lock as start/stop; the critical section is a single
-    /// `max`, so contention with the (infrequent) lifecycle calls is negligible.
-    private func recordPeak(_ rms: Float) {
-        lock.lock(); _peakRMS = max(_peakRMS, rms); lock.unlock()
+    /// Create the Int16 WAV writer matching a captured buffer's format, so the
+    /// file's rate/channels always equal what the tap actually delivers.
+    private static func makeWAVFile(at url: URL, matching format: AVAudioFormat) -> AVAudioFile? {
+        let settings: [String: Any] = [
+            AVFormatIDKey:             kAudioFormatLinearPCM,
+            AVSampleRateKey:           format.sampleRate,
+            AVNumberOfChannelsKey:     Int(format.channelCount),
+            AVLinearPCMBitDepthKey:    16,
+            AVLinearPCMIsFloatKey:     false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        return try? AVAudioFile(
+            forWriting: url,
+            settings: settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
     }
 
     /// Stop capture; returns the URL of the finalised WAV (caller owns cleanup).

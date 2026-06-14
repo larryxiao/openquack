@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import OQObjCSupport
 
 /// Listen-only level meter for "is this mic actually picking up my voice?"
 /// checks in Settings and onboarding. Unlike `AudioRecorder` it writes no
@@ -34,19 +35,45 @@ public final class MicMonitor {
         if let uid = deviceUID, !uid.isEmpty {
             AudioInputDevices.route(inputNode, toUID: uid)
         }
-        let format = inputNode.outputFormat(forBus: 0)
+        engine.prepare()
+
         let handler = levelHandler
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { buffer, _ in
+        let tapBlock: AVAudioNodeTapBlock = { buffer, _ in
             let level = AudioRecorder.uiLevel(fromRMS: AudioRecorder.rawRMS(from: buffer))
             if let handler {
                 DispatchQueue.main.async { handler(level) }
             }
         }
-        engine.prepare()
+
+        // Same exception-guarded format chain as AudioRecorder: try the hardware
+        // format, then nil, then outputFormat — under OQTryCatch so a mismatch
+        // can't abort the process when the user hits "Test" on a quirky mic.
+        let hwFormat = inputNode.inputFormat(forBus: 0)
+        let outFormat = inputNode.outputFormat(forBus: 0)
+        var candidates: [AVAudioFormat?] = []
+        if hwFormat.sampleRate > 0, hwFormat.channelCount > 0 { candidates.append(hwFormat) }
+        candidates.append(nil)
+        if outFormat.sampleRate > 0, outFormat.channelCount > 0,
+           outFormat.sampleRate != hwFormat.sampleRate {
+            candidates.append(outFormat)
+        }
+
+        var installed = false
+        for fmt in candidates {
+            let err = OQTryCatch {
+                inputNode.installTap(onBus: 0, bufferSize: 4096, format: fmt, block: tapBlock)
+            }
+            if err == nil { installed = true; break }
+            _ = OQTryCatch { inputNode.removeTap(onBus: 0) }
+        }
+        guard installed else {
+            throw RecorderError.engineFailed("could not install an audio tap on this input device")
+        }
+
         do {
             try engine.start()
         } catch {
-            inputNode.removeTap(onBus: 0)
+            _ = OQTryCatch { inputNode.removeTap(onBus: 0) }
             throw error
         }
         self.engine = engine
