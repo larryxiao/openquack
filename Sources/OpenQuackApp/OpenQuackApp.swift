@@ -823,7 +823,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopAndTranscribe() {
         stopElapsedTimer()
         let audioDuration = recorder.elapsedSeconds
+        // Captured peak level, read before stop() tears the recorder down.
+        // A silent capture (dead/muted mic, or a virtual input device that
+        // emits silence) otherwise gets transcribed into a Whisper
+        // hallucination like "You." — warn the user instead.
+        let capturePeakRMS = recorder.peakRMS
         guard let url = recorder.stop() else { return }
+
+        if capturePeakRMS < AudioRecorder.silenceRMSThreshold {
+            Task {
+                await tearDownFramesPump()
+                if let streamer { await streamer.cancel() }
+                await MainActor.run {
+                    appState.phase = .error("No sound detected. Check your microphone in System Settings → Sound → Input, and that OpenQuack has mic permission.")
+                    schedulePolishIdleUnload()
+                }
+                try? FileManager.default.removeItem(at: url)
+            }
+            return
+        }
+
         Task {
             let phaseStart = Date()
             await MainActor.run {
