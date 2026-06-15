@@ -95,10 +95,11 @@ final class SpeechModelDownloadController: ObservableObject {
                 }
                 self.finishSuccessfully()
             } catch {
-                // `ensureDownloaded` wraps every error (incl. cancellation) into
-                // EngineError.loadFailed, so distinguish a user cancel via the
-                // task's own flag — cancel() has already torn down state.
-                if Task.isCancelled { self.task = nil; return }
+                // A user cancel tears down state in cancel(); detect it via the
+                // task's flag. `ensureDownloaded` currently absorbs
+                // CancellationError, but guard on it too so this stays correct
+                // if that ever changes.
+                if Task.isCancelled || error is CancellationError { self.task = nil; return }
                 self.task = nil
                 self.phase = .failed("Download failed. Check your connection and retry.")
                 self.appState?.speechDownload = .inactive
