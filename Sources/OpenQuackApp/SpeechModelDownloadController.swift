@@ -33,6 +33,9 @@ final class SpeechModelDownloadController: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var estimator = DownloadRateEstimator()
+    /// The "model" preference value when the current download started. Used to
+    /// avoid clobbering a newer explicit selection the user made mid-download.
+    private var baselineModel = ""
 
     /// Fraction (0…1) is scaled onto this nominal unit count so the
     /// byte-oriented `DownloadRateEstimator` can produce a time-to-completion.
@@ -82,6 +85,7 @@ final class SpeechModelDownloadController: ObservableObject {
     /// Idempotent: starting while a task already runs is a no-op.
     private func start() {
         guard task == nil else { return }
+        baselineModel = UserDefaults.standard.string(forKey: "model") ?? "medium"
         estimator = DownloadRateEstimator()
         phase = .downloading(Stats(fraction: 0, eta: nil, reconnecting: true))
         appState?.speechDownload = .downloading(fraction: 0)
@@ -109,7 +113,13 @@ final class SpeechModelDownloadController: ObservableObject {
 
     private func finishSuccessfully() {
         task = nil
-        UserDefaults.standard.set(target, forKey: "model")
+        // Adopt the freshly downloaded model only if the user hasn't switched to
+        // another model while this ran — their later choice wins. The download
+        // still completed, so the model stays cached for a future selection.
+        let current = UserDefaults.standard.string(forKey: "model") ?? "medium"
+        if current == baselineModel {
+            UserDefaults.standard.set(target, forKey: "model")
+        }
         appState?.speechDownload = .inactive
         isPresented = false
     }
