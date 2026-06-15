@@ -96,7 +96,15 @@ private struct GeneralPane: View {
     @State private var downloadedModels: [String] = []
 
     private func refreshDownloadedModels() {
-        downloadedModels = SpeechModelCatalog.all.filter { WhisperKitEngine.hasModelWeights(for: $0) }
+        // Exclude the model currently downloading: WhisperKit writes weight
+        // bundles to their final path mid-transfer, so `hasModelWeights` flips
+        // true before the download finishes — without this it would show (and
+        // be deletable) while still downloading.
+        var downloading: String?
+        if case .downloading(let m, _) = appState.speechDownload { downloading = m }
+        downloadedModels = SpeechModelCatalog.all.filter {
+            $0 != downloading && WhisperKitEngine.hasModelWeights(for: $0)
+        }
     }
 
     @ViewBuilder
