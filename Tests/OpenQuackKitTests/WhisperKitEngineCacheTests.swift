@@ -73,6 +73,20 @@ final class WhisperKitEngineCacheTests: XCTestCase {
         XCTAssertFalse(WhisperKitEngine.hasModelWeights(for: "tiny", downloadBase: base))
     }
 
+    func testDeleteModel_removesWeightsAndTokenizer() throws {
+        try seedCompleteCache(for: "tiny")
+        try seedCompleteCache(for: "base")
+        XCTAssertTrue(WhisperKitEngine.hasCompleteLocalCache(for: "tiny", downloadBase: base))
+
+        WhisperKitEngine.deleteModel("tiny", downloadBase: base)
+
+        XCTAssertFalse(WhisperKitEngine.hasModelWeights(for: "tiny", downloadBase: base))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: WhisperKitEngine.localTokenizerFolder(for: "tiny", downloadBase: base).path))
+        // Sibling untouched.
+        XCTAssertTrue(WhisperKitEngine.hasCompleteLocalCache(for: "base", downloadBase: base))
+    }
+
     func testHasCompleteLocalCache_isPerVariant() throws {
         try seedCompleteCache(for: "medium")
         XCTAssertTrue(WhisperKitEngine.hasCompleteLocalCache(for: "medium", downloadBase: base))

@@ -284,6 +284,25 @@ public final class WhisperKitEngine: TranscriptionEngine {
         return freed
     }
 
+    /// Delete a single cached model variant — weights, tokenizer, and the
+    /// HubApi download-staging copy — to reclaim disk. Returns bytes freed.
+    /// Safe if the variant is only partially present.
+    @discardableResult
+    public static func deleteModel(_ variant: String, downloadBase: URL? = nil) -> Int64 {
+        let fm = FileManager.default
+        let cacheDir = downloadBase ?? defaultDownloadBase()
+        let weights = localModelFolder(for: variant, downloadBase: cacheDir)
+        let staging = weights.deletingLastPathComponent()
+            .appendingPathComponent(".cache/huggingface/download/openai_whisper-\(variant)", isDirectory: true)
+        var freed: Int64 = 0
+        for url in [weights, localTokenizerFolder(for: variant, downloadBase: cacheDir), staging]
+        where fm.fileExists(atPath: url.path) {
+            freed += directorySize(at: url)
+            try? fm.removeItem(at: url)
+        }
+        return freed
+    }
+
     private static func directorySize(at url: URL) -> Int64 {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else {

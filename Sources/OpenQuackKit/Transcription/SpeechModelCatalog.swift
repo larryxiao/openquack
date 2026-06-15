@@ -6,6 +6,9 @@ import Foundation
 /// place. The byte-accurate download is owned by WhisperKit; these are the
 /// human-facing labels only.
 public enum SpeechModelCatalog {
+    /// The variants offered in Settings, in display order.
+    public static let all = ["tiny", "base", "small", "medium", "large-v3"]
+
     public static func displayName(for variant: String) -> String {
         switch variant {
         case "tiny":     return "Tiny"
