@@ -26,6 +26,10 @@ final class SpeechModelDownloadController: ObservableObject {
     /// Set by AppDelegate so progress can drive the menu-bar banner.
     weak var appState: AppState?
 
+    /// Called (main actor) after a download successfully commits the model
+    /// preference, so AppDelegate can hot-swap the live engine to it.
+    var onCommitted: (() -> Void)?
+
     private var task: Task<Void, Never>?
     /// The "model" preference value when the current download started. Used to
     /// avoid clobbering a newer explicit selection the user made mid-download.
@@ -114,6 +118,7 @@ final class SpeechModelDownloadController: ObservableObject {
         let current = UserDefaults.standard.string(forKey: "model") ?? "medium"
         if current == baselineModel {
             UserDefaults.standard.set(target, forKey: "model")
+            onCommitted?()
         }
         appState?.speechDownload = .inactive
         isPresented = false

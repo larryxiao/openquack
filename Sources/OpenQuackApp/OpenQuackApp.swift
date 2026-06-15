@@ -92,6 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var warmTask: Task<Void, Never>?
     /// Model the in-flight warm-up is for — guards against redundant restarts.
     private var warmingModel: String?
+    /// A model swap requested mid-dictation, applied when we next go idle.
+    private var pendingSwap = false
     // SPEC-007 — in-process polish engine kept warm across dictations: warmed on
     // record-start, idle-unloaded after polishIdleUnload of no dictation.
     private var polishEngine: LlamaCppPolishEngine?
@@ -183,6 +185,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         polishDownload.appState = appState
         polishDownload.reconcileOnLaunch()
         speechDownload.appState = appState
+        // Hot-swap the live engine when a Settings download commits a new model.
+        speechDownload.onCommitted = { [weak self] in self?.swapModel() }
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
@@ -516,6 +520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] phase, status in
                 self?.updateIcon(for: phase, hasUpdate: status.hasAvailableUpdate)
+                Task { @MainActor in self?.applyPendingSwapIfIdle() }
             }
             .store(in: &cancellables)
     }
@@ -1026,20 +1031,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// how a model switch during launch warm-up retargets without spawning a
     /// second concurrent download. Idempotent for the same model.
     @MainActor
-    func startWarm() {
-        if transcriber != nil { return }
+    func startWarm(force: Bool = false) {
+        if !force, transcriber != nil { return }
         let model = defaultModel
-        if warmingModel == model { return }   // already warming this one
+        if !force, warmingModel == model { return }   // already warming this one
         warmTask?.cancel()
         warmingModel = model
         warmTask = Task { [weak self] in
-            await self?.warmBody(model: model)
+            await self?.warmBody(model: model, force: force)
             await MainActor.run { if self?.warmingModel == model { self?.warmingModel = nil } }
         }
     }
 
-    private func warmBody(model: String) async {
-        if self.transcriber != nil { return }
+    /// True while a dictation is in flight — we never swap the engine under it.
+    @MainActor private var isDictating: Bool {
+        switch appState.phase {
+        case .starting, .recording, .transcribing, .polishing: return true
+        default: return false
+        }
+    }
+
+    /// Hot-swap the live engine to the current `defaultModel`. Cold start →
+    /// normal warm-up; already running it → no-op; mid-dictation → deferred
+    /// until the dictation finishes (see `applyPendingSwapIfIdle`).
+    @MainActor
+    func swapModel() {
+        let target = defaultModel
+        guard transcriber != nil else { startWarm(); return }
+        guard transcriber?.modelID != target else { return }
+        if isDictating { pendingSwap = true; return }
+        pendingSwap = false
+        startWarm(force: true)
+    }
+
+    /// Phase-observer hook: apply a deferred swap once dictation ends.
+    @MainActor
+    func applyPendingSwapIfIdle() {
+        guard pendingSwap, !isDictating else { return }
+        pendingSwap = false
+        startWarm(force: true)
+    }
+
+    private func warmBody(model: String, force: Bool = false) async {
+        if !force, self.transcriber != nil { return }
         await MainActor.run {
             appState.phase = .warming(modelLabel: model)
             // Clear any banner left by a just-retargeted warm-up so it doesn't
@@ -1069,6 +1103,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // now-stale model so the new warm-up wins.
             try Task.checkCancellation()
             let engine = try await WhisperKitEngine(model: model)
+            // A dictation may have started during a force-reload's load window —
+            // don't swap the engine under it; defer until it finishes.
+            if force, await MainActor.run(body: { self.isDictating }) {
+                await MainActor.run { pendingSwap = true }
+                return
+            }
             self.transcriber = engine
             self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
             await MainActor.run {

@@ -114,19 +114,23 @@ private struct GeneralPane: View {
                 Text("Downloaded models")
                     .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(downloadedModels, id: \.self) { variant in
-                    let isActive = (variant == model)
+                    // "Active" = the model actually loaded right now (hot-swap
+                    // updates it). `model` is the selection; they differ only
+                    // briefly when a swap is deferred behind an in-progress dictation.
+                    let isLoaded = (variant == appState.modelLabel)
+                    let isProtected = isLoaded || (variant == model)
                     HStack(spacing: Theme.s8) {
                         Text(SpeechModelCatalog.displayName(for: variant))
                         Text(SpeechModelCatalog.sizeLabel(for: variant))
                             .font(.caption).foregroundStyle(.secondary)
                         Spacer()
-                        if isActive {
+                        if isLoaded {
                             Text("Active").font(.caption.weight(.semibold)).foregroundStyle(Theme.moss)
                         }
                         Button("Delete") { confirmDeleteSpeechModel(variant) }
                             .font(.caption)
-                            .disabled(isActive)
-                            .help(isActive
+                            .disabled(isProtected)
+                            .help(isProtected
                                   ? "This model is in use. Switch to another model first, then delete it."
                                   : "Remove this model from disk to free space.")
                     }
@@ -181,19 +185,18 @@ private struct GeneralPane: View {
     /// not-yet-downloaded one opens the download sheet and the visual pick reverts.
     private func selectSpeechModel(_ target: String) {
         guard target != model else { return }
-        // Warm-up is still downloading a model (banner, no controller sheet) —
-        // we're choosing what to load right now, so retarget warm-up to the new
-        // model: commit it and restart warm-up. No sheet, no second download.
-        if case .downloading = appState.speechDownload, !speechDownload.canResurface {
-            model = target
-            (NSApp.delegate as? AppDelegate)?.startWarm()
-            return
-        }
-        if WhisperKitEngine.hasModelWeights(for: target) {
-            model = target
-        } else {
+        var warmingNow = false
+        if case .downloading = appState.speechDownload, !speechDownload.canResurface { warmingNow = true }
+        if !warmingNow, !WhisperKitEngine.hasModelWeights(for: target) {
+            // App is warm but the model isn't downloaded → confirm + download;
+            // the controller hot-swaps the engine once it lands.
             speechDownload.begin(target: target)
             pickerModel = model
+        } else {
+            // Downloaded (hot-swap now) or mid warm-up (retarget) — commit and let
+            // AppDelegate apply it: immediately, or after the current dictation.
+            model = target
+            (NSApp.delegate as? AppDelegate)?.swapModel()
         }
     }
 
@@ -220,7 +223,7 @@ private struct GeneralPane: View {
             Section {
                 speechModelPicker
                 speechDownloadRow
-                Text("Downloads the model now; the new model takes effect on next launch.")
+                Text("Switches right away (downloads first if the model isn't on your Mac). A switch during dictation applies once it finishes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 downloadedModelsTable
