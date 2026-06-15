@@ -99,10 +99,15 @@ struct MenuBarContent: View {
             }
         }
         if case .downloading(let fraction) = state.speechDownload {
-            downloadBannerRow(label: "Downloading speech model", fraction: fraction) {
-                SettingsWindowController.show(appState: state)
-                (NSApp.delegate as? AppDelegate)?.speechDownload.resurface()
-            }
+            let controller = (NSApp.delegate as? AppDelegate)?.speechDownload
+            // A launch download has no sheet to re-open — omit "Show" for it.
+            let onShow: (() -> Void)? = (controller?.canResurface ?? false)
+                ? {
+                    SettingsWindowController.show(appState: state)
+                    controller?.resurface()
+                }
+                : nil
+            downloadBannerRow(label: "Downloading speech model", fraction: fraction, onShow: onShow)
         }
     }
 
@@ -110,7 +115,7 @@ struct MenuBarContent: View {
     private func downloadBannerRow(
         label: String,
         fraction: Double,
-        onShow: @escaping () -> Void
+        onShow: (() -> Void)? = nil
     ) -> some View {
         HStack(alignment: .top, spacing: Theme.s8) {
             Image(systemName: "arrow.down.circle")
@@ -123,8 +128,10 @@ struct MenuBarContent: View {
                     .frame(maxWidth: .infinity)
             }
             Spacer(minLength: Theme.s4)
-            Button("Show", action: onShow)
-                .buttonStyle(.oqPrimarySmall)
+            if let onShow {
+                Button("Show", action: onShow)
+                    .buttonStyle(.oqPrimarySmall)
+            }
         }
         .oqBanner(tint: Theme.moss)
     }

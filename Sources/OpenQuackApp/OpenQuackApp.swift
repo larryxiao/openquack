@@ -1021,19 +1021,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // model download completes, once on window close); a re-init would
         // pointlessly drop and reload the engine.
         if self.transcriber != nil { return }
-        await MainActor.run { appState.phase = .warming(modelLabel: defaultModel) }
+        let model = defaultModel
+        await MainActor.run { appState.phase = .warming(modelLabel: model) }
         do {
-            let engine = try await WhisperKitEngine(model: defaultModel)
+            // If the saved model isn't cached yet, download it with a visible
+            // menu-bar progress banner instead of a silent blocking fetch inside
+            // the engine init. No sheet — this isn't user-initiated.
+            if !WhisperKitEngine.hasCompleteLocalCache(for: model) {
+                await MainActor.run { appState.speechDownload = .downloading(fraction: 0) }
+                try await WhisperKitEngine.ensureDownloaded(model: model) { fraction in
+                    Task { @MainActor in self.appState.speechDownload = .downloading(fraction: fraction) }
+                }
+                await MainActor.run { appState.speechDownload = .inactive }
+            }
+            let engine = try await WhisperKitEngine(model: model)
             self.transcriber = engine
             self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
             await MainActor.run {
                 appState.phase = .idle
-                appState.modelLabel = defaultModel
+                appState.modelLabel = model
             }
             // Active model is loaded — drop sibling variants so the disk
             // footprint stays at one model. Bench leftovers and the previous
             // model after a switch both get cleaned up here.
-            let active = defaultModel
+            let active = model
             Task.detached(priority: .background) {
                 _ = WhisperKitEngine.cleanupOtherModels(keeping: active)
             }
@@ -1042,6 +1053,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } catch {
             await MainActor.run {
+                appState.speechDownload = .inactive
                 appState.phase = .error("Failed to load Whisper: \(error)")
             }
         }

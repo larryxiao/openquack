@@ -82,6 +82,11 @@ final class SpeechModelDownloadController: ObservableObject {
         isPresented = true
     }
 
+    /// True when a sheet-backed download is in flight (one the user can re-open).
+    /// Launch-time downloads drive the banner without a controller task, so the
+    /// banner hides its "Show" button for those.
+    var canResurface: Bool { task != nil }
+
     /// Idempotent: starting while a task already runs is a no-op.
     private func start() {
         guard task == nil else { return }
