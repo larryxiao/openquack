@@ -10,19 +10,14 @@ import OpenQuackKit
 @MainActor
 final class SpeechModelDownloadController: ObservableObject {
     enum Phase: Equatable {
+        case idle
         case confirming
-        case downloading(Stats)
+        case downloading(Double)   // fraction 0…1
         case failed(String)
     }
 
-    struct Stats: Equatable {
-        var fraction: Double
-        var eta: TimeInterval?
-        var reconnecting: Bool
-    }
-
     @Published var isPresented = false
-    @Published var phase: Phase = .confirming
+    @Published var phase: Phase = .idle
 
     /// The variant the user is switching to. Drives the sheet copy and the
     /// commit target.
@@ -32,17 +27,12 @@ final class SpeechModelDownloadController: ObservableObject {
     weak var appState: AppState?
 
     private var task: Task<Void, Never>?
-    private var estimator = DownloadRateEstimator()
     /// The "model" preference value when the current download started. Used to
     /// avoid clobbering a newer explicit selection the user made mid-download.
     private var baselineModel = ""
 
-    /// Fraction (0…1) is scaled onto this nominal unit count so the
-    /// byte-oriented `DownloadRateEstimator` can produce a time-to-completion.
-    private static let etaScale: Int64 = 1_000_000
-
-    /// Open the sheet for a target the picker found uncached. If a download is
-    /// already running, re-surface it instead of resetting to the confirm step.
+    /// Open the sheet for a target the picker found not-yet-downloaded. If a
+    /// download is already running, re-surface it instead of resetting to confirm.
     func begin(target: String) {
         guard task == nil else { resurface(); return }
         self.target = target
@@ -64,13 +54,13 @@ final class SpeechModelDownloadController: ObservableObject {
         isPresented = false
     }
 
-    /// Stop the transfer. Leaves `@AppStorage("model")` untouched so the picker
-    /// reverts to the previously selected model. WhisperKit owns its own partial
-    /// cache; a half-finished download is harmless (next launch's cache check
-    /// fails and re-downloads).
+    /// Stop the transfer and clear all download UI. Leaves `@AppStorage("model")`
+    /// untouched so the picker reverts to the previously selected model.
+    /// WhisperKit keeps its partial in a resume cache; a future selection resumes.
     func cancel() {
         task?.cancel()
         task = nil
+        phase = .idle
         appState?.speechDownload = .inactive
         isPresented = false
     }
@@ -91,16 +81,14 @@ final class SpeechModelDownloadController: ObservableObject {
     private func start() {
         guard task == nil else { return }
         baselineModel = UserDefaults.standard.string(forKey: "model") ?? "medium"
-        estimator = DownloadRateEstimator()
-        phase = .downloading(Stats(fraction: 0, eta: nil, reconnecting: true))
-        appState?.speechDownload = .downloading(fraction: 0)
-        let begin = Date()
+        phase = .downloading(0)
         let variant = target
+        appState?.speechDownload = .downloading(model: variant, fraction: 0)
         task = Task { [weak self] in
             guard let self else { return }
             do {
                 try await WhisperKitEngine.ensureDownloaded(model: variant) { fraction in
-                    Task { @MainActor in self.ingest(fraction: fraction, since: begin) }
+                    Task { @MainActor in self.ingest(fraction: fraction) }
                 }
                 self.finishSuccessfully()
             } catch {
@@ -118,6 +106,7 @@ final class SpeechModelDownloadController: ObservableObject {
 
     private func finishSuccessfully() {
         task = nil
+        phase = .idle
         // Adopt the freshly downloaded model only if the user hasn't switched to
         // another model while this ran — their later choice wins. The download
         // still completed, so the model stays cached for a future selection.
@@ -129,16 +118,9 @@ final class SpeechModelDownloadController: ObservableObject {
         isPresented = false
     }
 
-    private func ingest(fraction: Double, since start: Date) {
+    private func ingest(fraction: Double) {
         guard case .downloading = phase else { return }
-        let elapsed = Date().timeIntervalSince(start)
-        let completed = Int64(fraction * Double(Self.etaScale))
-        estimator.add(completed: completed, at: elapsed)
-        phase = .downloading(Stats(
-            fraction: fraction,
-            eta: estimator.eta(completed: completed, total: Self.etaScale),
-            reconnecting: fraction <= 0
-        ))
-        appState?.speechDownload = .downloading(fraction: fraction)
+        phase = .downloading(fraction)
+        appState?.speechDownload = .downloading(model: target, fraction: fraction)
     }
 }

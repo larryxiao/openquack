@@ -83,45 +83,61 @@ private struct GeneralPane: View {
         category: "LaunchAtLogin"
     )
 
-    /// Switching to an uncached model routes through the download sheet (which
-    /// commits the preference on success); a cached model switches immediately.
-    private var speechModelSelection: Binding<String> {
-        Binding(
-            get: { model },
-            set: { target in
-                if target != model, !WhisperKitEngine.hasCompleteLocalCache(for: target) {
-                    speechDownload.begin(target: target)
-                } else {
-                    model = target
-                }
+    /// Mirror of `@AppStorage("model")` that the Picker binds to. A plain
+    /// rejecting binding leaves the Picker showing a rejected value, so we drive
+    /// it through `@State` and reconcile in `.onChange`: a not-yet-downloaded
+    /// model opens the download sheet and the visual selection snaps back; a
+    /// successful download flows the committed `model` back into the Picker.
+    @State private var pickerModel: String = ""
+
+    /// Inline progress row shown under the picker while a download runs in the
+    /// background (sheet dismissed). Extracted to keep the Form body light for
+    /// the SwiftUI type-checker.
+    @ViewBuilder
+    private var speechDownloadRow: some View {
+        if case .downloading(let fraction) = speechDownload.phase, !speechDownload.isPresented {
+            let caption = "\(SpeechModelCatalog.displayName(for: speechDownload.target)) · \(SpeechModelDownloadSheet.percentLabel(fraction))"
+            HStack(spacing: Theme.s8) {
+                ProgressView(value: fraction).frame(maxWidth: 160)
+                Text(caption)
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Show") { speechDownload.resurface() }
+                    .font(.caption)
             }
-        )
+        }
+    }
+
+    /// Reconcile a picker selection: a downloaded model switches immediately; a
+    /// not-yet-downloaded one opens the download sheet and the visual pick reverts.
+    private func selectSpeechModel(_ target: String) {
+        guard target != model else { return }
+        if WhisperKitEngine.hasModelWeights(for: target) {
+            model = target
+        } else {
+            speechDownload.begin(target: target)
+            pickerModel = model
+        }
     }
 
     var body: some View {
         Form {
             Section {
-                Picker("Speech model", selection: speechModelSelection) {
+                Picker("Speech model", selection: $pickerModel) {
                     Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
                     Text("base — fast, modest accuracy (~290 MB)").tag("base")
                     Text("small — balanced (~480 MB)").tag("small")
                     Text("medium — best balance, default (~1.5 GB)").tag("medium")
                     Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
                 }
+                .onAppear { pickerModel = model }
+                .onChange(of: model) { pickerModel = $0 }
+                .onChange(of: pickerModel) { selectSpeechModel($0) }
                 .sheet(isPresented: $speechDownload.isPresented,
                        onDismiss: { speechDownload.detachToBackground() }) {
                     SpeechModelDownloadSheet(model: speechDownload)
                 }
-                if case .downloading(let stats) = speechDownload.phase, !speechDownload.isPresented {
-                    HStack(spacing: Theme.s8) {
-                        ProgressView(value: stats.fraction).frame(maxWidth: 160)
-                        Text(SpeechModelDownloadSheet.progressCaption(stats))
-                            .font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Show") { speechDownload.resurface() }
-                            .font(.caption)
-                    }
-                }
+                speechDownloadRow
                 Text("Downloads the model now; the new model takes effect on next launch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1186,7 +1202,7 @@ private struct SpeechModelDownloadSheet: View {
                 .font(.headline)
 
             switch model.phase {
-            case .confirming:
+            case .idle, .confirming:
                 Text("This speech model needs a one-time \(SpeechModelCatalog.sizeLabel(for: model.target)) download. It stays on your Mac and takes effect the next time OpenQuack launches.")
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
@@ -1195,9 +1211,9 @@ private struct SpeechModelDownloadSheet: View {
                     Button("Download") { model.confirm() }
                         .keyboardShortcut(.defaultAction)
                 }
-            case .downloading(let stats):
-                ProgressView(value: stats.fraction)
-                Text(Self.progressCaption(stats))
+            case .downloading(let fraction):
+                ProgressView(value: fraction)
+                Text(Self.percentLabel(fraction))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Spacer()
@@ -1219,19 +1235,9 @@ private struct SpeechModelDownloadSheet: View {
         .frame(width: 380)
     }
 
-    static func progressCaption(_ s: SpeechModelDownloadController.Stats) -> String {
-        if s.reconnecting { return "Starting…" }
-        var parts = ["\(Int(s.fraction * 100))%"]
-        if let eta = s.eta {
-            parts.append("~\(Self.formatETA(eta)) left")
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private static func formatETA(_ seconds: TimeInterval) -> String {
-        let s = max(0, Int(seconds.rounded()))
-        if s < 60 { return "\(s) sec" }
-        let m = (s + 30) / 60
-        return "\(m) min"
+    /// WhisperKit only exposes a lumpy completion fraction (no reliable byte
+    /// rate), so we show percent only — no fabricated ETA.
+    static func percentLabel(_ fraction: Double) -> String {
+        fraction <= 0 ? "Starting…" : "\(Int(fraction * 100))%"
     }
 }

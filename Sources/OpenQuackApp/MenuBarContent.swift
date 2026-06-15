@@ -98,7 +98,7 @@ struct MenuBarContent: View {
                 (NSApp.delegate as? AppDelegate)?.polishDownload.resurface()
             }
         }
-        if case .downloading(let fraction) = state.speechDownload {
+        if case .downloading(let model, let fraction) = state.speechDownload {
             let controller = (NSApp.delegate as? AppDelegate)?.speechDownload
             // A launch download has no sheet to re-open — omit "Show" for it.
             let onShow: (() -> Void)? = (controller?.canResurface ?? false)
@@ -107,7 +107,8 @@ struct MenuBarContent: View {
                     controller?.resurface()
                 }
                 : nil
-            downloadBannerRow(label: "Downloading speech model", fraction: fraction, onShow: onShow)
+            downloadBannerRow(label: "Downloading \(SpeechModelCatalog.displayName(for: model))",
+                              fraction: fraction, onShow: onShow)
         }
     }
 

@@ -1024,13 +1024,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let model = defaultModel
         await MainActor.run { appState.phase = .warming(modelLabel: model) }
         do {
-            // If the saved model isn't cached yet, download it with a visible
+            // If the weights aren't on disk yet, download them with a visible
             // menu-bar progress banner instead of a silent blocking fetch inside
-            // the engine init. No sheet — this isn't user-initiated.
-            if !WhisperKitEngine.hasCompleteLocalCache(for: model) {
-                await MainActor.run { appState.speechDownload = .downloading(fraction: 0) }
+            // the engine init. No sheet — this isn't user-initiated. (A missing
+            // tokenizer alone isn't worth a banner; the engine init fetches it.)
+            if !WhisperKitEngine.hasModelWeights(for: model) {
+                await MainActor.run { appState.speechDownload = .downloading(model: model, fraction: 0) }
                 try await WhisperKitEngine.ensureDownloaded(model: model) { fraction in
-                    Task { @MainActor in self.appState.speechDownload = .downloading(fraction: fraction) }
+                    Task { @MainActor in self.appState.speechDownload = .downloading(model: model, fraction: fraction) }
                 }
                 await MainActor.run { appState.speechDownload = .inactive }
             }
