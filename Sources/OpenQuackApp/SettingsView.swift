@@ -48,6 +48,7 @@ private struct GeneralPane: View {
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
     @ObservedObject private var modelDownload = (NSApp.delegate as! AppDelegate).polishDownload
+    @ObservedObject private var speechDownload = (NSApp.delegate as! AppDelegate).speechDownload
     @AppStorage("language")            private var language: String = ""   // "" = auto-detect (SPEC-035)
     @AppStorage("playSounds")          private var playSounds: Bool = true
     @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
@@ -82,17 +83,46 @@ private struct GeneralPane: View {
         category: "LaunchAtLogin"
     )
 
+    /// Switching to an uncached model routes through the download sheet (which
+    /// commits the preference on success); a cached model switches immediately.
+    private var speechModelSelection: Binding<String> {
+        Binding(
+            get: { model },
+            set: { target in
+                if target != model, !WhisperKitEngine.hasCompleteLocalCache(for: target) {
+                    speechDownload.begin(target: target)
+                } else {
+                    model = target
+                }
+            }
+        )
+    }
+
     var body: some View {
         Form {
             Section {
-                Picker("Speech model", selection: $model) {
+                Picker("Speech model", selection: speechModelSelection) {
                     Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
                     Text("base — fast, modest accuracy (~290 MB)").tag("base")
                     Text("small — balanced (~480 MB)").tag("small")
                     Text("medium — best balance, default (~1.5 GB)").tag("medium")
                     Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
                 }
-                Text("Takes effect on next launch. New models download in the background.")
+                .sheet(isPresented: $speechDownload.isPresented,
+                       onDismiss: { speechDownload.detachToBackground() }) {
+                    SpeechModelDownloadSheet(model: speechDownload)
+                }
+                if case .downloading(let stats) = speechDownload.phase, !speechDownload.isPresented {
+                    HStack(spacing: Theme.s8) {
+                        ProgressView(value: stats.fraction).frame(maxWidth: 160)
+                        Text(SpeechModelDownloadSheet.progressCaption(stats))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Show") { speechDownload.resurface() }
+                            .font(.caption)
+                    }
+                }
+                Text("Downloads the model now; the new model takes effect on next launch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -1133,6 +1163,65 @@ private struct PolishModelDownloadSheet: View {
         if let bps = s.bytesPerSecond {
             parts.append(String(format: "%.1f MB/s", bps / 1_000_000))
         }
+        if let eta = s.eta {
+            parts.append("~\(Self.formatETA(eta)) left")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func formatETA(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds.rounded()))
+        if s < 60 { return "\(s) sec" }
+        let m = (s + 30) / 60
+        return "\(m) min"
+    }
+}
+
+private struct SpeechModelDownloadSheet: View {
+    @ObservedObject var model: SpeechModelDownloadController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Download \(SpeechModelCatalog.displayName(for: model.target))")
+                .font(.headline)
+
+            switch model.phase {
+            case .confirming:
+                Text("This speech model needs a one-time \(SpeechModelCatalog.sizeLabel(for: model.target)) download. It stays on your Mac and takes effect the next time OpenQuack launches.")
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Download") { model.confirm() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            case .downloading(let stats):
+                ProgressView(value: stats.fraction)
+                Text(Self.progressCaption(stats))
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Download in Background") { model.detachToBackground() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            case .failed(let message):
+                Text(message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Retry") { model.retry() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+    }
+
+    static func progressCaption(_ s: SpeechModelDownloadController.Stats) -> String {
+        if s.reconnecting { return "Starting…" }
+        var parts = ["\(Int(s.fraction * 100))%"]
         if let eta = s.eta {
             parts.append("~\(Self.formatETA(eta)) left")
         }

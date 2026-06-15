@@ -92,7 +92,7 @@ public final class WhisperKitEngine: TranscriptionEngine {
             .appendingPathComponent("whisper-\(variant)", isDirectory: true)
     }
 
-    static func hasCompleteLocalCache(for variant: String, downloadBase: URL? = nil) -> Bool {
+    public static func hasCompleteLocalCache(for variant: String, downloadBase: URL? = nil) -> Bool {
         let fm = FileManager.default
         let modelFolder = localModelFolder(for: variant, downloadBase: downloadBase)
         let required = ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"]
