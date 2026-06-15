@@ -95,7 +95,8 @@ private struct GeneralPane: View {
     /// the SwiftUI type-checker.
     @ViewBuilder
     private var speechDownloadRow: some View {
-        if case .downloading(let fraction) = speechDownload.phase, !speechDownload.isPresented {
+        switch speechDownload.phase {
+        case .downloading(let fraction) where !speechDownload.isPresented:
             let caption = "\(SpeechModelCatalog.displayName(for: speechDownload.target)) · \(SpeechModelDownloadSheet.percentLabel(fraction))"
             HStack(spacing: Theme.s8) {
                 ProgressView(value: fraction).frame(maxWidth: 160)
@@ -105,6 +106,18 @@ private struct GeneralPane: View {
                 Button("Show") { speechDownload.resurface() }
                     .font(.caption)
             }
+        case .failed(let message) where !speechDownload.isPresented:
+            // A background download (sheet dismissed) that failed has no other
+            // surface, so show it here with a retry.
+            HStack(spacing: Theme.s8) {
+                Text(message)
+                    .font(.caption).foregroundStyle(.red)
+                Spacer()
+                Button("Retry") { speechDownload.retry() }.font(.caption)
+                Button("Dismiss") { speechDownload.cancel() }.font(.caption)
+            }
+        default:
+            EmptyView()
         }
     }
 

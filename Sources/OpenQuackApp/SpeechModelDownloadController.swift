@@ -55,8 +55,9 @@ final class SpeechModelDownloadController: ObservableObject {
     }
 
     /// Stop the transfer and clear all download UI. Leaves `@AppStorage("model")`
-    /// untouched so the picker reverts to the previously selected model.
-    /// WhisperKit keeps its partial in a resume cache; a future selection resumes.
+    /// untouched so the picker reverts to the previously selected model. The
+    /// partial weights stay in WhisperKit's cache; re-selecting the model
+    /// re-runs the download (HubApi resumes from where it stopped).
     func cancel() {
         task?.cancel()
         task = nil
