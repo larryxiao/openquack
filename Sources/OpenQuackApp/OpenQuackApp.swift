@@ -1040,7 +1040,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func warmBody(model: String) async {
         if self.transcriber != nil { return }
-        await MainActor.run { appState.phase = .warming(modelLabel: model) }
+        await MainActor.run {
+            appState.phase = .warming(modelLabel: model)
+            // Clear any banner left by a just-retargeted warm-up so it doesn't
+            // briefly show the old model while this one prepares.
+            appState.speechDownload = .inactive
+        }
         do {
             // If the weights aren't on disk yet, download them with a visible
             // menu-bar progress banner instead of a silent blocking fetch inside
@@ -1049,10 +1054,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !WhisperKitEngine.hasModelWeights(for: model) {
                 await MainActor.run { appState.speechDownload = .downloading(model: model, fraction: 0) }
                 try await WhisperKitEngine.ensureDownloaded(model: model) { fraction in
-                    Task { @MainActor in self.appState.speechDownload = .downloading(model: model, fraction: fraction) }
+                    // Guard against a late tick from a just-cancelled (retargeted)
+                    // download flicking the banner back to the old model.
+                    Task { @MainActor in
+                        if self.warmingModel == model {
+                            self.appState.speechDownload = .downloading(model: model, fraction: fraction)
+                        }
+                    }
                 }
                 await MainActor.run { appState.speechDownload = .inactive }
             }
+            // A retarget may have landed in the gap between file downloads (where
+            // the snapshot returns without throwing) — bail before loading the
+            // now-stale model so the new warm-up wins.
+            try Task.checkCancellation()
             let engine = try await WhisperKitEngine(model: model)
             self.transcriber = engine
             self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
