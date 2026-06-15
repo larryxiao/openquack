@@ -90,6 +90,54 @@ private struct GeneralPane: View {
     /// successful download flows the committed `model` back into the Picker.
     @State private var pickerModel: String = ""
 
+    /// Variants whose weights are on disk — drives the "Downloaded models"
+    /// table. Recomputed on appear, when a download settles, and after a delete
+    /// (disk state isn't observable, so we refresh it explicitly).
+    @State private var downloadedModels: [String] = []
+
+    private func refreshDownloadedModels() {
+        downloadedModels = SpeechModelCatalog.all.filter { WhisperKitEngine.hasModelWeights(for: $0) }
+    }
+
+    @ViewBuilder
+    private var downloadedModelsTable: some View {
+        if !downloadedModels.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.s8) {
+                Text("Downloaded models")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(downloadedModels, id: \.self) { variant in
+                    let isActive = (variant == model)
+                    HStack(spacing: Theme.s8) {
+                        Text(SpeechModelCatalog.displayName(for: variant))
+                        Text(SpeechModelCatalog.sizeLabel(for: variant))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        if isActive {
+                            Text("Active").font(.caption.weight(.semibold)).foregroundStyle(Theme.moss)
+                        }
+                        Button("Delete") { confirmDeleteSpeechModel(variant) }
+                            .font(.caption)
+                            .disabled(isActive)
+                            .help(isActive
+                                  ? "This model is in use. Switch to another model first, then delete it."
+                                  : "Remove this model from disk to free space.")
+                    }
+                }
+            }
+        }
+    }
+
+    private func confirmDeleteSpeechModel(_ variant: String) {
+        let alert = NSAlert()
+        alert.messageText = "Delete \(SpeechModelCatalog.displayName(for: variant))?"
+        alert.informativeText = "Frees \(SpeechModelCatalog.sizeLabel(for: variant)) of disk. You can re-download it any time from the Speech model menu."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        WhisperKitEngine.deleteModel(variant)
+        refreshDownloadedModels()
+    }
+
     /// Inline progress row shown under the picker while a download runs in the
     /// background (sheet dismissed). Extracted to keep the Form body light for
     /// the SwiftUI type-checker.
@@ -125,6 +173,14 @@ private struct GeneralPane: View {
     /// not-yet-downloaded one opens the download sheet and the visual pick reverts.
     private func selectSpeechModel(_ target: String) {
         guard target != model else { return }
+        // Warm-up is still downloading a model (banner, no controller sheet) —
+        // we're choosing what to load right now, so retarget warm-up to the new
+        // model: commit it and restart warm-up. No sheet, no second download.
+        if case .downloading = appState.speechDownload, !speechDownload.canResurface {
+            model = target
+            (NSApp.delegate as? AppDelegate)?.startWarm()
+            return
+        }
         if WhisperKitEngine.hasModelWeights(for: target) {
             model = target
         } else {
@@ -133,27 +189,33 @@ private struct GeneralPane: View {
         }
     }
 
+    private var speechModelPicker: some View {
+        Picker("Speech model", selection: $pickerModel) {
+            Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
+            Text("base — fast, modest accuracy (~290 MB)").tag("base")
+            Text("small — balanced (~480 MB)").tag("small")
+            Text("medium — best balance, default (~1.5 GB)").tag("medium")
+            Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
+        }
+        .onAppear { pickerModel = model; refreshDownloadedModels() }
+        .onChange(of: model) { pickerModel = $0; refreshDownloadedModels() }
+        .onChange(of: pickerModel) { selectSpeechModel($0) }
+        .onChange(of: appState.speechDownload) { _ in refreshDownloadedModels() }
+        .sheet(isPresented: $speechDownload.isPresented,
+               onDismiss: { speechDownload.detachToBackground() }) {
+            SpeechModelDownloadSheet(model: speechDownload)
+        }
+    }
+
     var body: some View {
         Form {
             Section {
-                Picker("Speech model", selection: $pickerModel) {
-                    Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
-                    Text("base — fast, modest accuracy (~290 MB)").tag("base")
-                    Text("small — balanced (~480 MB)").tag("small")
-                    Text("medium — best balance, default (~1.5 GB)").tag("medium")
-                    Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
-                }
-                .onAppear { pickerModel = model }
-                .onChange(of: model) { pickerModel = $0 }
-                .onChange(of: pickerModel) { selectSpeechModel($0) }
-                .sheet(isPresented: $speechDownload.isPresented,
-                       onDismiss: { speechDownload.detachToBackground() }) {
-                    SpeechModelDownloadSheet(model: speechDownload)
-                }
+                speechModelPicker
                 speechDownloadRow
                 Text("Downloads the model now; the new model takes effect on next launch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                downloadedModelsTable
             } header: {
                 SectionHeader("Speech-to-text")
             }
