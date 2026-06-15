@@ -70,6 +70,9 @@ public final class AppState: ObservableObject {
     /// SPEC-007 — drives the menu-bar download banner. The controller mirrors
     /// its progress here so `MenuBarContent` keeps reading only `AppState`.
     @Published public var polishDownload: PolishDownloadStatus = .inactive
+    /// Drives the menu-bar download banner for the Whisper speech model.
+    /// Reuses `PolishDownloadStatus` (it only models a download fraction).
+    @Published public var speechDownload: PolishDownloadStatus = .inactive
 
     /// Convenience for the popover banner — only present when the
     /// status terminal-states into `.available`.

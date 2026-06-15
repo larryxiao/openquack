@@ -82,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC-007 — long-lived owner of the polish-model download (survives the
     /// Settings sheet). Wired to `appState` + reconciled in didFinishLaunching.
     @MainActor lazy var polishDownload = PolishModelDownloadController()
+    /// Long-lived owner of the speech-model download (survives the Settings
+    /// sheet). Wired to `appState` in didFinishLaunching.
+    @MainActor lazy var speechDownload = SpeechModelDownloadController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     // SPEC-007 — in-process polish engine kept warm across dictations: warmed on
@@ -174,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // from a previous launch.
         polishDownload.appState = appState
         polishDownload.reconcileOnLaunch()
+        speechDownload.appState = appState
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
