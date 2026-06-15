@@ -1103,19 +1103,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // now-stale model so the new warm-up wins.
             try Task.checkCancellation()
             let engine = try await WhisperKitEngine(model: model)
-            // A dictation may have started during a force-reload's load window —
-            // don't swap the engine under it; defer until it finishes.
-            if force, await MainActor.run(body: { self.isDictating }) {
-                await MainActor.run { pendingSwap = true }
-                return
-            }
-            self.transcriber = engine
-            self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
-            await MainActor.run {
+            // Swap atomically on the main actor so a dictation can't start
+            // between the busy-check and the assignment. If a force-reload's
+            // load window overlapped a dictation, don't swap under it — defer to
+            // idle. (A large model briefly holds old + new engine in memory here.)
+            let swapped = await MainActor.run { () -> Bool in
+                if force, self.isDictating { self.pendingSwap = true; return false }
+                self.transcriber = engine
+                self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
                 appState.speechDownload = .inactive
                 appState.phase = .idle
                 appState.modelLabel = model
+                return true
             }
+            guard swapped else { return }
             // Keep the freshly loaded model up to date. Sibling variants are
             // kept on disk — the user manages them in Settings (SPEC: model table).
             Task.detached(priority: .background) {
