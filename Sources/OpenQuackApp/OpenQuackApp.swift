@@ -86,8 +86,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor lazy var agentSessions = AgentSessionManager()
     /// SPEC-031 — opens on notification click.
     @MainActor lazy var responseWindow = ResponseWindowController()
+    /// SPEC-007 — long-lived owner of the polish-model download (survives the
+    /// Settings sheet). Wired to `appState` + reconciled in didFinishLaunching.
+    @MainActor lazy var polishDownload = PolishModelDownloadController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
+    // SPEC-007 — in-process polish engine kept warm across dictations: warmed on
+    // record-start, idle-unloaded after polishIdleUnload of no dictation.
+    private var polishEngine: LlamaCppPolishEngine?
+    private var polishEngineModelPath: URL?
+    private var polishIdleTimer: Timer?
     private var overlay: RecordingOverlay?
     private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
@@ -116,6 +124,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let launchAtLoginLogger = Logger(
         subsystem: "org.openquack.OpenQuack",
         category: "LaunchAtLogin"
+    )
+
+    /// SPEC-007b — live polish debug stream. Each run logs one JSON object
+    /// (raw/polished/engine/llm/ms) at `.debug` level, so the stream is
+    /// newline-delimited JSON and trivially parseable. Debug level is inert
+    /// (not captured, not persisted) in normal use and costs nothing until a
+    /// developer explicitly tails it with `bash scripts/debug-listen.sh polish`
+    /// (which formats it) — or raw via:
+    ///   log stream --level debug --style ndjson --predicate 'subsystem == "org.openquack.OpenQuack" AND category == "polish"'
+    private static let polishLog = Logger(
+        subsystem: "org.openquack.OpenQuack",
+        category: "polish"
     )
 
     /// Persist the last recording so the user can verify capture quality
@@ -159,6 +179,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         observePhaseForIcon()
         overlay = RecordingOverlay(state: appState)
+
+        // SPEC-007 — wire the download controller to AppState (so progress
+        // drives the menu-bar banner) and resume any interrupted download
+        // from a previous launch.
+        polishDownload.appState = appState
+        polishDownload.reconcileOnLaunch()
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
@@ -547,7 +573,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .idle:                 return menuIconCache["idle"]
         case .ready:                return menuIconCache["ready"]
         case .starting, .recording: return menuIconCache["recording"]
-        case .transcribing:         return menuIconCache["transcribing"]
+        case .transcribing, .polishing: return menuIconCache["transcribing"]
         case .error:                return nil
         }
     }
@@ -591,7 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             startRecording()
         case .recording:
             stopAndTranscribe()
-        case .warming, .starting, .transcribing:
+        case .warming, .starting, .transcribing, .polishing:
             // Ignore — the user gets a hotkey-tap during a transition; we just drop it.
             NSSound.beep()
         }
@@ -613,7 +639,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Same hotkey or the dictation hotkey both stop; recordingMode
             // was set when recording began, so the dispatch path is fixed.
             stopAndTranscribe()
-        case .warming, .starting, .transcribing:
+        case .warming, .starting, .transcribing, .polishing:
             NSSound.beep()
         }
     }
@@ -668,6 +694,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - record → transcribe pipeline
 
+    /// The polish engine configured for the current dictation. Single source
+    /// for both engine construction and the live overlay's "will it polish?"
+    /// decision.
+    private var polishEngineKind: PolishEngineKind {
+        PolishEngineKind(rawValue: UserDefaults.standard.string(forKey: "polishEngine") ?? "off") ?? .off
+    }
+
+    /// Runs the optional LLM polish + regex pipeline on a script-normalised
+    /// transcript, reading the current polish settings. Shared by the live
+    /// dictation path and the crash-recovery path. Drives no UI — the caller
+    /// owns the `.polishing` overlay phase.
+    private func polishedTranscript(from scripted: String) async -> PolishResult {
+        let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
+        let engineKind = polishEngineKind
+        let engine: TextPolishEngine?
+        switch engineKind {
+        case .off:
+            engine = nil
+        case .llamaCpp:
+            engine = await MainActor.run { self.retainedLlamaEngine(path: PolishModelCatalog.localURL) }
+        }
+        let result = await PolishPipeline.polish(
+            scripted,
+            engine: engine,
+            regexEnabled: polishEnabled,
+            context: PolishContext(language: defaultLanguage, timestamp: Date())
+        )
+        var record: [String: Any] = [
+            "raw": scripted,
+            "polished": result.text,
+            "engine": engineKind.rawValue,
+            "llm": result.llmSucceeded,
+        ]
+        if let ms = result.llmMillis { record["ms"] = ms }
+        if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
+           let json = String(data: data, encoding: .utf8) {
+            Self.polishLog.debug("\(json, privacy: .public)")
+        }
+        return result
+    }
+
     private func startRecording() {
         Task {
             guard await AudioRecorder.requestPermission() else {
@@ -676,7 +743,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return
             }
-            await MainActor.run { appState.phase = .starting }
+            await MainActor.run {
+                appState.phase = .starting
+                cancelPolishIdleUnload()
+                warmPolishEngineIfNeeded()
+            }
 
             // SPEC-012: wire the streamer before start() so we don't miss the
             // first tap buffer. We always wire even for short utterances —
@@ -732,6 +803,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let streamer { await streamer.cancel() }
                 await MainActor.run {
                     appState.phase = .error("Recording failed: \(error)")
+                    schedulePolishIdleUnload()
                 }
             }
         }
@@ -742,7 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// faster than the eye can register, which defeats the point of having
     /// progress UI in the first place.
     private static let minTranscribeDwell: TimeInterval = 0.6
-
+    private static let polishIdleUnload: TimeInterval = 300   // 5 min
     /// SPEC-031 — map an AgentKickoffService error to a one-line user-
     /// facing label for the overlay's "ready" state.
     static func kickoffErrorLabel(_ error: Swift.Error) -> String {
@@ -896,12 +968,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     preferredLanguages: Locale.preferredLanguages
                 )
 
-                // Smart formatting on raw Whisper output (capitalisation,
-                // end-punctuation, fillers). Toggle: Settings → General.
-                let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
-                let polished = polishEnabled
-                    ? TextPolisher.polish(scripted)
-                    : scripted
+                if polishEngineKind != .off {
+                    await MainActor.run { appState.phase = .polishing }
+                }
+                let polished = (await polishedTranscript(from: scripted)).text
 
                 // Hold the progress bar at full briefly so the user sees the
                 // transition land instead of jumping straight to "Pasted".
@@ -978,6 +1048,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.accessibilityTrusted = PasteService.isAccessibilityTrusted()
                     appState.phase = .ready
                     playSound("Pop")
+                    schedulePolishIdleUnload()
                 }
 
                 // SPEC-013/014 — record stats and persist history. Best-effort:
@@ -1006,6 +1077,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await MainActor.run {
                     appState.phase = .error("Transcription failed: \(error)")
+                    schedulePolishIdleUnload()
                 }
             }
             // Recording is kept for inspection — we let the next start() overwrite it.
@@ -1041,6 +1113,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 appState.phase = .error("Failed to load Whisper: \(error)")
             }
         }
+    }
+
+    // MARK: - SPEC-007 polish engine warmup / keep-warm / idle-unload
+
+    /// Retained engine for the configured path; rebuilds if absent or path changed.
+    @MainActor
+    private func retainedLlamaEngine(path: URL) -> LlamaCppPolishEngine {
+        if let engine = polishEngine, polishEngineModelPath == path {
+            return engine
+        }
+        unloadPolishEngine()
+        let engine = LlamaCppPolishEngine(modelPath: path)
+        polishEngine = engine
+        polishEngineModelPath = path
+        return engine
+    }
+
+    /// Record-start hook: drop the engine if the user switched away from llamaCpp,
+    /// else retain one and load it in the background so the ~3 GB load hides behind
+    /// the record+transcribe window.
+    @MainActor
+    private func warmPolishEngineIfNeeded() {
+        guard polishEngineKind == .llamaCpp else {
+            unloadPolishEngine()
+            return
+        }
+        let engine = retainedLlamaEngine(path: PolishModelCatalog.localURL)
+        Task { try? await engine.warm() }
+    }
+
+    @MainActor
+    private func unloadPolishEngine() {
+        guard let engine = polishEngine else { return }
+        polishEngine = nil
+        polishEngineModelPath = nil
+        Task.detached { await engine.unload() }
+    }
+
+    /// SPEC-007 — reclaim the ~2.9 GB GGUF. Sets the engine off, unloads any
+    /// warm instance, then removes the file. `use_mmap=false` means a loaded
+    /// engine keeps working until unload; we unload first so RAM is freed too.
+    @MainActor
+    func deletePolishModel() {
+        UserDefaults.standard.set("off", forKey: "polishEngine")
+        unloadPolishEngine()
+        try? FileManager.default.removeItem(at: PolishModelCatalog.localURL)
+    }
+
+    /// Arm the debounce: unload the warm model after polishIdleUnload with no new
+    /// dictation. Called when a dictation completes; cancelled at record-start.
+    @MainActor
+    private func schedulePolishIdleUnload() {
+        polishIdleTimer?.invalidate()
+        polishIdleTimer = Timer.scheduledTimer(withTimeInterval: Self.polishIdleUnload,
+                                               repeats: false) { [weak self] _ in
+            self?.unloadPolishEngine()
+        }
+    }
+
+    @MainActor
+    private func cancelPolishIdleUnload() {
+        polishIdleTimer?.invalidate()
+        polishIdleTimer = nil
     }
 
     private func startElapsedTimer() {
@@ -1234,14 +1369,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 language: result.detectedLanguage,
                 preferredLanguages: Locale.preferredLanguages
             )
-            let polishEnabled = UserDefaults.standard.object(forKey: "polishText") as? Bool ?? true
-            let polished = polishEnabled ? TextPolisher.polish(scripted) : scripted
+            let polished = (await polishedTranscript(from: scripted)).text
             let autoPasteEnabled = UserDefaults.standard.object(forKey: "autoPaste") as? Bool ?? true
             if autoPasteEnabled {
                 _ = PasteService.paste(polished)
             } else {
                 PasteService.copyToClipboard(polished)
             }
+            schedulePolishIdleUnload()
             try? await historyStore.markTranscribed(entry.id, transcript: polished)
             await usageStats.record(transcript: polished, audioSeconds: result.audioSeconds)
         } catch {

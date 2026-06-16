@@ -10,6 +10,7 @@ public final class AppState: ObservableObject {
         case starting
         case recording
         case transcribing
+        case polishing
         case ready
         case error(String)
     }
@@ -92,6 +93,9 @@ public final class AppState: ObservableObject {
     /// while if needed.
     @Published public var updateStatus: UpdateCheckStatus = .unknown
     @Published public var installMethod: InstallMethod = .manual
+    /// SPEC-007 — drives the menu-bar download banner. The controller mirrors
+    /// its progress here so `MenuBarContent` keeps reading only `AppState`.
+    @Published public var polishDownload: PolishDownloadStatus = .inactive
 
     /// Convenience for the popover banner — only present when the
     /// status terminal-states into `.available`.
@@ -101,6 +105,11 @@ public final class AppState: ObservableObject {
     }
 
     public init() {}
+}
+
+public enum PolishDownloadStatus: Equatable {
+    case inactive
+    case downloading(fraction: Double)
 }
 
 public enum UpdateCheckStatus: Equatable {

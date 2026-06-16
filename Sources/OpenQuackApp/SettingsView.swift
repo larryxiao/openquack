@@ -47,6 +47,8 @@ private struct GeneralPane: View {
     @ObservedObject var appState: AppState
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("polishText")          private var polishText: Bool = true
+    @AppStorage("polishEngine")        private var polishEngine: String = "off"
+    @ObservedObject private var modelDownload = (NSApp.delegate as! AppDelegate).polishDownload
     @AppStorage("language")            private var language: String = ""   // "" = auto-detect (SPEC-035)
     @AppStorage("playSounds")          private var playSounds: Bool = true
     @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
@@ -103,6 +105,36 @@ private struct GeneralPane: View {
                     .help("After transcription, OpenQuack simulates ⌘V to paste into whatever app you're in. Requires Accessibility access. If off, the transcript still goes to your clipboard and you press ⌘V yourself.")
                 Toggle("Smart formatting", isOn: $polishText)
                     .help("Capitalise sentences, add a period at the end, strip filler words (um, uh) before paste. Off = paste exactly what Whisper heard.")
+                Picker("Local LLM polish (experimental)", selection: Binding(
+                    get: { polishEngine },
+                    set: { selection in
+                        if selection == "llamaCpp", !PolishModelCatalog.isInstalled() {
+                            modelDownload.begin()   // don't commit; sheet decides
+                        } else {
+                            polishEngine = selection
+                        }
+                    }
+                )) {
+                    Text("Off").tag("off")
+                    Text("Local LLM (llama.cpp)").tag("llamaCpp")
+                }
+                .help("Runs an extra local LLM cleanup pass before paste, using an in-process model on your Mac. If the model isn't available, falls back to your Smart formatting setting (or raw text if that's off). Nothing leaves your Mac.")
+                if case .downloading(let stats) = modelDownload.phase, !modelDownload.isPresented {
+                    HStack(spacing: Theme.s8) {
+                        ProgressView(value: stats.fraction).frame(maxWidth: 160)
+                        Text(PolishModelDownloadSheet.progressCaption(stats))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Show") { modelDownload.resurface() }
+                            .font(.caption)
+                    }
+                }
+                if PolishModelCatalog.isInstalled() {
+                    Button("Delete model (\(PolishModelCatalog.sizeLabel))…", role: .destructive) {
+                        confirmDeletePolishModel()
+                    }
+                    .help("Remove the downloaded Local LLM model to reclaim disk space. Re-selecting Local LLM will download it again.")
+                }
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
             } header: {
@@ -241,6 +273,9 @@ private struct GeneralPane: View {
         .onChange(of: receivePrereleases) { _ in
             handleCheckNowTap()
         }
+        .sheet(isPresented: $modelDownload.isPresented, onDismiss: { modelDownload.detachToBackground() }) {
+            PolishModelDownloadSheet(model: modelDownload)
+        }
     }
 
     /// SPEC-026 PR-B — brew-mode hint with the upgrade command typeset
@@ -271,6 +306,18 @@ private struct GeneralPane: View {
             try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5 s
             lastChecked = controller.updater.lastUpdateCheckDate
         }
+    }
+
+    @MainActor
+    private func confirmDeletePolishModel() {
+        let alert = NSAlert()
+        alert.messageText = "Delete the Local LLM model?"
+        alert.informativeText = "This frees ~2.9 GB. Local LLM polish turns off; re-selecting it downloads the model again."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        (NSApp.delegate as? AppDelegate)?.deletePolishModel()
+        polishEngine = "off"     // reflect immediately in the picker binding
     }
 
     /// SPEC-023 §Toggle write path. Synchronous SMAppService IO on the
@@ -1133,5 +1180,71 @@ private struct HistoryPane: View {
             try? await Self.store?.purgeAll()
             await refresh()
         }
+    }
+}
+
+// MARK: - SPEC-007 polish model download sheet
+
+private struct PolishModelDownloadSheet: View {
+    @ObservedObject var model: PolishModelDownloadController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Download \(PolishModelCatalog.displayName)")
+                .font(.headline)
+
+            switch model.phase {
+            case .confirming:
+                Text("The local LLM polish needs a one-time \(PolishModelCatalog.sizeLabel) model download. It stays on your Mac; nothing leaves your machine.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Link("Model license", destination: PolishModelCatalog.licenseURL)
+                    .font(.caption)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Download") { model.confirm() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            case .downloading(let stats):
+                ProgressView(value: stats.fraction)
+                Text(Self.progressCaption(stats))
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Download in Background") { model.detachToBackground() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            case .failed(let message):
+                Text(message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Retry") { model.retry() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+    }
+
+    static func progressCaption(_ s: PolishModelDownloadController.DownloadStats) -> String {
+        if s.reconnecting { return "Reconnecting…" }
+        var parts = ["\(Int(s.fraction * 100))% of \(PolishModelCatalog.sizeLabel)"]
+        if let bps = s.bytesPerSecond {
+            parts.append(String(format: "%.1f MB/s", bps / 1_000_000))
+        }
+        if let eta = s.eta {
+            parts.append("~\(Self.formatETA(eta)) left")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private static func formatETA(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds.rounded()))
+        if s < 60 { return "\(s) sec" }
+        let m = (s + 30) / 60
+        return "\(m) min"
     }
 }
