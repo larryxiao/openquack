@@ -96,7 +96,7 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
     SPEC-026 — SUPublicEDKey is intentionally a placeholder. The user
-    runs Sparkle's bundled `generate_keys` once locally; the public half
+    runs Sparkle's bundled \`generate_keys\` once locally; the public half
     lands here as a follow-up commit, the private half stays in the
     maintainer's Keychain + a GH Actions secret. Until that swap lands,
     Sparkle fetches the appcast but refuses to install any update — by
