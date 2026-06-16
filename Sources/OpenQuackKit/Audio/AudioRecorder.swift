@@ -37,6 +37,13 @@ public enum RecorderError: Error, CustomStringConvertible {
 /// tap closure runs on the audio thread and writes via a closure-captured
 /// file reference. `removeTap` before nilling our reference is what
 /// serialises teardown.
+/// Holds the WAV writer for the audio-thread tap. Set once on the start thread
+/// before `engine.start()` (so there's no concurrent mutation), then read by
+/// the tap without locking.
+private final class CaptureFileSink {
+    var file: AVAudioFile?
+}
+
 public final class AudioRecorder {
     private let lock = NSLock()
     private var engine: AVAudioEngine?
@@ -44,6 +51,13 @@ public final class AudioRecorder {
     private var _outputURL: URL?
     private var _startTime: Date?
     private var _isRecording = false
+    private var _activeInputDeviceUID: String?
+
+    /// Dedicated lock for `_peakRMS` only. The audio-thread tap touches *this*
+    /// lock, never the lifecycle `lock` — so `stop()`, which holds `lock` while
+    /// calling `removeTap` (which drains in-flight tap callbacks), can never
+    /// deadlock against a tap callback waiting on a lock `stop()` owns.
+    private let peakLock = NSLock()
     private var _peakRMS: Float = 0
 
     /// Peak raw-RMS (float32, ~0…1) seen across the current or most recent
@@ -53,8 +67,17 @@ public final class AudioRecorder {
     /// emits silence stays near zero — letting callers warn the user instead
     /// of feeding silence to Whisper (which hallucinates "You." / "Thank you.").
     public var peakRMS: Float {
-        lock.lock(); defer { lock.unlock() }
+        peakLock.lock(); defer { peakLock.unlock() }
         return _peakRMS
+    }
+
+    /// UID of the input device the most recent `start()` actually captured
+    /// from — which may be the system default (`nil`) if the chosen device
+    /// failed and we fell back. Callers should name *this* device in any
+    /// "no sound from …" messaging, not the user's saved preference.
+    public var activeInputDeviceUID: String? {
+        lock.lock(); defer { lock.unlock() }
+        return _activeInputDeviceUID
     }
 
     /// Captures whose peak RMS stays under this are treated as "no usable
@@ -150,6 +173,10 @@ public final class AudioRecorder {
                 self._outputURL = url
                 self._startTime = Date()
                 self._isRecording = true
+                // Record which device actually won (nil = system default), so
+                // silent-capture messaging names the real device, not the saved
+                // preference we may have just fallen back from.
+                self._activeInputDeviceUID = (deviceUID?.isEmpty == false) ? deviceUID : nil
                 return url
             } catch {
                 lastError = error
@@ -170,7 +197,7 @@ public final class AudioRecorder {
     /// format actually wins — no rate/channel mismatch, no wrong-speed audio.
     private func startEngineLocked(url: URL, inputDeviceUID: String?) throws -> AVAudioEngine {
         outputFile = nil
-        _peakRMS = 0
+        peakLock.lock(); _peakRMS = 0; peakLock.unlock()
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
@@ -184,28 +211,27 @@ public final class AudioRecorder {
 
         let levelHandler = self.levelHandler
         let framesHandler = self.framesHandler
+        // The WAV is created on this (start) thread once the winning tap format
+        // is known, and published into `sink` BEFORE engine.start(). The tap
+        // then reads an immutable, ready file with no lock and never touches the
+        // lifecycle `lock` — so stop()'s removeTap (which drains in-flight
+        // callbacks while holding `lock`) cannot deadlock against it.
+        let sink = CaptureFileSink()
 
         let tapBlock: AVAudioNodeTapBlock = { [weak self] buffer, _ in
             guard let self else { return }
-            self.lock.lock()
-            if self.outputFile == nil {
-                self.outputFile = Self.makeWAVFile(at: url, matching: buffer.format)
-            }
-            let file = self.outputFile
-            let rms = Self.rawRMS(from: buffer)
-            self._peakRMS = max(self._peakRMS, rms)
-            self.lock.unlock()
-
-            if let file {
+            if let file = sink.file {
                 do { try file.write(from: buffer) }
                 catch {
                     FileHandle.standardError.write(
                         "[AudioRecorder] write error: \(error)\n".data(using: .utf8) ?? Data())
                 }
             }
+            let rms = Self.rawRMS(from: buffer)
+            self.peakLock.lock(); self._peakRMS = max(self._peakRMS, rms); self.peakLock.unlock()
+
             if let levelHandler {
-                let level = Self.uiLevel(fromRMS: rms)
-                DispatchQueue.main.async { levelHandler(level) }
+                DispatchQueue.main.async { levelHandler(Self.uiLevel(fromRMS: rms)) }
             }
             if let framesHandler,
                let channelData = buffer.floatChannelData?[0],
@@ -230,18 +256,33 @@ public final class AudioRecorder {
             candidates.append(outFormat)
         }
 
-        var installed = false
+        var winningFormat: AVAudioFormat?
         for fmt in candidates {
             let err = OQTryCatch {
                 inputNode.installTap(onBus: 0, bufferSize: 4096, format: fmt, block: tapBlock)
             }
-            if err == nil { installed = true; break }
+            if err == nil {
+                // A nil candidate makes the tap deliver the node's own format.
+                winningFormat = fmt ?? inputNode.outputFormat(forBus: 0)
+                break
+            }
             // The failed attempt installed nothing, but be defensive before retry.
             _ = OQTryCatch { inputNode.removeTap(onBus: 0) }
         }
-        guard installed else {
+        guard let format = winningFormat else {
             throw RecorderError.engineFailed("could not install an audio tap on this input device")
         }
+
+        // Create the WAV eagerly from the winning format and publish it before
+        // engine.start(). Surfacing a creation failure here (rather than a
+        // silent nil inside the tap) means a broken sink fails the recording
+        // loudly instead of "succeeding" into an empty/missing file.
+        guard let file = Self.makeWAVFile(at: url, matching: format) else {
+            _ = OQTryCatch { inputNode.removeTap(onBus: 0) }
+            throw RecorderError.fileWriteFailed("could not create WAV at \(url.lastPathComponent)")
+        }
+        sink.file = file
+        self.outputFile = file
 
         do {
             try engine.start()

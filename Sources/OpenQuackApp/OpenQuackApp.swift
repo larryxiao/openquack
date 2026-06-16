@@ -838,9 +838,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Display name of the input device the next recording will use: the
     /// user's picked device, or the system default. Used in the silent-capture
     /// banner/notification copy.
-    private static func currentInputDeviceName() -> String {
-        let uid = UserDefaults.standard.string(forKey: "inputDeviceUID") ?? ""
-        if !uid.isEmpty, let match = AudioInputDevices.list().first(where: { $0.uid == uid }) {
+    private static func currentInputDeviceName(uid: String?) -> String {
+        if let uid, !uid.isEmpty,
+           let match = AudioInputDevices.list().first(where: { $0.uid == uid }) {
             return match.name
         }
         return "the system default microphone"
@@ -874,10 +874,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // emits silence) otherwise gets transcribed into a Whisper
         // hallucination like "You." — warn the user instead.
         let capturePeakRMS = recorder.peakRMS
+        // The device actually captured from (may be the system-default fallback,
+        // not the saved preference). Read before stop() tears the recorder down.
+        let activeDeviceUID = recorder.activeInputDeviceUID
         guard let url = recorder.stop() else { return }
 
         if capturePeakRMS < AudioRecorder.silenceRMSThreshold {
-            let deviceName = Self.currentInputDeviceName()
+            let deviceName = Self.currentInputDeviceName(uid: activeDeviceUID)
             Task {
                 await tearDownFramesPump()
                 if let streamer { await streamer.cancel() }

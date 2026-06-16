@@ -32,8 +32,12 @@ public final class MicMonitor {
 
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
-        if let uid = deviceUID, !uid.isEmpty {
-            AudioInputDevices.route(inputNode, toUID: uid)
+        // A "Test" must verify the *selected* device — if routing fails, error
+        // out rather than silently metering the system default (which would
+        // give false confidence that the chosen mic works).
+        if let uid = deviceUID, !uid.isEmpty,
+           !AudioInputDevices.route(inputNode, toUID: uid) {
+            throw RecorderError.engineFailed("could not select input device \(uid)")
         }
         engine.prepare()
 
