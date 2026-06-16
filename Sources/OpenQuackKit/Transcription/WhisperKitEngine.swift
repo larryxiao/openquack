@@ -62,11 +62,27 @@ public final class WhisperKitEngine: TranscriptionEngine {
             : nil
 
         do {
+            // Force CPU+GPU for every stage instead of the Apple Neural
+            // Engine. The ANE path requires a per-model compile/specialize
+            // pass on first load that can take ~80s for `medium` and isn't
+            // reliably cached across process launches (observed e5bundlecache
+            // staying empty, ANECompilerService re-compiling every cold start).
+            // CPU+GPU skips that compile entirely — warm drops to a few
+            // seconds. Inference is marginally slower than ANE but still well
+            // under real-time on Apple Silicon, a worthwhile trade for not
+            // blocking the hotkey behind a minute-plus model load.
+            let compute = ModelComputeOptions(
+                melCompute: .cpuAndGPU,
+                audioEncoderCompute: .cpuAndGPU,
+                textDecoderCompute: .cpuAndGPU,
+                prefillCompute: .cpuAndGPU
+            )
             let config = WhisperKitConfig(
                 model: model,
                 downloadBase: cacheDir,
                 modelFolder: modelFolderArg,
                 tokenizerFolder: tokenizerFolderArg,
+                computeOptions: compute,
                 verbose: false,
                 logLevel: .error,
                 load: true
