@@ -4,6 +4,7 @@ import KeyboardShortcuts
 import os
 import ServiceManagement
 import OpenQuackKit
+import OpenQuackPlatform
 
 // Settings scene. SwiftUI TabView in an NSWindow (managed by
 // SettingsWindowController). Storage via @AppStorage on UserDefaults.
@@ -26,7 +27,7 @@ struct SettingsView: View {
             ShortcutPane()
                 .tabItem { Label("Shortcut", systemImage: "command") }
                 .tag(Tab.shortcut)
-            StatsPane()
+            StatsPane(appState: appState)
                 .tabItem { Label("Stats", systemImage: "chart.bar") }
                 .tag(Tab.stats)
             HistoryPane()
@@ -48,6 +49,7 @@ private struct GeneralPane: View {
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
     @ObservedObject private var modelDownload = (NSApp.delegate as! AppDelegate).polishDownload
+    @ObservedObject private var speechDownload = (NSApp.delegate as! AppDelegate).speechDownload
     @AppStorage("language")            private var language: String = ""   // "" = auto-detect (SPEC-035)
     @AppStorage("playSounds")          private var playSounds: Bool = true
     @AppStorage("vadAutoStop")         private var vadAutoStop: Bool = false
@@ -89,19 +91,150 @@ private struct GeneralPane: View {
         category: "LaunchAtLogin"
     )
 
+    /// Mirror of `@AppStorage("model")` that the Picker binds to. A plain
+    /// rejecting binding leaves the Picker showing a rejected value, so we drive
+    /// it through `@State` and reconcile in `.onChange`: a not-yet-downloaded
+    /// model opens the download sheet and the visual selection snaps back; a
+    /// successful download flows the committed `model` back into the Picker.
+    @State private var pickerModel: String = ""
+
+    /// Variants whose weights are on disk — drives the "Downloaded models"
+    /// table. Recomputed on appear, when a download settles, and after a delete
+    /// (disk state isn't observable, so we refresh it explicitly).
+    @State private var downloadedModels: [String] = []
+
+    private func refreshDownloadedModels() {
+        // Exclude the model currently downloading: WhisperKit writes weight
+        // bundles to their final path mid-transfer, so `hasModelWeights` flips
+        // true before the download finishes — without this it would show (and
+        // be deletable) while still downloading.
+        var downloading: String?
+        if case .downloading(let m, _) = appState.speechDownload { downloading = m }
+        downloadedModels = SpeechModelCatalog.all.filter {
+            $0 != downloading && WhisperKitEngine.hasModelWeights(for: $0)
+        }
+    }
+
+    @ViewBuilder
+    private var downloadedModelsTable: some View {
+        if !downloadedModels.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.s8) {
+                Text("Downloaded models")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                ForEach(downloadedModels, id: \.self) { variant in
+                    // "Active" = the model actually loaded right now (hot-swap
+                    // updates it). `model` is the selection; they differ only
+                    // briefly when a swap is deferred behind an in-progress dictation.
+                    let isLoaded = (variant == appState.modelLabel)
+                    let isProtected = isLoaded || (variant == model)
+                    HStack(spacing: Theme.s8) {
+                        Text(SpeechModelCatalog.displayName(for: variant))
+                        Text(SpeechModelCatalog.sizeLabel(for: variant))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        if isLoaded {
+                            Text("Active").font(.caption.weight(.semibold)).foregroundStyle(Theme.moss)
+                        }
+                        Button("Delete") { confirmDeleteSpeechModel(variant) }
+                            .font(.caption)
+                            .disabled(isProtected)
+                            .help(isProtected
+                                  ? "This model is in use. Switch to another model first, then delete it."
+                                  : "Remove this model from disk to free space.")
+                    }
+                }
+            }
+        }
+    }
+
+    private func confirmDeleteSpeechModel(_ variant: String) {
+        let alert = NSAlert()
+        alert.messageText = "Delete \(SpeechModelCatalog.displayName(for: variant))?"
+        alert.informativeText = "Frees \(SpeechModelCatalog.sizeLabel(for: variant)) of disk. You can re-download it any time from the Speech model menu."
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        WhisperKitEngine.deleteModel(variant)
+        refreshDownloadedModels()
+    }
+
+    /// Inline progress row shown under the picker while a download runs in the
+    /// background (sheet dismissed). Extracted to keep the Form body light for
+    /// the SwiftUI type-checker.
+    @ViewBuilder
+    private var speechDownloadRow: some View {
+        switch speechDownload.phase {
+        case .downloading(let fraction) where !speechDownload.isPresented:
+            let caption = "\(SpeechModelCatalog.displayName(for: speechDownload.target)) · \(SpeechModelDownloadSheet.percentLabel(fraction))"
+            HStack(spacing: Theme.s8) {
+                ProgressView(value: fraction).frame(maxWidth: 160)
+                Text(caption)
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Show") { speechDownload.resurface() }
+                    .font(.caption)
+            }
+        case .failed(let message) where !speechDownload.isPresented:
+            // A background download (sheet dismissed) that failed has no other
+            // surface, so show it here with a retry.
+            HStack(spacing: Theme.s8) {
+                Text(message)
+                    .font(.caption).foregroundStyle(.red)
+                Spacer()
+                Button("Retry") { speechDownload.retry() }.font(.caption)
+                Button("Dismiss") { speechDownload.cancel() }.font(.caption)
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    /// Reconcile a picker selection: a downloaded model switches immediately; a
+    /// not-yet-downloaded one opens the download sheet and the visual pick reverts.
+    private func selectSpeechModel(_ target: String) {
+        guard target != model else { return }
+        var warmingNow = false
+        if case .downloading = appState.speechDownload, !speechDownload.canResurface { warmingNow = true }
+        if !warmingNow, !WhisperKitEngine.hasModelWeights(for: target) {
+            // App is warm but the model isn't downloaded → confirm + download;
+            // the controller hot-swaps the engine once it lands.
+            speechDownload.begin(target: target)
+            pickerModel = model
+        } else {
+            // Downloaded (hot-swap now) or mid warm-up (retarget) — commit and let
+            // AppDelegate apply it: immediately, or after the current dictation.
+            model = target
+            (NSApp.delegate as? AppDelegate)?.swapModel()
+        }
+    }
+
+    private var speechModelPicker: some View {
+        Picker("Speech model", selection: $pickerModel) {
+            Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
+            Text("base — fast, modest accuracy (~290 MB)").tag("base")
+            Text("small — balanced (~480 MB)").tag("small")
+            Text("medium — best balance, default (~1.5 GB)").tag("medium")
+            Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
+        }
+        .onAppear { pickerModel = model; refreshDownloadedModels() }
+        .onChange(of: model) { pickerModel = $0; refreshDownloadedModels() }
+        .onChange(of: pickerModel) { selectSpeechModel($0) }
+        .onChange(of: appState.speechDownload) { _ in refreshDownloadedModels() }
+        .sheet(isPresented: $speechDownload.isPresented,
+               onDismiss: { speechDownload.detachToBackground() }) {
+            SpeechModelDownloadSheet(model: speechDownload)
+        }
+    }
+
     var body: some View {
         Form {
             Section {
-                Picker("Speech model", selection: $model) {
-                    Text("tiny — fastest, lowest accuracy (~150 MB)").tag("tiny")
-                    Text("base — fast, modest accuracy (~290 MB)").tag("base")
-                    Text("small — balanced (~480 MB)").tag("small")
-                    Text("medium — best balance, default (~1.5 GB)").tag("medium")
-                    Text("large-v3 — highest accuracy (~3 GB)").tag("large-v3")
-                }
-                Text("Takes effect on next launch. New models download in the background.")
+                speechModelPicker
+                speechDownloadRow
+                Text("Switches right away (downloads first if the model isn't on your Mac). A switch during dictation applies once it finishes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                downloadedModelsTable
             } header: {
                 SectionHeader("Speech-to-text")
             }
@@ -735,6 +868,7 @@ private struct AboutPane: View {
 // MARK: - Stats (SPEC-013)
 
 private struct StatsPane: View {
+    @ObservedObject var appState: AppState
     @AppStorage("showUsageStats")  private var showUsageStats: Bool = false
     @AppStorage("trackUsageStats") private var trackUsageStats: Bool = true
     @AppStorage("typingWPM")       private var typingWPM: Int = 50
@@ -785,6 +919,11 @@ private struct StatsPane: View {
                         SectionHeader("Sessions by length")
                     }
                 }
+
+                // SPEC-036 — local-only recording-health diagnostics. Same
+                // privacy stance as the rest of this pane: gathered on this Mac,
+                // nothing leaves it. Gated behind the existing display toggle.
+                recordingHealthSection
             }
 
             Section {
@@ -949,6 +1088,101 @@ private struct StatsPane: View {
                 }
             }
         }
+    }
+
+    // MARK: - SPEC-036 recording health
+
+    /// Local-only recording-health subsection: a session incomplete-capture
+    /// count, the newest recordings (wall / captured / RTF / path / lang with a
+    /// warning marker when the tap stopped early), an optional compact list of
+    /// warn/error diagnostic events, and a button into the existing reveal flow.
+    @ViewBuilder
+    private var recordingHealthSection: some View {
+        Section {
+            if appState.recentRecordings.isEmpty {
+                Text("No recordings yet this session.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                let incomplete = appState.incompleteCaptureCount
+                if incomplete > 0 {
+                    HStack(spacing: Theme.s8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("\(incomplete) of \(appState.recentRecordings.count) recording\(appState.recentRecordings.count == 1 ? "" : "s") this session ended early (capture stopped mid-recording).")
+                            .font(.caption)
+                    }
+                } else {
+                    Text("All \(appState.recentRecordings.count) recording\(appState.recentRecordings.count == 1 ? "" : "s") this session captured cleanly.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                ForEach(appState.recentRecordings.indices, id: \.self) { i in
+                    recordingHealthRow(appState.recentRecordings[i])
+                }
+            }
+
+            let warnings = Self.recentWarnings()
+            if !warnings.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(warnings.indices, id: \.self) { i in
+                        let e = warnings[i]
+                        Text("\(e.level.marker) [\(e.category.rawValue)] \(e.message)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Reveal diagnostics file") {
+                    (NSApp.delegate as? AppDelegate)?.writeDiagnosticsFileAndReveal()
+                }
+                .buttonStyle(.oqNeutral)
+                Spacer()
+            }
+            Text("Recording health is gathered on this Mac — durations, counts, and a detected-language code, never your transcript. Nothing leaves your Mac.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            SectionHeader("Recording health")
+        }
+    }
+
+    /// One recording row: "wall / captured · RTF · path · lang", warning-marked
+    /// when capture fell short.
+    private func recordingHealthRow(_ r: DiagnosticsReport.LastRecording) -> some View {
+        let incomplete = r.health.isIncomplete
+        var tail: [String] = []
+        if let rtf = DiagnosticsReport.rtf(transcribe: r.transcribeWallSeconds, audio: r.audioSeconds) {
+            tail.append(String(format: "RTF %.2f", rtf))
+        }
+        tail.append(r.path)
+        if let lang = r.detectedLanguage { tail.append("lang=\(lang)") }
+        return HStack(alignment: .firstTextBaseline, spacing: Theme.s8) {
+            Image(systemName: incomplete ? "exclamationmark.triangle.fill" : "checkmark.circle")
+                .foregroundStyle(incomplete ? Color.orange : .secondary)
+                .font(.caption)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(format: "wall %.1fs / captured %.1fs", r.wallSeconds, r.capturedSeconds))
+                    .font(.caption.monospacedDigit())
+                Text(tail.joined(separator: " · "))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Compact warn/error tail from the diagnostics ring (newest-first, capped).
+    /// `recentEvents()` returns oldest-first.
+    private static func recentWarnings(limit: Int = 5) -> [DiagEvent] {
+        Diagnostics.shared.recentEvents()
+            .filter { $0.level == .warn || $0.level == .error }
+            .suffix(limit)
+            .reversed()
     }
 
     private func exportSnapshot() {
@@ -1199,5 +1433,54 @@ private struct PolishModelDownloadSheet: View {
         if s < 60 { return "\(s) sec" }
         let m = (s + 30) / 60
         return "\(m) min"
+    }
+}
+
+private struct SpeechModelDownloadSheet: View {
+    @ObservedObject var model: SpeechModelDownloadController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Download \(SpeechModelCatalog.displayName(for: model.target))")
+                .font(.headline)
+
+            switch model.phase {
+            case .idle, .confirming:
+                Text("This speech model needs a one-time \(SpeechModelCatalog.sizeLabel(for: model.target)) download. It stays on your Mac and takes effect the next time OpenQuack launches.")
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Download") { model.confirm() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            case .downloading(let fraction):
+                ProgressView(value: fraction)
+                Text(Self.percentLabel(fraction))
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Download in Background") { model.detachToBackground() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            case .failed(let message):
+                Text(message).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { model.cancel() }
+                    Button("Retry") { model.retry() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+    }
+
+    /// WhisperKit only exposes a lumpy completion fraction (no reliable byte
+    /// rate), so we show percent only — no fabricated ETA.
+    static func percentLabel(_ fraction: Double) -> String {
+        fraction <= 0 ? "Starting…" : "\(Int(fraction * 100))%"
     }
 }

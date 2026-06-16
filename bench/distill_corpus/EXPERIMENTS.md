@@ -1,17 +1,20 @@
 # Polish-pass experiments log
 
-> ⚠️ **STATUS: Research-only. Nothing in this log is shipped to users.**
+> ⚠️ **STATUS: merged to `main`, not yet in a tagged release.**
 >
-> The polish feature (LLM rewrite of Whisper output) is **under
-> investigation**, not in any released build. Every model decision
-> recorded below was either rejected outright or is parked pending
-> further work. The current shipping behavior of OpenQuack is
-> regex-only `TextPolisher` (in `Sources/OpenQuackKit/Polish/`); no
-> LLM model is downloaded by users, no Settings toggle exposes the
-> feature, no released build runs Ollama.
+> SPEC-007 in-process LLM polish landed on `main` via **PR #75**
+> (2026-06-08, commit `07878e78`): an opt-in `LlamaCppPolishEngine`
+> (in-process llama.cpp, **not** Ollama) that auto-downloads
+> `gemma-4-E2B-it-Q4_K_M.gguf` and is gated behind a Settings toggle,
+> off by default. The shipped scaffold is the experiment-3 candidate
+> below (narrow formatting prompt + `<<<TRANSCRIPT>>>`).
 >
-> The actual app-side wiring lives on the un-pushed
-> `feat/intelligent-rewrite` branch and is not on `main`.
+> It is **not yet in a tagged release** — latest is `v2.0.0-alpha.19`
+> (2026-06-03), which predates the merge — so by this doc's strict
+> definition (main **and** tagged release **and** DMG), users on the
+> current DMG still get regex-only `TextPolisher` until the next alpha
+> cuts. The dated experiment rows below predate the merge and remain a
+> research log, not current state.
 
 One row per experiment. Adopted from karpathy/autoresearch's discipline:
 each experiment changes ONE thing against the same baseline, gets one
@@ -32,8 +35,8 @@ Run with `python3 bench/distill_corpus/test_runtime_prompt.py`.
 ## What "shipped" / "not shipped" mean here
 
 - **"Shipped" anywhere in this doc means** "merged to `main` AND included in a tagged release AND distributed to users via the cask/DMG."
-- **"Best candidate so far"** for experiment 3 means the polish path with the highest pass-rate to date — but it lives only on the WIP branch and has had ~30 minutes of real-use testing total. **Not validated for release.**
-- The current `main` tip (819b605) contains research artifacts only — no model download, no Settings UI, no behavior change for users.
+- **"Best candidate so far"** for experiment 3 was the polish path with the highest pass-rate at the time. It is now what landed: PR #75 wired it into the app as the opt-in `LlamaCppPolishEngine` path.
+- `main` now contains the full SPEC-007 feature (in-process llama.cpp engine, auto-download, Settings toggle) as of PR #75 — but it is **merged, not yet released**. No tagged DMG ships it yet, so end users are unaffected until the next alpha.
 
 ## Patterns we now know to be wrong
 
@@ -108,17 +111,15 @@ another distillation round, the right move is:
 
 ## Pipeline / model collaboration thinking
 
-Current pipeline (under investigation, not shipped):
+Current pipeline (on `main` via PR #75; opt-in, off by default):
 
 ```
-audio → WhisperKit (transcribe) → TextPolisher (regex) → paste
-                                                         ↑
-                          (optional, opt-in, not shipped)
-                          ↓
-                          OllamaPolishEngine (LLM polish)
-                          ↓
-                          back into TextPolisher
+audio → WhisperKit (transcribe) → LlamaCppPolishEngine (LLM polish) → TextPolisher (regex) → paste
+                                  (optional, opt-in, in-process llama.cpp)
 ```
+
+The LLM step is `LlamaCppPolishEngine` (embedded llama.cpp over the GGUF),
+**not** Ollama — Ollama is only the bench harness, not the app runtime.
 
 This is a **two-model pipeline** — Whisper for ASR, an LLM for
 formatting. The handoff is text-only; the LLM doesn't see audio.
@@ -197,5 +198,15 @@ python3 bench/distill_corpus/test_runtime_prompt.py
 ```
 
 This requires Ollama running with `gemma4-textonly:Q4_K_M` imported.
-End users will not have this set up; they get the regex-only polish
-path that already ships in OpenQuack today.
+
+**Bench fidelity caveat.** The Ollama bench model and the app's downloaded
+GGUF are byte-identical weights — same 3,106,736,256 bytes, same
+sha256 `9378bc47…8672d`, both `google/gemma-4-E2B-it` Q4_K_M (unsloth
+imatrix, **not** the QAT checkpoint; QAT ships as a separate `…-it-qat-GGUF`
+in Q4_0). What differs is the **prompt framing**: the app's
+`LlamaCppPolishEngine` uses the model's native `<|turn>` / `<turn|>` tokens,
+while the Ollama Modelfile's `TEMPLATE` is written with `<start_of_turn>` /
+`<end_of_turn>` (it also declares `RENDERER/PARSER gemma4`). So this bench
+validates the weights + Ollama framing, not the app's exact llama.cpp
+framing. A bench that drives `LlamaCppPolishEngine` directly is the
+faithful follow-up.

@@ -90,6 +90,35 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertGreaterThan(size, 0, "encoded audio file should be non-empty")
     }
 
+    // Opus only supports 8/12/16/24/48 kHz; at 44.1 kHz the Opus encoder's
+    // settings are rejected. The rejection surfaces inside
+    // `AVAssetWriterInput.init(mediaType:outputSettings:)` as an Objective-C
+    // exception, which previously aborted the process (SIGABRT) instead of
+    // falling back to AAC. This guards the fallback path: the save must succeed
+    // and produce a non-empty AAC file rather than crash.
+    func testSaveWithAudio_atOpusUnsupportedRate_fallsBackToAAC() async throws {
+        let store = makeStore()
+        let sampleRate = 44_100.0
+        var samples = [Float](repeating: 0, count: 44_100)
+        for i in 0..<samples.count {
+            samples[i] = 0.1 * sin(2 * .pi * 440 * Float(i) / Float(sampleRate))
+        }
+        let entry = try await store.save(audio: samples,
+                                         audioSampleRate: sampleRate,
+                                         transcript: "tone",
+                                         language: nil,
+                                         modelID: "medium",
+                                         durationSeconds: 1.0)
+        guard let url = entry.audioURL else {
+            XCTFail("expected audioURL after save with audio")
+            return
+        }
+        XCTAssertEqual(url.pathExtension, "m4a", "should fall back to the AAC/m4a encoder")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        let size = (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        XCTAssertGreaterThan(size, 0, "encoded audio file should be non-empty")
+    }
+
     // MARK: - markTranscribed (errors)
 
     func testMarkTranscribed_throwsOnUnknownID() async throws {

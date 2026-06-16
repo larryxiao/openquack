@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import OpenQuackKit
+import OpenQuackPlatform
 
 public final class AppState: ObservableObject {
     public enum Phase: Equatable {
@@ -46,6 +47,21 @@ public final class AppState: ObservableObject {
         currentLevel = 0
         levelHistory = Array(repeating: 0, count: Self.barCount)
     }
+
+    /// SPEC-036 — record a finished recording's health summary, newest-first,
+    /// trimming to `recentRecordingsCap`. Call on the main actor (it drives
+    /// `@Published`).
+    public func pushRecentRecording(_ summary: DiagnosticsReport.LastRecording) {
+        recentRecordings.insert(summary, at: 0)
+        if recentRecordings.count > Self.recentRecordingsCap {
+            recentRecordings.removeLast(recentRecordings.count - Self.recentRecordingsCap)
+        }
+    }
+
+    /// SPEC-036 — count of this session's recordings flagged incomplete-capture.
+    public var incompleteCaptureCount: Int {
+        recentRecordings.filter { $0.health.isIncomplete }.count
+    }
     @Published public var lastTranscript: String?
     @Published public var lastAudioSeconds: Double?
     @Published public var lastWallSeconds: Double?
@@ -58,6 +74,16 @@ public final class AppState: ObservableObject {
     /// SPEC-031 — short error label for failed kickoffs, shown in the
     /// "ready" overlay state.
     @Published public var lastKickoffError: String?
+    /// SPEC-036 — a transient notice shown in the "ready" overlay subline,
+    /// e.g. "Recording interrupted by an audio device change". Takes priority
+    /// over the transcript preview when set; cleared at the next recording.
+    @Published public var lastNotice: String?
+    /// SPEC-036 — newest-first ring of recent recording-health summaries,
+    /// surfaced (opt-in) in Settings → Stats → "Recording health". Local-only;
+    /// session-scoped, capped at `recentRecordingsCap`. Mutate via
+    /// `pushRecentRecording(_:)` so the cap/order stay in one place.
+    @Published public var recentRecordings: [DiagnosticsReport.LastRecording] = []
+    public static let recentRecordingsCap = 10
     @Published public var accessibilityTrusted: Bool = false
     /// Set when the most-recent recording came back silent (mic captured no
     /// usable audio — wrong/muted device). Drives the "Switch microphone"
@@ -77,6 +103,9 @@ public final class AppState: ObservableObject {
     /// SPEC-007 — drives the menu-bar download banner. The controller mirrors
     /// its progress here so `MenuBarContent` keeps reading only `AppState`.
     @Published public var polishDownload: PolishDownloadStatus = .inactive
+    /// Drives the menu-bar download banner for the Whisper speech model.
+    /// Carries the variant so the banner can name the model being downloaded.
+    @Published public var speechDownload: SpeechDownloadStatus = .inactive
 
     /// Convenience for the popover banner — only present when the
     /// status terminal-states into `.available`.
@@ -91,6 +120,12 @@ public final class AppState: ObservableObject {
 public enum PolishDownloadStatus: Equatable {
     case inactive
     case downloading(fraction: Double)
+}
+
+public enum SpeechDownloadStatus: Equatable {
+    case inactive
+    /// `model` is the Whisper variant id (e.g. "large-v3").
+    case downloading(model: String, fraction: Double)
 }
 
 public enum UpdateCheckStatus: Equatable {

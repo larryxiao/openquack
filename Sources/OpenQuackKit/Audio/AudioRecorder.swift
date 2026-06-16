@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import OQObjCSupport
+import OpenQuackPlatform
 
 public enum RecorderError: Error, CustomStringConvertible {
     case permissionDenied
@@ -85,6 +86,19 @@ public final class AudioRecorder {
     /// noise and silent virtual devices are well below this floor.
     public static let silenceRMSThreshold: Float = 0.005
 
+    /// SPEC-036 — total audio frames the tap actually delivered this session,
+    /// and the input rate they were captured at. Compared against wall-clock
+    /// `elapsedSeconds` to detect a tap that stopped mid-recording (the freeze
+    /// signature). Lives in its own reference so the audio-thread tap can bump
+    /// it without capturing `self`.
+    private let frameCounter = FrameCounter()
+    private var _capturedSampleRate: Double = 16000
+
+    /// SPEC-036 — observer for `AVAudioEngineConfigurationChange` (device/route
+    /// change). Removed before our own `engine.stop()` so teardown doesn't
+    /// re-enter it.
+    private var configObserver: NSObjectProtocol?
+
     /// Called on the main queue with each buffer's RMS level (0…1, gently
     /// scaled for UI). Set this before calling `start` to drive a level meter.
     public var levelHandler: ((Float) -> Void)?
@@ -96,7 +110,30 @@ public final class AudioRecorder {
     /// callers leave it nil and pay nothing.
     public var framesHandler: (([Float], Double) -> Void)?
 
+    /// SPEC-036 — invoked on the main queue when `AVAudioEngine` reconfigures
+    /// mid-capture (the usual cause of a frozen recording). The app uses it to
+    /// auto-stop-and-transcribe instead of leaving the UI frozen. Set before
+    /// `start()`.
+    public var interruptionHandler: (() -> Void)?
+
     public init() {}
+
+    /// Thread-safe frame tally bumped from the audio thread.
+    private final class FrameCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var frames: Int64 = 0
+        func add(_ n: Int) { lock.lock(); frames += Int64(n); lock.unlock() }
+        func reset() { lock.lock(); frames = 0; lock.unlock() }
+        var value: Int64 { lock.lock(); defer { lock.unlock() }; return frames }
+    }
+
+    /// SPEC-036 — seconds of audio the tap actually delivered this session.
+    /// Survives `stop()` (reset only on the next `start()`) so the post-stop
+    /// transcription path can compare it against wall-clock duration.
+    public var capturedSeconds: TimeInterval {
+        guard _capturedSampleRate > 0 else { return 0 }
+        return Double(frameCounter.value) / _capturedSampleRate
+    }
 
     public var isRecording: Bool {
         lock.lock(); defer { lock.unlock() }
@@ -218,13 +255,19 @@ public final class AudioRecorder {
         // callbacks while holding `lock`) cannot deadlock against it.
         let sink = CaptureFileSink()
 
+        // SPEC-036 — fresh frame tally for this session; the captured rate is
+        // set once the winning format is known (after the install loop below).
+        frameCounter.reset()
+        let frameCounter = self.frameCounter
+
         let tapBlock: AVAudioNodeTapBlock = { [weak self] buffer, _ in
+            // SPEC-036 — count delivered frames before anything that can fail.
+            frameCounter.add(Int(buffer.frameLength))
             guard let self else { return }
             if let file = sink.file {
                 do { try file.write(from: buffer) }
                 catch {
-                    FileHandle.standardError.write(
-                        "[AudioRecorder] write error: \(error)\n".data(using: .utf8) ?? Data())
+                    Diagnostics.shared.log(.recording, .error, "tap write failed: \(error)")
                 }
             }
             let rms = Self.rawRMS(from: buffer)
@@ -272,6 +315,8 @@ public final class AudioRecorder {
         guard let format = winningFormat else {
             throw RecorderError.engineFailed("could not install an audio tap on this input device")
         }
+        // SPEC-036 — capturedSeconds divides the frame tally by this rate.
+        _capturedSampleRate = format.sampleRate
 
         // Create the WAV eagerly from the winning format and publish it before
         // engine.start(). Surfacing a creation failure here (rather than a
@@ -288,8 +333,31 @@ public final class AudioRecorder {
             try engine.start()
         } catch {
             _ = OQTryCatch { inputNode.removeTap(onBus: 0) }
+            Diagnostics.shared.log(.recording, .error, "engine start failed: \(error)")
             throw RecorderError.engineFailed("\(error)")
         }
+
+        // SPEC-036 — notice device/route changes that silently stop the tap
+        // (Bluetooth connect/disconnect, device switch, sample-rate change,
+        // sleep/wake): without this the tap stops, the meter freezes, and only a
+        // partial transcript comes back. Bound to this engine instance so we
+        // don't catch unrelated graphs. Only treated as an interruption when the
+        // engine actually stopped — benign reconfigs (output-device change,
+        // codec renegotiation) must not cut a long dictation short.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in
+            let stopped = !(engine.isRunning)
+            Diagnostics.shared.log(
+                .recording, stopped ? .warn : .info,
+                "AVAudioEngineConfigurationChange mid-capture (engine \(stopped ? "STOPPED" : "still running"))"
+            )
+            guard stopped else { return }
+            self?.interruptionHandler?()
+        }
+        Diagnostics.shared.log(.recording, .info, String(format: "start: input %.0f Hz, %d ch", format.sampleRate, Int(format.channelCount)))
         return engine
     }
 
@@ -317,6 +385,10 @@ public final class AudioRecorder {
         lock.lock(); defer { lock.unlock() }
         guard _isRecording else { return nil }
 
+        // SPEC-036 — drop the config-change observer first: `engine.stop()`
+        // itself posts a configuration change, which would otherwise re-enter
+        // the interruption handler during our own teardown.
+        removeConfigObserverLocked()
         engine?.inputNode.removeTap(onBus: 0)
         engine?.stop()
         engine = nil
@@ -324,9 +396,19 @@ public final class AudioRecorder {
         _startTime = nil
         _isRecording = false
 
+        Diagnostics.shared.log(.recording, .info, String(format: "stop: captured %.1fs", capturedSeconds))
+
         let url = _outputURL
         _outputURL = nil
         return url
+    }
+
+    /// Tear down the config-change observer. Caller holds `lock`.
+    private func removeConfigObserverLocked() {
+        if let obs = configObserver {
+            NotificationCenter.default.removeObserver(obs)
+            configObserver = nil
+        }
     }
 
     /// Stop and discard the WAV.

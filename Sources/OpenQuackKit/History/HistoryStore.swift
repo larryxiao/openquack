@@ -504,6 +504,18 @@ public actor HistoryStore {
             AVNumberOfChannelsKey: 1,
             AVEncoderBitRateKey:   bitRate,
         ]
+        // `AVAssetWriterInput.init(mediaType:outputSettings:)` raises an
+        // Objective-C `NSInvalidArgumentException` — not a Swift error — when the
+        // settings are unsupported for this codec/container/sample-rate combo
+        // (e.g. Opus at a non-48 kHz rate). A Swift `do/catch` can't intercept an
+        // ObjC exception, so it would abort the process and bypass the AAC
+        // fallback in `encodeAudio`. Validate first and surface a Swift error
+        // instead, keeping the fallback path alive.
+        guard writer.canApply(outputSettings: outputSettings, forMediaType: .audio) else {
+            throw HistoryError.encodingFailed(
+                "unsupported outputSettings for codec 0x\(String(codec, radix: 16)) at \(sampleRate) Hz"
+            )
+        }
         let input = AVAssetWriterInput(mediaType: .audio, outputSettings: outputSettings)
         input.expectsMediaDataInRealTime = false
         guard writer.canAdd(input) else {

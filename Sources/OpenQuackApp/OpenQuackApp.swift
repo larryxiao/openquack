@@ -7,6 +7,7 @@ import ServiceManagement
 import Sparkle
 import UserNotifications
 import OpenQuackKit
+import OpenQuackPlatform
 
 // SPEC-010 — App shell + dictation lifecycle (SPEC-001 + SPEC-003 wired in).
 //
@@ -27,6 +28,7 @@ struct OpenQuackApp {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
@@ -69,6 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let voiceThreshold: Float = 0.06
     private static let vadMinDuration: Double = 0.8
 
+    /// SPEC-036 — set when the current recording was force-stopped by an audio
+    /// device/route change (vs. a user stop / VAD). Reset at each `startRecording`.
+    private var recordingInterrupted = false
+    /// SPEC-036 — summary of the most recent recording for the bug-report dump.
+    private var lastRecordingDiag: DiagnosticsReport.LastRecording?
+
     private let appState = AppState()
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyManager()
@@ -82,8 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC-007 — long-lived owner of the polish-model download (survives the
     /// Settings sheet). Wired to `appState` + reconciled in didFinishLaunching.
     @MainActor lazy var polishDownload = PolishModelDownloadController()
+    /// Long-lived owner of the speech-model download (survives the Settings
+    /// sheet). Wired to `appState` in didFinishLaunching.
+    @MainActor lazy var speechDownload = SpeechModelDownloadController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
+    /// Cancellable warm-up. Restarted (retargeted) when the user switches the
+    /// active model while the launch download is still running.
+    private var warmTask: Task<Void, Never>?
+    /// Model the in-flight warm-up is for — guards against redundant restarts.
+    private var warmingModel: String?
+    /// A model swap requested mid-dictation, applied when we next go idle.
+    private var pendingSwap = false
     // SPEC-007 — in-process polish engine kept warm across dictations: warmed on
     // record-start, idle-unloaded after polishIdleUnload of no dictation.
     private var polishEngine: LlamaCppPolishEngine?
@@ -152,6 +170,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // SPEC-039 — read sentinel before any code that could crash, then arm
+        // it for this session. Value stays true if we crash; cleared on clean exit.
+        let priorSessionCrashed = checkAndMarkCrashSentinel()
+
         NSApp.setActivationPolicy(.accessory)
         appState.installMethod = InstallMethodDetector.detect()
         installSparkleUpdater()
@@ -174,6 +196,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // from a previous launch.
         polishDownload.appState = appState
         polishDownload.reconcileOnLaunch()
+        speechDownload.appState = appState
+        // Hot-swap the live engine when a Settings download commits a new model.
+        speechDownload.onCommitted = { [weak self] in self?.swapModel() }
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
@@ -198,6 +223,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // SPEC-036 — when the audio engine reconfigures mid-recording (device /
+        // route change — Bluetooth, device switch, sample-rate change), the tap
+        // stops and the UI would otherwise freeze. Auto-stop-and-transcribe so
+        // the user gets the partial result with a clear notice instead. Fires on
+        // the main queue.
+        recorder.interruptionHandler = { [weak self] in
+            guard let self else { return }
+            guard case .recording = self.appState.phase else { return }
+            self.recordingInterrupted = true
+            self.appState.lastNotice = "Recording interrupted by an audio device change"
+            Diagnostics.shared.log(.recording, .warn, "interruption → auto-stopping mid-recording")
+            self.stopAndTranscribe()
+        }
+
         // Refresh permission state on launch and every 5 s while running so
         // the popover banner reflects reality even if the user grants AX
         // through System Settings without coming back to the app first.
@@ -209,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if hasOnboarded {
             // Seasoned user — warm the model in the background.
-            Task { await warmTranscriber() }
+            startWarm()
         } else {
             // First launch. Warm the transcriber the moment the onboarding's
             // model download finishes, not when the window closes — the demo
@@ -219,10 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             OnboardingWindowController.showIfFirstLaunch(
                 appState: appState,
                 onModelReady: { [weak self] in
-                    Task { await self?.warmTranscriber() }
+                    Task { @MainActor in self?.startWarm() }
                 },
                 onComplete: { [weak self] in
-                    Task { await self?.warmTranscriber() }
+                    Task { @MainActor in self?.startWarm() }
                 }
             )
         }
@@ -232,9 +271,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await pollForUpdate() }
 
         // SPEC-014 — sweep retention + offer crash-recovery on launch.
+        // SPEC-039 — offer bug report if sentinel indicates unclean prior exit.
         let history = historyStore
         Task { @MainActor in
             await history.enforceRetention()
+            if priorSessionCrashed { await self.offerCrashBugReport() }
             await self.offerRecoveryIfNeeded()
         }
 
@@ -297,10 +338,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OnboardingWindowController.show(
             appState: appState,
             onModelReady: { [weak self] in
-                Task { await self?.warmTranscriber() }
+                Task { @MainActor in self?.startWarm() }
             },
             onComplete: { [weak self] in
-                Task { await self?.warmTranscriber() }
+                Task { @MainActor in self?.startWarm() }
             }
         )
     }
@@ -468,6 +509,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuSendFeedback() {
         // SPEC-018. Opens the GitHub issue chooser; user picks bug report
         // or feature request from there. No app-side network IO.
+        // SPEC-036 — also drop a diagnostics file in Finder to attach.
+        writeDiagnosticsFileAndReveal()
         guard let url = URL(string: "https://github.com/larryxiao/openquack/issues/new/choose") else {
             return
         }
@@ -522,6 +565,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] phase, status in
                 self?.updateIcon(for: phase, hasUpdate: status.hasAvailableUpdate)
+                Task { @MainActor in self?.applyPendingSwapIfIdle() }
             }
             .store(in: &cancellables)
     }
@@ -779,6 +823,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
                     appState.resetLevels()
+                    appState.lastNotice = nil          // SPEC-036
+                    recordingInterrupted = false       // SPEC-036
                     lastVoiceAt = nil
                     startElapsedTimer()
                     playSound("Tink")
@@ -940,9 +986,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // sees every frame; cancel() is fine to call after teardown
                 // (any frames still queued become a no-op once cancelled).
                 let result: EngineTranscription
+                // SPEC-036 — streaming-only stats for the diagnostics summary.
+                let pathLabel: String
+                var chunkCount: Int?
+                var chunkFailures: Int?
                 if audioDuration >= Self.streamingThreshold, let streamer {
                     await tearDownFramesPump()
                     let r = try await streamer.finish()
+                    chunkCount = r.chunkCount
+                    chunkFailures = r.chunkFailures
+                    pathLabel = "streaming"
                     result = EngineTranscription(
                         text: r.text,
                         detectedLanguage: r.detectedLanguage,
@@ -953,12 +1006,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 } else {
                     await tearDownFramesPump()
                     if let streamer { await streamer.cancel() }
+                    pathLabel = "offline"
                     result = try await engine.transcribe(
                         audioFile: url,
                         language: defaultLanguage,
                         customWords: customWords
                     )
                 }
+
+                // SPEC-036 — recording-health + transcription summary. `captured`
+                // survives `recorder.stop()` (reset only on the next start), so it
+                // reflects this recording. A large wall-vs-captured shortfall is
+                // the freeze signature (the tap stopped mid-recording).
+                let captured = recorder.capturedSeconds
+                let health = RecordingHealth.assess(wallSeconds: audioDuration, capturedSeconds: captured)
+                let diag = DiagnosticsReport.LastRecording(
+                    wallSeconds: audioDuration,
+                    capturedSeconds: captured,
+                    health: health,
+                    path: pathLabel,
+                    chunkCount: chunkCount,
+                    chunkFailures: chunkFailures,
+                    transcribeWallSeconds: result.wallSeconds,
+                    audioSeconds: result.audioSeconds,
+                    detectedLanguage: result.detectedLanguage,
+                    interrupted: recordingInterrupted
+                )
+                lastRecordingDiag = diag
+                // SPEC-036 — also push to the session ring AppState exposes to
+                // Settings → Stats → "Recording health" (opt-in display).
+                await MainActor.run { appState.pushRecentRecording(diag) }
+                let rtfText = DiagnosticsReport.rtf(transcribe: result.wallSeconds, audio: result.audioSeconds)
+                    .map { String(format: "%.2f", $0) } ?? "-"
+                Diagnostics.shared.log(
+                    .transcription,
+                    health.isIncomplete ? .error : .info,
+                    "stop: wall \(String(format: "%.1f", audioDuration))s captured \(String(format: "%.1f", captured))s"
+                    + " \(pathLabel) rtf=\(rtfText) lang=\(result.detectedLanguage ?? "-")"
+                    + (health.isIncomplete ? " ⚠ INCOMPLETE" : "")
+                    + (recordingInterrupted ? " (interrupted)" : "")
+                )
 
                 // Whisper's `zh` output mixes Hant/Hans; normalise detected
                 // Chinese to the system-language script before any other text
@@ -1086,32 +1173,112 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func warmTranscriber() async {
-        // Idempotent — the onboarding flow can call this twice (once when the
-        // model download completes, once on window close); a re-init would
-        // pointlessly drop and reload the engine.
-        if self.transcriber != nil { return }
-        await MainActor.run { appState.phase = .warming(modelLabel: defaultModel) }
+    /// Start (or restart) warm-up for the current `defaultModel`. Restarting
+    /// cancels an in-flight warm download and re-aims at the new model — this is
+    /// how a model switch during launch warm-up retargets without spawning a
+    /// second concurrent download. Idempotent for the same model.
+    @MainActor
+    func startWarm(force: Bool = false) {
+        if !force, transcriber != nil { return }
+        let model = defaultModel
+        if !force, warmingModel == model { return }   // already warming this one
+        warmTask?.cancel()
+        warmingModel = model
+        warmTask = Task { [weak self] in
+            await self?.warmBody(model: model, force: force)
+            await MainActor.run { if self?.warmingModel == model { self?.warmingModel = nil } }
+        }
+    }
+
+    /// True while a dictation is in flight — we never swap the engine under it.
+    @MainActor private var isDictating: Bool {
+        switch appState.phase {
+        case .starting, .recording, .transcribing, .polishing: return true
+        default: return false
+        }
+    }
+
+    /// Hot-swap the live engine to the current `defaultModel`. Cold start →
+    /// normal warm-up; already running it → no-op; mid-dictation → deferred
+    /// until the dictation finishes (see `applyPendingSwapIfIdle`).
+    @MainActor
+    func swapModel() {
+        let target = defaultModel
+        guard transcriber != nil else { startWarm(); return }
+        guard transcriber?.modelID != target else { return }
+        if isDictating { pendingSwap = true; return }
+        pendingSwap = false
+        startWarm(force: true)
+    }
+
+    /// Phase-observer hook: apply a deferred swap once dictation ends.
+    @MainActor
+    func applyPendingSwapIfIdle() {
+        guard pendingSwap, !isDictating else { return }
+        pendingSwap = false
+        startWarm(force: true)
+    }
+
+    private func warmBody(model: String, force: Bool = false) async {
+        if !force, self.transcriber != nil { return }
+        await MainActor.run {
+            appState.phase = .warming(modelLabel: model)
+            // Clear any banner left by a just-retargeted warm-up so it doesn't
+            // briefly show the old model while this one prepares.
+            appState.speechDownload = .inactive
+        }
         do {
-            let engine = try await WhisperKitEngine(model: defaultModel)
-            self.transcriber = engine
-            self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
-            await MainActor.run {
+            // If the weights aren't on disk yet, download them with a visible
+            // menu-bar progress banner instead of a silent blocking fetch inside
+            // the engine init. No sheet — this isn't user-initiated. (A missing
+            // tokenizer alone isn't worth a banner; the engine init fetches it.)
+            if !WhisperKitEngine.hasModelWeights(for: model) {
+                await MainActor.run { appState.speechDownload = .downloading(model: model, fraction: 0) }
+                try await WhisperKitEngine.ensureDownloaded(model: model) { fraction in
+                    // Guard against a late tick from a just-cancelled (retargeted)
+                    // download flicking the banner back to the old model.
+                    Task { @MainActor in
+                        if self.warmingModel == model {
+                            self.appState.speechDownload = .downloading(model: model, fraction: fraction)
+                        }
+                    }
+                }
+                await MainActor.run { appState.speechDownload = .inactive }
+            }
+            // A retarget may have landed in the gap between file downloads (where
+            // the snapshot returns without throwing) — bail before loading the
+            // now-stale model so the new warm-up wins.
+            try Task.checkCancellation()
+            let engine = try await WhisperKitEngine(model: model)
+            // Swap atomically on the main actor so a dictation can't start
+            // between the busy-check and the assignment. If a force-reload's
+            // load window overlapped a dictation, don't swap under it — defer to
+            // idle. (A large model briefly holds old + new engine in memory here.)
+            let swapped = await MainActor.run { () -> Bool in
+                // A dictation started during the load window: don't swap under it.
+                // We discard this just-loaded engine and re-load on idle rather
+                // than stash it — keeps the swap state machine to one in-flight
+                // model. Costs one extra load only in the rare switch-then-
+                // immediately-dictate race; not worth more state to optimise.
+                if force, self.isDictating { self.pendingSwap = true; return false }
+                self.transcriber = engine
+                self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
+                appState.speechDownload = .inactive
                 appState.phase = .idle
-                appState.modelLabel = defaultModel
+                appState.modelLabel = model
+                return true
             }
-            // Active model is loaded — drop sibling variants so the disk
-            // footprint stays at one model. Bench leftovers and the previous
-            // model after a switch both get cleaned up here.
-            let active = defaultModel
+            guard swapped else { return }
+            // Keep the freshly loaded model up to date. Sibling variants are
+            // kept on disk — the user manages them in Settings (SPEC: model table).
             Task.detached(priority: .background) {
-                _ = WhisperKitEngine.cleanupOtherModels(keeping: active)
-            }
-            Task.detached(priority: .background) {
-                await WhisperKitEngine.refreshModelInBackground(model: active)
+                await WhisperKitEngine.refreshModelInBackground(model: model)
             }
         } catch {
+            // A retarget cancels this task; let the new warm take over silently.
+            if Task.isCancelled || error is CancellationError { return }
             await MainActor.run {
+                appState.speechDownload = .inactive
                 appState.phase = .error("Failed to load Whisper: \(error)")
             }
         }
@@ -1170,7 +1337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         polishIdleTimer?.invalidate()
         polishIdleTimer = Timer.scheduledTimer(withTimeInterval: Self.polishIdleUnload,
                                                repeats: false) { [weak self] _ in
-            self?.unloadPolishEngine()
+            MainActor.assumeIsolated { self?.unloadPolishEngine() }
         }
     }
 
@@ -1183,22 +1350,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startElapsedTimer() {
         elapsedTimer?.invalidate()
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let elapsed = self.recorder.elapsedSeconds
-            self.appState.elapsedSeconds = elapsed
+            // Timer fires on the main run loop it was scheduled from, so the
+            // @Sendable block is already on the main actor.
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let elapsed = self.recorder.elapsedSeconds
+                self.appState.elapsedSeconds = elapsed
 
-            // VAD auto-stop while recording.
-            guard self.vadEnabled,
-                  case .recording = self.appState.phase
-            else { return }
+                // VAD auto-stop while recording.
+                guard self.vadEnabled,
+                      case .recording = self.appState.phase
+                else { return }
 
-            if self.appState.currentLevel > Self.voiceThreshold {
-                self.lastVoiceAt = Date()
-            }
-            if let lastVoice = self.lastVoiceAt,
-               elapsed >= Self.vadMinDuration,
-               Date().timeIntervalSince(lastVoice) >= self.vadSilenceSeconds {
-                self.stopAndTranscribe()
+                if self.appState.currentLevel > Self.voiceThreshold {
+                    self.lastVoiceAt = Date()
+                }
+                if let lastVoice = self.lastVoiceAt,
+                   elapsed >= Self.vadMinDuration,
+                   Date().timeIntervalSince(lastVoice) >= self.vadSilenceSeconds {
+                    self.stopAndTranscribe()
+                }
             }
         }
     }
@@ -1247,6 +1418,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return (samples, format.sampleRate)
     }
 
+    // MARK: - SPEC-039: crash-sentinel bug-report prompt
+
+    /// Reads the crash sentinel and immediately re-arms it for this session.
+    /// Returns true if the prior session didn't exit cleanly.
+    @MainActor
+    private func checkAndMarkCrashSentinel() -> Bool {
+        let didCrash = UserDefaults.standard.bool(forKey: "crashSentinel")
+        UserDefaults.standard.set(true, forKey: "crashSentinel")
+        return didCrash
+    }
+
+    @MainActor
+    private func offerCrashBugReport() async {
+        let alert = NSAlert()
+        alert.messageText = "OpenQuack didn't exit cleanly last time."
+        alert.informativeText = "This is usually a crash or force-quit. Filing a report helps us fix it. We'll open a diagnostics file in Finder you can drag into the issue."
+        alert.addButton(withTitle: "Report Bug")
+        alert.addButton(withTitle: "Dismiss")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        writeDiagnosticsFileAndReveal()   // SPEC-036
+        guard let url = URL(string: "https://github.com/larryxiao/openquack/issues/new?template=bug_report.yml") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// SPEC-036 — write a plain-text diagnostics file and reveal it in Finder so
+    /// the user can attach it to a GitHub issue. No network IO; contains
+    /// durations, counts, RTF, a detected-language code, and event labels —
+    /// never transcript text. Returns the file URL (nil on write failure).
+    /// Internal (not `private`) so Settings → Stats → "Recording health" can
+    /// drive the reveal flow via the `(NSApp.delegate as? AppDelegate)` handle,
+    /// mirroring how StatsPane reaches `usageStats` (SPEC-036).
+    @MainActor
+    @discardableResult
+    func writeDiagnosticsFileAndReveal() -> URL? {
+        let report = DiagnosticsReport.render(
+            appVersion: OpenQuackKit.version,
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            chip: Self.chipString(),
+            model: appState.modelLabel,
+            lastRecording: lastRecordingDiag,
+            events: Diagnostics.shared.recentEvents(),
+            generatedAt: Date()
+        )
+        let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Logs/OpenQuack", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("diagnostics-\(Self.fileTimestamp()).txt")
+        do {
+            try report.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            Diagnostics.shared.log(.app, .error, "diagnostics write failed: \(error)")
+            return nil
+        }
+        Diagnostics.shared.log(.app, .info, "wrote diagnostics to \(url.lastPathComponent)")
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        return url
+    }
+
+    /// CPU brand string (e.g. "Apple M4") for the diagnostics header.
+    private static func chipString() -> String {
+        var size = 0
+        sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0)
+        guard size > 0 else { return "unknown CPU" }
+        var buf = [CChar](repeating: 0, count: size)
+        sysctlbyname("machdep.cpu.brand_string", &buf, &size, nil, 0)
+        return String(cString: buf)
+    }
+
+    private static func fileTimestamp() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        return f.string(from: Date())
+    }
+
     /// On launch, surface any recordings that didn't complete transcription.
     /// Spec calls for a non-modal popover anchored to the menu-bar icon;
     /// alpha.5 ships an NSAlert as the simpler MVP. Replace in a follow-up.
@@ -1283,7 +1529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let audioURL = entry.audioURL else { return }
         // Engine may not be warm yet at this stage; warm if needed before
         // attempting recovery so the user-facing flow doesn't error out.
-        if transcriber == nil { await warmTranscriber() }
+        if transcriber == nil { startWarm(); await warmTask?.value }
         guard let engine = transcriber else { return }
         do {
             let result = try await engine.transcribe(
@@ -1318,6 +1564,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // kill the sessions; user can re-enter them via `claude
         // agents` or `claude attach <id>` next time they want to.
         agentSessions.stopTrackingAll()
+        // SPEC-039 — clean exit: disarm the crash sentinel.
+        UserDefaults.standard.set(false, forKey: "crashSentinel")
     }
 }
 
@@ -1326,7 +1574,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: UNUserNotificationCenterDelegate {
     /// Show kickoff-result banners even while OpenQuack is foreground
     /// (e.g. user opened Settings) — otherwise macOS suppresses them.
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
@@ -1336,7 +1584,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
 
     /// Click handler — opens the response window for the result whose
     /// shortID is carried in userInfo.
-    func userNotificationCenter(
+    nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
