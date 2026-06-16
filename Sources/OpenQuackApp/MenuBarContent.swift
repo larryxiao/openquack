@@ -93,25 +93,48 @@ struct MenuBarContent: View {
     @ViewBuilder
     private var downloadBanner: some View {
         if case .downloading(let fraction) = state.polishDownload {
-            HStack(alignment: .top, spacing: Theme.s8) {
-                Image(systemName: "arrow.down.circle")
-                    .font(.title3)
-                    .foregroundStyle(Theme.moss)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Downloading Local LLM model")
-                        .font(.caption.weight(.semibold))
-                    ProgressView(value: fraction)
-                        .frame(maxWidth: .infinity)
-                }
-                Spacer(minLength: Theme.s4)
-                Button("Show") {
-                    SettingsWindowController.show(appState: state)
-                    (NSApp.delegate as? AppDelegate)?.polishDownload.resurface()
-                }
-                .buttonStyle(.oqPrimarySmall)
+            downloadBannerRow(label: "Downloading Local LLM model", fraction: fraction) {
+                SettingsWindowController.show(appState: state)
+                (NSApp.delegate as? AppDelegate)?.polishDownload.resurface()
             }
-            .oqBanner(tint: Theme.moss)
         }
+        if case .downloading(let model, let fraction) = state.speechDownload {
+            let controller = (NSApp.delegate as? AppDelegate)?.speechDownload
+            // A launch download has no sheet to re-open — omit "Show" for it.
+            let onShow: (() -> Void)? = (controller?.canResurface ?? false)
+                ? {
+                    SettingsWindowController.show(appState: state)
+                    controller?.resurface()
+                }
+                : nil
+            downloadBannerRow(label: "Downloading \(SpeechModelCatalog.displayName(for: model))",
+                              fraction: fraction, onShow: onShow)
+        }
+    }
+
+    @ViewBuilder
+    private func downloadBannerRow(
+        label: String,
+        fraction: Double,
+        onShow: (() -> Void)? = nil
+    ) -> some View {
+        HStack(alignment: .top, spacing: Theme.s8) {
+            Image(systemName: "arrow.down.circle")
+                .font(.title3)
+                .foregroundStyle(Theme.moss)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.caption.weight(.semibold))
+                ProgressView(value: fraction)
+                    .frame(maxWidth: .infinity)
+            }
+            Spacer(minLength: Theme.s4)
+            if let onShow {
+                Button("Show", action: onShow)
+                    .buttonStyle(.oqPrimarySmall)
+            }
+        }
+        .oqBanner(tint: Theme.moss)
     }
 
     @ViewBuilder

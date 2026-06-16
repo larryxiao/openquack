@@ -90,8 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC-007 — long-lived owner of the polish-model download (survives the
     /// Settings sheet). Wired to `appState` + reconciled in didFinishLaunching.
     @MainActor lazy var polishDownload = PolishModelDownloadController()
+    /// Long-lived owner of the speech-model download (survives the Settings
+    /// sheet). Wired to `appState` in didFinishLaunching.
+    @MainActor lazy var speechDownload = SpeechModelDownloadController()
     private var transcriber: WhisperKitEngine?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
+    /// Cancellable warm-up. Restarted (retargeted) when the user switches the
+    /// active model while the launch download is still running.
+    private var warmTask: Task<Void, Never>?
+    /// Model the in-flight warm-up is for — guards against redundant restarts.
+    private var warmingModel: String?
+    /// A model swap requested mid-dictation, applied when we next go idle.
+    private var pendingSwap = false
     // SPEC-007 — in-process polish engine kept warm across dictations: warmed on
     // record-start, idle-unloaded after polishIdleUnload of no dictation.
     private var polishEngine: LlamaCppPolishEngine?
@@ -186,6 +196,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // from a previous launch.
         polishDownload.appState = appState
         polishDownload.reconcileOnLaunch()
+        speechDownload.appState = appState
+        // Hot-swap the live engine when a Settings download commits a new model.
+        speechDownload.onCommitted = { [weak self] in self?.swapModel() }
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
@@ -235,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if hasOnboarded {
             // Seasoned user — warm the model in the background.
-            Task { await warmTranscriber() }
+            startWarm()
         } else {
             // First launch. Warm the transcriber the moment the onboarding's
             // model download finishes, not when the window closes — the demo
@@ -245,10 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             OnboardingWindowController.showIfFirstLaunch(
                 appState: appState,
                 onModelReady: { [weak self] in
-                    Task { await self?.warmTranscriber() }
+                    Task { @MainActor in self?.startWarm() }
                 },
                 onComplete: { [weak self] in
-                    Task { await self?.warmTranscriber() }
+                    Task { @MainActor in self?.startWarm() }
                 }
             )
         }
@@ -325,10 +338,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OnboardingWindowController.show(
             appState: appState,
             onModelReady: { [weak self] in
-                Task { await self?.warmTranscriber() }
+                Task { @MainActor in self?.startWarm() }
             },
             onComplete: { [weak self] in
-                Task { await self?.warmTranscriber() }
+                Task { @MainActor in self?.startWarm() }
             }
         )
     }
@@ -537,6 +550,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] phase, status in
                 self?.updateIcon(for: phase, hasUpdate: status.hasAvailableUpdate)
+                Task { @MainActor in self?.applyPendingSwapIfIdle() }
             }
             .store(in: &cancellables)
     }
@@ -1085,32 +1099,112 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func warmTranscriber() async {
-        // Idempotent — the onboarding flow can call this twice (once when the
-        // model download completes, once on window close); a re-init would
-        // pointlessly drop and reload the engine.
-        if self.transcriber != nil { return }
-        await MainActor.run { appState.phase = .warming(modelLabel: defaultModel) }
+    /// Start (or restart) warm-up for the current `defaultModel`. Restarting
+    /// cancels an in-flight warm download and re-aims at the new model — this is
+    /// how a model switch during launch warm-up retargets without spawning a
+    /// second concurrent download. Idempotent for the same model.
+    @MainActor
+    func startWarm(force: Bool = false) {
+        if !force, transcriber != nil { return }
+        let model = defaultModel
+        if !force, warmingModel == model { return }   // already warming this one
+        warmTask?.cancel()
+        warmingModel = model
+        warmTask = Task { [weak self] in
+            await self?.warmBody(model: model, force: force)
+            await MainActor.run { if self?.warmingModel == model { self?.warmingModel = nil } }
+        }
+    }
+
+    /// True while a dictation is in flight — we never swap the engine under it.
+    @MainActor private var isDictating: Bool {
+        switch appState.phase {
+        case .starting, .recording, .transcribing, .polishing: return true
+        default: return false
+        }
+    }
+
+    /// Hot-swap the live engine to the current `defaultModel`. Cold start →
+    /// normal warm-up; already running it → no-op; mid-dictation → deferred
+    /// until the dictation finishes (see `applyPendingSwapIfIdle`).
+    @MainActor
+    func swapModel() {
+        let target = defaultModel
+        guard transcriber != nil else { startWarm(); return }
+        guard transcriber?.modelID != target else { return }
+        if isDictating { pendingSwap = true; return }
+        pendingSwap = false
+        startWarm(force: true)
+    }
+
+    /// Phase-observer hook: apply a deferred swap once dictation ends.
+    @MainActor
+    func applyPendingSwapIfIdle() {
+        guard pendingSwap, !isDictating else { return }
+        pendingSwap = false
+        startWarm(force: true)
+    }
+
+    private func warmBody(model: String, force: Bool = false) async {
+        if !force, self.transcriber != nil { return }
+        await MainActor.run {
+            appState.phase = .warming(modelLabel: model)
+            // Clear any banner left by a just-retargeted warm-up so it doesn't
+            // briefly show the old model while this one prepares.
+            appState.speechDownload = .inactive
+        }
         do {
-            let engine = try await WhisperKitEngine(model: defaultModel)
-            self.transcriber = engine
-            self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
-            await MainActor.run {
+            // If the weights aren't on disk yet, download them with a visible
+            // menu-bar progress banner instead of a silent blocking fetch inside
+            // the engine init. No sheet — this isn't user-initiated. (A missing
+            // tokenizer alone isn't worth a banner; the engine init fetches it.)
+            if !WhisperKitEngine.hasModelWeights(for: model) {
+                await MainActor.run { appState.speechDownload = .downloading(model: model, fraction: 0) }
+                try await WhisperKitEngine.ensureDownloaded(model: model) { fraction in
+                    // Guard against a late tick from a just-cancelled (retargeted)
+                    // download flicking the banner back to the old model.
+                    Task { @MainActor in
+                        if self.warmingModel == model {
+                            self.appState.speechDownload = .downloading(model: model, fraction: fraction)
+                        }
+                    }
+                }
+                await MainActor.run { appState.speechDownload = .inactive }
+            }
+            // A retarget may have landed in the gap between file downloads (where
+            // the snapshot returns without throwing) — bail before loading the
+            // now-stale model so the new warm-up wins.
+            try Task.checkCancellation()
+            let engine = try await WhisperKitEngine(model: model)
+            // Swap atomically on the main actor so a dictation can't start
+            // between the busy-check and the assignment. If a force-reload's
+            // load window overlapped a dictation, don't swap under it — defer to
+            // idle. (A large model briefly holds old + new engine in memory here.)
+            let swapped = await MainActor.run { () -> Bool in
+                // A dictation started during the load window: don't swap under it.
+                // We discard this just-loaded engine and re-load on idle rather
+                // than stash it — keeps the swap state machine to one in-flight
+                // model. Costs one extra load only in the rare switch-then-
+                // immediately-dictate race; not worth more state to optimise.
+                if force, self.isDictating { self.pendingSwap = true; return false }
+                self.transcriber = engine
+                self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
+                appState.speechDownload = .inactive
                 appState.phase = .idle
-                appState.modelLabel = defaultModel
+                appState.modelLabel = model
+                return true
             }
-            // Active model is loaded — drop sibling variants so the disk
-            // footprint stays at one model. Bench leftovers and the previous
-            // model after a switch both get cleaned up here.
-            let active = defaultModel
+            guard swapped else { return }
+            // Keep the freshly loaded model up to date. Sibling variants are
+            // kept on disk — the user manages them in Settings (SPEC: model table).
             Task.detached(priority: .background) {
-                _ = WhisperKitEngine.cleanupOtherModels(keeping: active)
-            }
-            Task.detached(priority: .background) {
-                await WhisperKitEngine.refreshModelInBackground(model: active)
+                await WhisperKitEngine.refreshModelInBackground(model: model)
             }
         } catch {
+            // A retarget cancels this task; let the new warm take over silently.
+            if Task.isCancelled || error is CancellationError { return }
             await MainActor.run {
+                appState.speechDownload = .inactive
                 appState.phase = .error("Failed to load Whisper: \(error)")
             }
         }
@@ -1361,7 +1455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let audioURL = entry.audioURL else { return }
         // Engine may not be warm yet at this stage; warm if needed before
         // attempting recovery so the user-facing flow doesn't error out.
-        if transcriber == nil { await warmTranscriber() }
+        if transcriber == nil { startWarm(); await warmTask?.value }
         guard let engine = transcriber else { return }
         do {
             let result = try await engine.transcribe(

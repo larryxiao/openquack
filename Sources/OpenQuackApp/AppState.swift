@@ -96,6 +96,9 @@ public final class AppState: ObservableObject {
     /// SPEC-007 — drives the menu-bar download banner. The controller mirrors
     /// its progress here so `MenuBarContent` keeps reading only `AppState`.
     @Published public var polishDownload: PolishDownloadStatus = .inactive
+    /// Drives the menu-bar download banner for the Whisper speech model.
+    /// Carries the variant so the banner can name the model being downloaded.
+    @Published public var speechDownload: SpeechDownloadStatus = .inactive
 
     /// Convenience for the popover banner — only present when the
     /// status terminal-states into `.available`.
@@ -110,6 +113,12 @@ public final class AppState: ObservableObject {
 public enum PolishDownloadStatus: Equatable {
     case inactive
     case downloading(fraction: Double)
+}
+
+public enum SpeechDownloadStatus: Equatable {
+    case inactive
+    /// `model` is the Whisper variant id (e.g. "large-v3").
+    case downloading(model: String, fraction: Double)
 }
 
 public enum UpdateCheckStatus: Equatable {
