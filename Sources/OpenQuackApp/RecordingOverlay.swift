@@ -228,6 +228,8 @@ struct OverlayPill: View {
         case .polishing:
             return "On your Mac"
         case .ready:
+            // SPEC-036 — surface an interruption notice over the usual subline.
+            if let notice = state.lastNotice { return notice }
             if state.recordingMode == .agentKickoff, !state.lastKickoffSucceeded {
                 return state.lastKickoffError ?? "Transcript copied to clipboard"
             }

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import OpenQuackKit
+import OpenQuackPlatform
 
 public final class AppState: ObservableObject {
     public enum Phase: Equatable {
@@ -46,6 +47,21 @@ public final class AppState: ObservableObject {
         currentLevel = 0
         levelHistory = Array(repeating: 0, count: Self.barCount)
     }
+
+    /// SPEC-036 — record a finished recording's health summary, newest-first,
+    /// trimming to `recentRecordingsCap`. Call on the main actor (it drives
+    /// `@Published`).
+    public func pushRecentRecording(_ summary: DiagnosticsReport.LastRecording) {
+        recentRecordings.insert(summary, at: 0)
+        if recentRecordings.count > Self.recentRecordingsCap {
+            recentRecordings.removeLast(recentRecordings.count - Self.recentRecordingsCap)
+        }
+    }
+
+    /// SPEC-036 — count of this session's recordings flagged incomplete-capture.
+    public var incompleteCaptureCount: Int {
+        recentRecordings.filter { $0.health.isIncomplete }.count
+    }
     @Published public var lastTranscript: String?
     @Published public var lastAudioSeconds: Double?
     @Published public var lastWallSeconds: Double?
@@ -58,6 +74,16 @@ public final class AppState: ObservableObject {
     /// SPEC-031 — short error label for failed kickoffs, shown in the
     /// "ready" overlay state.
     @Published public var lastKickoffError: String?
+    /// SPEC-036 — a transient notice shown in the "ready" overlay subline,
+    /// e.g. "Recording interrupted by an audio device change". Takes priority
+    /// over the transcript preview when set; cleared at the next recording.
+    @Published public var lastNotice: String?
+    /// SPEC-036 — newest-first ring of recent recording-health summaries,
+    /// surfaced (opt-in) in Settings → Stats → "Recording health". Local-only;
+    /// session-scoped, capped at `recentRecordingsCap`. Mutate via
+    /// `pushRecentRecording(_:)` so the cap/order stay in one place.
+    @Published public var recentRecordings: [DiagnosticsReport.LastRecording] = []
+    public static let recentRecordingsCap = 10
     @Published public var accessibilityTrusted: Bool = false
     @Published public var modelLabel: String = "medium"
     /// Lifecycle of an update check — drives both the menu-bar 🦆⬆

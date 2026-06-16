@@ -4,6 +4,7 @@ import KeyboardShortcuts
 import os
 import ServiceManagement
 import OpenQuackKit
+import OpenQuackPlatform
 
 // Settings scene. SwiftUI TabView in an NSWindow (managed by
 // SettingsWindowController). Storage via @AppStorage on UserDefaults.
@@ -26,7 +27,7 @@ struct SettingsView: View {
             ShortcutPane()
                 .tabItem { Label("Shortcut", systemImage: "command") }
                 .tag(Tab.shortcut)
-            StatsPane()
+            StatsPane(appState: appState)
                 .tabItem { Label("Stats", systemImage: "chart.bar") }
                 .tag(Tab.stats)
             HistoryPane()
@@ -680,6 +681,7 @@ private struct AboutPane: View {
 // MARK: - Stats (SPEC-013)
 
 private struct StatsPane: View {
+    @ObservedObject var appState: AppState
     @AppStorage("showUsageStats")  private var showUsageStats: Bool = false
     @AppStorage("trackUsageStats") private var trackUsageStats: Bool = true
     @AppStorage("typingWPM")       private var typingWPM: Int = 50
@@ -730,6 +732,11 @@ private struct StatsPane: View {
                         SectionHeader("Sessions by length")
                     }
                 }
+
+                // SPEC-036 — local-only recording-health diagnostics. Same
+                // privacy stance as the rest of this pane: gathered on this Mac,
+                // nothing leaves it. Gated behind the existing display toggle.
+                recordingHealthSection
             }
 
             Section {
@@ -894,6 +901,101 @@ private struct StatsPane: View {
                 }
             }
         }
+    }
+
+    // MARK: - SPEC-036 recording health
+
+    /// Local-only recording-health subsection: a session incomplete-capture
+    /// count, the newest recordings (wall / captured / RTF / path / lang with a
+    /// warning marker when the tap stopped early), an optional compact list of
+    /// warn/error diagnostic events, and a button into the existing reveal flow.
+    @ViewBuilder
+    private var recordingHealthSection: some View {
+        Section {
+            if appState.recentRecordings.isEmpty {
+                Text("No recordings yet this session.")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                let incomplete = appState.incompleteCaptureCount
+                if incomplete > 0 {
+                    HStack(spacing: Theme.s8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("\(incomplete) of \(appState.recentRecordings.count) recording\(appState.recentRecordings.count == 1 ? "" : "s") this session ended early (capture stopped mid-recording).")
+                            .font(.caption)
+                    }
+                } else {
+                    Text("All \(appState.recentRecordings.count) recording\(appState.recentRecordings.count == 1 ? "" : "s") this session captured cleanly.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
+                ForEach(appState.recentRecordings.indices, id: \.self) { i in
+                    recordingHealthRow(appState.recentRecordings[i])
+                }
+            }
+
+            let warnings = Self.recentWarnings()
+            if !warnings.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(warnings.indices, id: \.self) { i in
+                        let e = warnings[i]
+                        Text("\(e.level.marker) [\(e.category.rawValue)] \(e.message)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+
+            HStack {
+                Button("Reveal diagnostics file") {
+                    (NSApp.delegate as? AppDelegate)?.writeDiagnosticsFileAndReveal()
+                }
+                .buttonStyle(.oqNeutral)
+                Spacer()
+            }
+            Text("Recording health is gathered on this Mac — durations, counts, and a detected-language code, never your transcript. Nothing leaves your Mac.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            SectionHeader("Recording health")
+        }
+    }
+
+    /// One recording row: "wall / captured · RTF · path · lang", warning-marked
+    /// when capture fell short.
+    private func recordingHealthRow(_ r: DiagnosticsReport.LastRecording) -> some View {
+        let incomplete = r.health.isIncomplete
+        var tail: [String] = []
+        if let rtf = DiagnosticsReport.rtf(transcribe: r.transcribeWallSeconds, audio: r.audioSeconds) {
+            tail.append(String(format: "RTF %.2f", rtf))
+        }
+        tail.append(r.path)
+        if let lang = r.detectedLanguage { tail.append("lang=\(lang)") }
+        return HStack(alignment: .firstTextBaseline, spacing: Theme.s8) {
+            Image(systemName: incomplete ? "exclamationmark.triangle.fill" : "checkmark.circle")
+                .foregroundStyle(incomplete ? Color.orange : .secondary)
+                .font(.caption)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(format: "wall %.1fs / captured %.1fs", r.wallSeconds, r.capturedSeconds))
+                    .font(.caption.monospacedDigit())
+                Text(tail.joined(separator: " · "))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Compact warn/error tail from the diagnostics ring (newest-first, capped).
+    /// `recentEvents()` returns oldest-first.
+    private static func recentWarnings(limit: Int = 5) -> [DiagEvent] {
+        Diagnostics.shared.recentEvents()
+            .filter { $0.level == .warn || $0.level == .error }
+            .suffix(limit)
+            .reversed()
     }
 
     private func exportSnapshot() {
