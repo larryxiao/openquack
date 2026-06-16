@@ -244,46 +244,6 @@ public final class WhisperKitEngine: TranscriptionEngine {
         }
     }
 
-    /// Delete every cached WhisperKit model variant except `keeping`. Returns
-    /// the number of bytes freed. Safe to call while the kept model is
-    /// actively in use — we only touch sibling directories.
-    @discardableResult
-    public static func cleanupOtherModels(keeping: String, downloadBase: URL? = nil) -> Int64 {
-        let fm = FileManager.default
-        let cacheDir = downloadBase ?? defaultDownloadBase()
-
-        // Reconcile the legacy orphan tree first so a single pass over the
-        // canonical path is enough.
-        cleanupOrphanLegacyTree(in: cacheDir)
-
-        var freed: Int64 = 0
-
-        // CoreML weights — argmaxinc/whisperkit-coreml/openai_whisper-<size>.
-        let keptWeights = localModelFolder(for: keeping, downloadBase: cacheDir)
-        let weightsRoot = keptWeights.deletingLastPathComponent()
-        let weightsKeep = keptWeights.lastPathComponent
-        if let entries = try? fm.contentsOfDirectory(atPath: weightsRoot.path) {
-            for entry in entries where entry != weightsKeep && !entry.hasPrefix(".") {
-                let url = weightsRoot.appendingPathComponent(entry)
-                freed += directorySize(at: url)
-                try? fm.removeItem(at: url)
-            }
-        }
-
-        // Tokenizer/config — openai/whisper-<size> (a few MB each).
-        let keptTokenizer = localTokenizerFolder(for: keeping, downloadBase: cacheDir)
-        let tokenizerRoot = keptTokenizer.deletingLastPathComponent()
-        let tokenizerKeep = keptTokenizer.lastPathComponent
-        if let entries = try? fm.contentsOfDirectory(atPath: tokenizerRoot.path) {
-            for entry in entries where entry != tokenizerKeep && !entry.hasPrefix(".") {
-                let url = tokenizerRoot.appendingPathComponent(entry)
-                freed += directorySize(at: url)
-                try? fm.removeItem(at: url)
-            }
-        }
-        return freed
-    }
-
     /// Delete a single cached model variant — weights, tokenizer, and the
     /// HubApi download-staging copy — to reclaim disk. Returns bytes freed.
     /// Safe if the variant is only partially present.

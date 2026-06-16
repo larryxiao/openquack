@@ -109,25 +109,4 @@ final class WhisperKitEngineCacheTests: XCTestCase {
         )
     }
 
-    func testCleanupOtherModels_keepsActiveAndDeletesSiblings() throws {
-        let fm = FileManager.default
-        let weightsRoot = WhisperKitEngine.localModelFolder(for: "x", downloadBase: base)
-            .deletingLastPathComponent()
-        let tokenizerRoot = WhisperKitEngine.localTokenizerFolder(for: "x", downloadBase: base)
-            .deletingLastPathComponent()
-        for variant in ["medium", "tiny", "large-v3"] {
-            try fm.createDirectory(at: weightsRoot.appendingPathComponent("openai_whisper-\(variant)"),
-                                    withIntermediateDirectories: true)
-            try fm.createDirectory(at: tokenizerRoot.appendingPathComponent("whisper-\(variant)"),
-                                    withIntermediateDirectories: true)
-        }
-
-        _ = WhisperKitEngine.cleanupOtherModels(keeping: "medium", downloadBase: base)
-
-        XCTAssertTrue(fm.fileExists(atPath: weightsRoot.appendingPathComponent("openai_whisper-medium").path))
-        XCTAssertFalse(fm.fileExists(atPath: weightsRoot.appendingPathComponent("openai_whisper-tiny").path))
-        XCTAssertFalse(fm.fileExists(atPath: weightsRoot.appendingPathComponent("openai_whisper-large-v3").path))
-        XCTAssertTrue(fm.fileExists(atPath: tokenizerRoot.appendingPathComponent("whisper-medium").path))
-        XCTAssertFalse(fm.fileExists(atPath: tokenizerRoot.appendingPathComponent("whisper-tiny").path))
-    }
 }

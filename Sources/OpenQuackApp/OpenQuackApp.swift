@@ -1108,6 +1108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // load window overlapped a dictation, don't swap under it — defer to
             // idle. (A large model briefly holds old + new engine in memory here.)
             let swapped = await MainActor.run { () -> Bool in
+                // A dictation started during the load window: don't swap under it.
+                // We discard this just-loaded engine and re-load on idle rather
+                // than stash it — keeps the swap state machine to one in-flight
+                // model. Costs one extra load only in the rare switch-then-
+                // immediately-dictate race; not worth more state to optimise.
                 if force, self.isDictating { self.pendingSwap = true; return false }
                 self.transcriber = engine
                 self.streamer = engine.makeStreamingTranscriber()  // SPEC-012
