@@ -985,6 +985,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Teardown drains the audio-thread pump first so finish()
                 // sees every frame; cancel() is fine to call after teardown
                 // (any frames still queued become a no-op once cancelled).
+                let transcribeStart = Date()
                 let result: EngineTranscription
                 // SPEC-036 — streaming-only stats for the diagnostics summary.
                 let pathLabel: String
@@ -1013,6 +1014,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         customWords: customWords
                     )
                 }
+                let transcribeWall = Date().timeIntervalSince(transcribeStart)
 
                 // SPEC-036 — recording-health + transcription summary. `captured`
                 // survives `recorder.stop()` (reset only on the next start), so it
@@ -1060,7 +1062,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if polishEngineKind != .off {
                     await MainActor.run { appState.phase = .polishing }
                 }
+                let polishStart = Date()
                 let polished = (await polishedTranscript(from: scripted)).text
+                let polishWall = Date().timeIntervalSince(polishStart)
 
                 // Hold the progress bar at full briefly so the user sees the
                 // transition land instead of jumping straight to "Pasted".
@@ -1072,6 +1076,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let remaining = Self.minTranscribeDwell - elapsed
                     try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
                 }
+
+                // Post-stop wait breakdown, so a "thinking" stall pins to a step.
+                // `stall` = seconds the bar sat at 95% (transcribe ran past the
+                // ramp estimate); transcribe−engine is drain/teardown overhead.
+                let stall = max(0, transcribeWall - estimatedTranscribe)
+                Diagnostics.shared.log(
+                    .transcription, stall > 1.0 ? .warn : .info,
+                    "timing: est=\(String(format: "%.2f", estimatedTranscribe))s"
+                    + " transcribe=\(String(format: "%.2f", transcribeWall))s"
+                    + " engine=\(String(format: "%.2f", result.wallSeconds))s"
+                    + " stall=\(String(format: "%.2f", stall))s"
+                    + " polish=\(String(format: "%.2f", polishWall))s \(pathLabel)"
+                )
 
                 // SPEC-005 / SPEC-031: branch the output path on
                 // recordingMode. Dictation pastes at the focused app's
