@@ -482,6 +482,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         feedback.target = self
         menu.addItem(feedback)
 
+        let faq = NSMenuItem(title: "FAQ / Help…", action: #selector(menuOpenFAQ), keyEquivalent: "")
+        faq.target = self
+        menu.addItem(faq)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit OpenQuack", action: #selector(menuQuitApp), keyEquivalent: "q")
@@ -508,6 +512,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SPEC-036 — also drop a diagnostics file in Finder to attach.
         writeDiagnosticsFileAndReveal()
         guard let url = URL(string: "https://github.com/larryxiao/openquack/issues/new/choose") else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// Opens the docs-site FAQ (includes the "blank/'You.' transcript" and
+    /// permission troubleshooting entries). No app-side network IO; hands off
+    /// to the default browser.
+    @MainActor
+    @objc private func menuOpenFAQ() {
+        guard let url = URL(string: "https://larryxiao.github.io/openquack/#faq") else {
             return
         }
         NSWorkspace.shared.open(url)
@@ -802,7 +817,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             do {
-                _ = try recorder.start(outputURL: lastRecordingURL)
+                let inputUID = UserDefaults.standard.string(forKey: "inputDeviceUID")
+                _ = try recorder.start(outputURL: lastRecordingURL, inputDeviceUID: inputUID)
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
@@ -865,15 +881,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// short audio). Mirrors `StreamingTranscriber.Config.streamingThreshold`.
     private static let streamingThreshold: TimeInterval = 30
 
+    /// Display name of the input device the next recording will use: the
+    /// user's picked device, or the system default. Used in the silent-capture
+    /// banner/notification copy.
+    private static func currentInputDeviceName(uid: String?) -> String {
+        if let uid, !uid.isEmpty,
+           let match = AudioInputDevices.list().first(where: { $0.uid == uid }) {
+            return match.name
+        }
+        return "the system default microphone"
+    }
+
+    /// SPEC-031-style local notification: fires even if OpenQuack is in the
+    /// background so the user notices a dead-mic recording without opening the
+    /// popover. Best-effort — silently no-ops if notifications are denied.
+    private static func postSilentCaptureNotification(deviceName: String) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "No sound detected"
+            content.body = "OpenQuack heard nothing from \(deviceName). Open OpenQuack to switch microphones."
+            content.sound = .default
+            let request = UNNotificationRequest(
+                identifier: "openquack.capture.silent",
+                content: content,
+                trigger: nil
+            )
+            center.add(request)
+        }
+    }
+
     private func stopAndTranscribe() {
         stopElapsedTimer()
         let audioDuration = recorder.elapsedSeconds
+        // Captured peak level, read before stop() tears the recorder down.
+        // A silent capture (dead/muted mic, or a virtual input device that
+        // emits silence) otherwise gets transcribed into a Whisper
+        // hallucination like "You." — warn the user instead.
+        let capturePeakRMS = recorder.peakRMS
+        // The device actually captured from (may be the system-default fallback,
+        // not the saved preference). Read before stop() tears the recorder down.
+        let activeDeviceUID = recorder.activeInputDeviceUID
         guard let url = recorder.stop() else { return }
+
+        if capturePeakRMS < AudioRecorder.silenceRMSThreshold {
+            let deviceName = Self.currentInputDeviceName(uid: activeDeviceUID)
+            Task {
+                await tearDownFramesPump()
+                if let streamer { await streamer.cancel() }
+                await MainActor.run {
+                    appState.phase = .error("No sound detected. Pick your microphone in Settings → General, or check System Settings → Sound → Input.")
+                    appState.lastCaptureSilent = true
+                    appState.lastSilentDeviceName = deviceName
+                    schedulePolishIdleUnload()
+                }
+                Self.postSilentCaptureNotification(deviceName: deviceName)
+                try? FileManager.default.removeItem(at: url)
+            }
+            return
+        }
+
         Task {
             let phaseStart = Date()
             await MainActor.run {
                 appState.phase = .transcribing
                 appState.transcriptionProgress = 0
+                appState.lastCaptureSilent = false   // a non-silent capture clears the warning
             }
 
             guard let engine = transcriber else {

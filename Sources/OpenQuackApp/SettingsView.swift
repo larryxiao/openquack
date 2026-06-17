@@ -56,7 +56,14 @@ private struct GeneralPane: View {
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
     @AppStorage("customWords")         private var customWords: String = ""
     @AppStorage("model")               private var model: String = "medium"
+    @AppStorage("inputDeviceUID")      private var inputDeviceUID: String = ""  // "" = system default
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
+
+    /// Input devices for the Microphone picker; loaded `.onAppear` and
+    /// refreshed when the picker is interacted with.
+    @State private var inputDevices: [AudioInputDevice] = []
+    /// Drives the "Test" button's live level meter.
+    @StateObject private var micTest = MicTestModel()
 
     // SPEC-026 PR-B — Updates section state.
     @AppStorage("receivePrereleases") private var receivePrereleases: Bool = false
@@ -230,6 +237,54 @@ private struct GeneralPane: View {
                 downloadedModelsTable
             } header: {
                 SectionHeader("Speech-to-text")
+            }
+
+            Section {
+                Picker("Microphone", selection: $inputDeviceUID) {
+                    Text("System default").tag("")
+                    ForEach(inputDevices) { device in
+                        Text(device.name).tag(device.uid)
+                    }
+                    // Keep the saved choice visible even if the device is gone,
+                    // so the picker doesn't silently blank out.
+                    if !inputDeviceUID.isEmpty,
+                       !inputDevices.contains(where: { $0.uid == inputDeviceUID }) {
+                        Text("Selected device (disconnected)").tag(inputDeviceUID)
+                    }
+                }
+                .onAppear { inputDevices = AudioInputDevices.list() }
+                .onChange(of: inputDeviceUID) { _ in
+                    if micTest.isTesting { micTest.start(deviceUID: inputDeviceUID) }  // re-point test
+                }
+
+                HStack(spacing: Theme.s8) {
+                    Button(micTest.isTesting ? "Stop" : "Test") {
+                        micTest.toggle(deviceUID: inputDeviceUID)
+                    }
+                    if micTest.isTesting {
+                        MicLevelMeter(levels: micTest.levels)
+                        if micTest.sawSignal {
+                            Label("Sounds good", systemImage: "checkmark.circle.fill")
+                                .font(.caption).foregroundStyle(Theme.moss)
+                        } else {
+                            Text("Speak — bars should move.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                }
+                if let err = micTest.errorMessage {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(Theme.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("The mic OpenQuack records from. \"System default\" follows macOS. If recordings come back blank or as \"You.\", pick your real mic here and hit Test. Takes effect on the next recording.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Microphone")
             }
 
             Section {

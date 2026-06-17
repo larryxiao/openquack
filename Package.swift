@@ -61,6 +61,13 @@ let package = Package(
             dependencies: [],
             path: "Sources/OpenQuackPlatform"
         ),
+        // Tiny Objective-C shim: lets Swift catch the NSExceptions that
+        // AVAudioEngine.installTap raises on format mismatches (otherwise an
+        // uncatchable SIGABRT). See OQObjCSupport.h.
+        .target(
+            name: "OQObjCSupport",
+            path: "Sources/OQObjCSupport"
+        ),
         .target(
             name: "OpenQuackStreaming",
             dependencies: [
@@ -74,6 +81,7 @@ let package = Package(
             dependencies: [
                 "OpenQuackPlatform",
                 "OpenQuackStreaming",
+                "OQObjCSupport",
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
                 .product(name: "LlamaSwift", package: "llama.swift"),
