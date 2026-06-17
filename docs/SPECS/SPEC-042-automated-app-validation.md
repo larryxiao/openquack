@@ -64,6 +64,10 @@ pure refactor + tests.
 - [ ] `AudioRecorder.handleConfigurationChange(engineRunning: false)` fires
       `interruptionHandler`; `(engineRunning: true)` does **not**; nil handler is a
       no-op. (unit test, this PR)
+- [ ] A hardware-free **freeze-scenario** test reproduces the regression
+      end-to-end: audio flows through the capture pipeline, the tap dies on a
+      config change, and the response chain (interruption fires → captured tally
+      short → `RecordingHealth` flags incomplete) is asserted. (unit test, this PR)
 - [ ] The observer wiring is unchanged in behaviour (still bound to the engine,
       main-queue, fires only on a real stop). (code review)
 - [ ] `swift build && swift test` green.

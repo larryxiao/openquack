@@ -371,6 +371,25 @@ public final class AudioRecorder {
         interruptionHandler?()
     }
 
+    // MARK: - SPEC-042 test seam
+
+    /// Begin a hardware-free capture session for validation: reset the frame
+    /// tally and pin the captured rate so `capturedSeconds` is meaningful without
+    /// `AVAudioEngine`. Lets CI reproduce the freeze scenario (audio flows, then
+    /// the tap dies on a config change) end-to-end. Not used by the live path.
+    func beginCaptureForTesting(sampleRate: Double) {
+        frameCounter.reset()
+        _capturedSampleRate = sampleRate
+    }
+
+    /// Deliver a buffer's worth of samples through the capture data path the
+    /// streaming consumer sees — the frame tally + `framesHandler` — mirroring the
+    /// real tap, minus the WAV write + level meter (covered separately).
+    func deliverFramesForTesting(_ samples: [Float], sampleRate: Double) {
+        frameCounter.add(samples.count)
+        framesHandler?(samples, sampleRate)
+    }
+
     /// Create the Int16 WAV writer matching a captured buffer's format, so the
     /// file's rate/channels always equal what the tap actually delivers.
     private static func makeWAVFile(at url: URL, matching format: AVAudioFormat) -> AVAudioFile? {
