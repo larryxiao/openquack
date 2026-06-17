@@ -872,6 +872,11 @@ private struct StatsPane: View {
     @AppStorage("showUsageStats")  private var showUsageStats: Bool = false
     @AppStorage("trackUsageStats") private var trackUsageStats: Bool = true
     @AppStorage("typingWPM")       private var typingWPM: Int = 50
+    // SPEC-041 — money-saved comparison choice + custom rate.
+    @AppStorage("moneySavedBaselineID")     private var moneySavedBaselineID: String = "openai-4o-transcribe"
+    @AppStorage("moneySavedCustomRate")     private var moneySavedCustomRate: Double = 0.006
+    @AppStorage("moneySavedCustomPerMonth") private var moneySavedCustomPerMonth: Bool = false
+    private static let customBaselineID = "custom"
     @State private var snapshot: UsageStatsSnapshot?
     // SPEC-028 — recomputed when the pane appears or `showUsageStats` flips.
     // Not persisted; recomputing over ≤50 entries is microseconds.
@@ -909,6 +914,10 @@ private struct StatsPane: View {
                 } header: {
                     SectionHeader("This Mac")
                 }
+
+                // SPEC-041 — what this much on-device dictation would have cost
+                // on a paid cloud alternative. Local-only; prices baked in.
+                moneySavedSection
 
                 // SPEC-028 — length distribution. Only rendered when there's
                 // at least one bucketed entry so an empty pane stays quiet.
@@ -957,6 +966,91 @@ private struct StatsPane: View {
         .onChange(of: showUsageStats) { _ in
             Task { await refresh() }
         }
+    }
+
+    // MARK: - SPEC-041 money saved
+
+    /// Local-only estimate of what this much on-device dictation would have cost
+    /// on a paid cloud alternative. Shown only once there's audio to compare.
+    @ViewBuilder
+    private var moneySavedSection: some View {
+        if let snap = snapshot, snap.audioSeconds > 0 {
+            let basis = currentBasis
+            let saved = MoneySaved.savedUSD(
+                audioSeconds: snap.audioSeconds,
+                firstRecordedAt: snap.firstRecordedAt,
+                now: Date(),
+                basis: basis
+            )
+            Section {
+                Picker("Compared to", selection: $moneySavedBaselineID) {
+                    ForEach(MoneySaved.builtIns) { b in
+                        Text("\(b.label) — \(b.priceNote)").tag(b.id)
+                    }
+                    Text("Custom rate…").tag(Self.customBaselineID)
+                }
+                if moneySavedBaselineID == Self.customBaselineID {
+                    HStack {
+                        Text("$")
+                        TextField("rate", value: $moneySavedCustomRate, format: .number)
+                            .frame(width: 64)
+                            .multilineTextAlignment(.trailing)
+                        Picker("", selection: $moneySavedCustomPerMonth) {
+                            Text("per min").tag(false)
+                            Text("per month").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 170)
+                    }
+                }
+                statRow("Money saved", value: Self.formatUSD(saved))
+                Text(moneySavedMath(snap: snap, basis: basis))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("Estimate vs a paid alternative — OpenQuack runs on your Mac for free. Prices as of June 2026; nothing leaves your Mac.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } header: {
+                SectionHeader("Money saved")
+            }
+        }
+    }
+
+    private var currentBasis: MoneySaved.Basis {
+        if moneySavedBaselineID == Self.customBaselineID {
+            return moneySavedCustomPerMonth
+                ? .perMonth(usd: moneySavedCustomRate)
+                : .perAudioMinute(usd: moneySavedCustomRate)
+        }
+        return MoneySaved.builtIns.first { $0.id == moneySavedBaselineID }?.basis
+            ?? MoneySaved.builtIns[0].basis
+    }
+
+    private func moneySavedMath(snap: UsageStatsSnapshot, basis: MoneySaved.Basis) -> String {
+        switch basis {
+        case .perAudioMinute(let usd):
+            let mins = snap.audioSeconds / 60.0
+            return "\(Self.formatMinutes(mins)) transcribed × \(Self.formatRate(usd))/min"
+        case .perMonth(let usd):
+            if let months = MoneySaved.monthsActive(firstRecordedAt: snap.firstRecordedAt, now: Date()) {
+                return "\(String(format: "%.1f", months)) months × \(Self.formatRate(usd))/mo"
+            }
+            return "\(Self.formatRate(usd))/mo"
+        }
+    }
+
+    private static func formatUSD(_ usd: Double) -> String {
+        usd >= 100 ? String(format: "$%.0f", usd) : String(format: "$%.2f", usd)
+    }
+
+    /// "$0.006", "$15", "$9.99" — drop trailing zeros for whole / 2dp rates.
+    private static func formatRate(_ usd: Double) -> String {
+        if usd == usd.rounded() { return String(format: "$%.0f", usd) }
+        if (usd * 100).rounded() == usd * 100 { return String(format: "$%.2f", usd) }
+        return String(format: "$%.3f", usd)
+    }
+
+    private static func formatMinutes(_ mins: Double) -> String {
+        mins >= 60 ? String(format: "%.1f hours", mins / 60.0)
+                   : String(format: "%.0f min", mins.rounded())
     }
 
     private static var stats: UsageStats? {
