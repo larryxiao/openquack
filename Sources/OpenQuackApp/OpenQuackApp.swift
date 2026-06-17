@@ -1082,7 +1082,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // ramp estimate); transcribe−engine is drain/teardown overhead.
                 let stall = max(0, transcribeWall - estimatedTranscribe)
                 Diagnostics.shared.log(
-                    .transcription, stall > 1.0 ? .warn : .info,
+                    .transcription, .info,
                     "timing: est=\(String(format: "%.2f", estimatedTranscribe))s"
                     + " transcribe=\(String(format: "%.2f", transcribeWall))s"
                     + " engine=\(String(format: "%.2f", result.wallSeconds))s"
