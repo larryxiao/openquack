@@ -349,16 +349,45 @@ public final class AudioRecorder {
             object: engine,
             queue: .main
         ) { [weak self] _ in
-            let stopped = !(engine.isRunning)
-            Diagnostics.shared.log(
-                .recording, stopped ? .warn : .info,
-                "AVAudioEngineConfigurationChange mid-capture (engine \(stopped ? "STOPPED" : "still running"))"
-            )
-            guard stopped else { return }
-            self?.interruptionHandler?()
+            self?.handleConfigurationChange(engineRunning: engine.isRunning)
         }
         Diagnostics.shared.log(.recording, .info, String(format: "start: input %.0f Hz, %d ch", format.sampleRate, Int(format.channelCount)))
         return engine
+    }
+
+    /// SPEC-036/042 — the configuration-change → interruption decision, extracted
+    /// from the observer so the fail-safe gate is unit-testable without
+    /// `AVAudioEngine`. A config change is treated as an interruption ONLY when the
+    /// engine actually stopped; a benign reconfig (output-device change, codec
+    /// renegotiation) leaves capture running and must not cut a dictation short.
+    /// Runs on the main queue (the observer's queue).
+    func handleConfigurationChange(engineRunning: Bool) {
+        let stopped = !engineRunning
+        Diagnostics.shared.log(
+            .recording, stopped ? .warn : .info,
+            "AVAudioEngineConfigurationChange mid-capture (engine \(stopped ? "STOPPED" : "still running"))"
+        )
+        guard stopped else { return }
+        interruptionHandler?()
+    }
+
+    // MARK: - SPEC-042 test seam
+
+    /// Begin a hardware-free capture session for validation: reset the frame
+    /// tally and pin the captured rate so `capturedSeconds` is meaningful without
+    /// `AVAudioEngine`. Lets CI reproduce the freeze scenario (audio flows, then
+    /// the tap dies on a config change) end-to-end. Not used by the live path.
+    func beginCaptureForTesting(sampleRate: Double) {
+        frameCounter.reset()
+        _capturedSampleRate = sampleRate
+    }
+
+    /// Deliver a buffer's worth of samples through the capture data path the
+    /// streaming consumer sees — the frame tally + `framesHandler` — mirroring the
+    /// real tap, minus the WAV write + level meter (covered separately).
+    func deliverFramesForTesting(_ samples: [Float], sampleRate: Double) {
+        frameCounter.add(samples.count)
+        framesHandler?(samples, sampleRate)
     }
 
     /// Create the Int16 WAV writer matching a captured buffer's format, so the
