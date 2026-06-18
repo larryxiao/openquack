@@ -210,6 +210,9 @@ struct OverlayPill: View {
         case .transcribing: return "Thinking"
         case .polishing:    return "Polishing"
         case .ready:
+            // SPEC-036 — an interruption takes the headline; "Copied to clipboard"
+            // misreads on a recording that was cut short.
+            if state.lastNotice != nil { return "Recording interrupted" }
             if state.recordingMode == .agentKickoff {
                 return state.lastKickoffSucceeded ? "Launched claude" : "Kickoff failed"
             }

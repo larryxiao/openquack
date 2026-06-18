@@ -21,8 +21,21 @@ struct OpenQuackApp {
         // packages with resources. See BundleModuleFallback.swift.
         BundleModuleFallback.install()
 
-        let delegate = AppDelegate()
         let app = NSApplication.shared
+
+        // SPEC-044 — snapshot mode: render UI surfaces to PNG + exit, so an agent
+        // can validate the UI against the specs locally without launching the
+        // menu-bar app or capturing the screen. AppKit is initialised above so
+        // offscreen ImageRenderer drawing works; we stay headless and exit.
+        if let dir = ProcessInfo.processInfo.environment["OQ_SNAPSHOT_DIR"] {
+            app.setActivationPolicy(.prohibited)
+            MainActor.assumeIsolated {
+                SnapshotRenderer.renderAll(to: URL(fileURLWithPath: dir))
+            }
+            exit(0)
+        }
+
+        let delegate = AppDelegate()
         app.delegate = delegate
         app.run()
     }
@@ -232,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             guard case .recording = self.appState.phase else { return }
             self.recordingInterrupted = true
-            self.appState.lastNotice = "Recording interrupted by an audio device change"
+            self.appState.lastNotice = "Saved what we captured"
             Diagnostics.shared.log(.recording, .warn, "interruption → auto-stopping mid-recording")
             self.stopAndTranscribe()
         }
