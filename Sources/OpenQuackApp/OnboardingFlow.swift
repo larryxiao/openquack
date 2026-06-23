@@ -225,7 +225,7 @@ struct OnboardingView: View {
         case .install:        InstallStep(state: state)
         case .demo:           DemoStep(state: state)
         case .polish:         PolishStep(state: state)
-        case .done:           DoneStep()
+        case .done:           DoneStep(polishEnabled: state.enablePolish)
         }
     }
 
@@ -247,8 +247,15 @@ struct OnboardingView: View {
                     onClose()
                     return
                 }
-                // For permission steps, Continue drives the OS grant flow
-                // directly — no separate "Grant access" button.
+                if state.step == .polish {
+                    // Off-by-default: only an explicitly enabled toggle spends the download.
+                    if state.enablePolish && !PolishModelCatalog.isInstalled() {
+                        state.polishDownload.confirm()
+                        state.polishDownload.detachToBackground()
+                    }
+                    state.advance()
+                    return
+                }
                 let triggeredPrompt = state.continueWillTriggerPermissionPrompt()
                 if !triggeredPrompt {
                     state.advance()
@@ -268,6 +275,8 @@ struct OnboardingView: View {
             return "Open System Settings"
         case .install where !state.modelDownloaded:
             return "Waiting…"
+        case .polish where state.enablePolish:
+            return "Download & continue"
         case .done:
             return "Done"
         default:
@@ -667,6 +676,8 @@ private struct PolishStep: View {
 }
 
 private struct DoneStep: View {
+    let polishEnabled: Bool
+
     var body: some View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "checkmark")
@@ -677,6 +688,10 @@ private struct DoneStep: View {
                 .frame(maxWidth: 420)
             Spacer().frame(height: Theme.s8)
             VStack(alignment: .leading, spacing: Theme.s8) {
+                if polishEnabled {
+                    tipRow(symbol: "sparkles",
+                           text: "Local LLM polish is downloading in the background — we'll let you know when it's ready.")
+                }
                 tipRow(symbol: "slider.horizontal.3",
                        text: "Push-to-talk, custom dictionary, and auto-stop live in Settings.")
                 tipRow(symbol: "lock.shield",
