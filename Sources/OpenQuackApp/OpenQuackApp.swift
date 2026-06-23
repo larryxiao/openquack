@@ -257,6 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // for users who close the window before the install step.
             OnboardingWindowController.showIfFirstLaunch(
                 appState: appState,
+                polishDownload: polishDownload,
                 onModelReady: { [weak self] in
                     Task { @MainActor in self?.startWarm() }
                 },
@@ -337,6 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
         OnboardingWindowController.show(
             appState: appState,
+            polishDownload: polishDownload,
             onModelReady: { [weak self] in
                 Task { @MainActor in self?.startWarm() }
             },

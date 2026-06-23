@@ -42,6 +42,10 @@ final class OnboardingState: ObservableObject {
     @Published var modelError: String? = nil
     @Published var demoTranscript: String = ""
 
+    /// User's onboarding opt-in for local LLM polish. Drives the toggle and,
+    /// on Continue, whether we kick off the background model download.
+    @Published var enablePolish: Bool = false
+
     /// Fires the moment the speech model finishes downloading. AppDelegate
     /// hooks this to warm the WhisperKit transcriber in parallel — without
     /// it the demo step has a downloaded model on disk but no in-memory
@@ -49,11 +53,13 @@ final class OnboardingState: ObservableObject {
     var onModelReady: (() -> Void)?
 
     private let appState: AppState
+    let polishDownload: PolishModelDownloadController
     private var cancellables = Set<AnyCancellable>()
     private var permissionTimer: Timer?
 
-    init(appState: AppState) {
+    init(appState: AppState, polishDownload: PolishModelDownloadController) {
         self.appState = appState
+        self.polishDownload = polishDownload
         refreshPermissions()
 
         appState.$lastTranscript
@@ -665,15 +671,17 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     static func showIfFirstLaunch(
         appState: AppState,
+        polishDownload: PolishModelDownloadController,
         onModelReady: @escaping () -> Void,
         onComplete: @escaping () -> Void
     ) {
         let done = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        if !done { show(appState: appState, onModelReady: onModelReady, onComplete: onComplete) }
+        if !done { show(appState: appState, polishDownload: polishDownload, onModelReady: onModelReady, onComplete: onComplete) }
     }
 
     static func show(
         appState: AppState,
+        polishDownload: PolishModelDownloadController,
         onModelReady: @escaping () -> Void,
         onComplete: @escaping () -> Void
     ) {
@@ -688,6 +696,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         NSApp.setActivationPolicy(.regular)
         let controller = OnboardingWindowController(
             appState: appState,
+            polishDownload: polishDownload,
             onModelReady: onModelReady,
             onComplete: onComplete
         )
@@ -696,8 +705,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    init(appState: AppState, onModelReady: @escaping () -> Void, onComplete: @escaping () -> Void) {
-        let state = OnboardingState(appState: appState)
+    init(appState: AppState, polishDownload: PolishModelDownloadController, onModelReady: @escaping () -> Void, onComplete: @escaping () -> Void) {
+        let state = OnboardingState(appState: appState, polishDownload: polishDownload)
         state.onModelReady = onModelReady
         self.state = state
         self.onComplete = onComplete
