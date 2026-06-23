@@ -29,6 +29,7 @@ enum OnboardingStep: Int, CaseIterable {
     case hotkey
     case install
     case demo
+    case polish
     case done
 }
 
@@ -223,6 +224,7 @@ struct OnboardingView: View {
         case .hotkey:         HotkeyStep()
         case .install:        InstallStep(state: state)
         case .demo:           DemoStep(state: state)
+        case .polish:         PolishStep(state: state)
         case .done:           DoneStep()
         }
     }
@@ -627,6 +629,40 @@ private struct DemoStep: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { focused = true }
+    }
+}
+
+private struct PolishStep: View {
+    @ObservedObject var state: OnboardingState
+
+    var body: some View {
+        VStack(spacing: Theme.s16) {
+            StepGlyph(symbol: "sparkles")
+            Text("Polish your dictation").font(.oqTitleSerif)
+            Text("An optional on-device model cleans up filler words, grammar, and punctuation before your text is pasted. Experimental.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 420)
+            Spacer().frame(height: Theme.s8)
+
+            if PolishModelCatalog.isInstalled() {
+                Label("Already enabled — ready to use.", systemImage: "checkmark.circle.fill")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Theme.moss)
+            } else {
+                VStack(spacing: Theme.s8) {
+                    Toggle("Enable local LLM polish", isOn: $state.enablePolish)
+                        .frame(maxWidth: 360)
+                    Text("One-time \(PolishModelCatalog.sizeLabel) download · stays on your Mac")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Link("Model license", destination: PolishModelCatalog.licenseURL)
+                        .font(.caption)
+                }
+                .frame(maxWidth: 400)
+            }
+            Spacer()
+        }
     }
 }
 
