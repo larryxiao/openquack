@@ -43,8 +43,6 @@ final class OnboardingState: ObservableObject {
     @Published var modelError: String? = nil
     @Published var demoTranscript: String = ""
 
-    /// User's onboarding opt-in for local LLM polish. Drives the toggle and,
-    /// on Continue, whether we kick off the background model download.
     @Published var enablePolish: Bool = false
 
     /// Fires the moment the speech model finishes downloading. AppDelegate
@@ -225,7 +223,7 @@ struct OnboardingView: View {
         case .install:        InstallStep(state: state)
         case .demo:           DemoStep(state: state)
         case .polish:         PolishStep(state: state)
-        case .done:           DoneStep(polishEnabled: state.enablePolish)
+        case .done:           DoneStep(polishHint: polishDoneHint)
         }
     }
 
@@ -248,10 +246,16 @@ struct OnboardingView: View {
                     return
                 }
                 if state.step == .polish {
-                    // Off-by-default: only an explicitly enabled toggle spends the download.
-                    if state.enablePolish && !PolishModelCatalog.isInstalled() {
-                        state.polishDownload.confirm()
-                        state.polishDownload.detachToBackground()
+                    // Off-by-default: only an explicit opt-in enables polish. If the
+                    // model is already on disk, flip the engine on directly; otherwise
+                    // the download commits the engine on verified success.
+                    if state.enablePolish {
+                        if PolishModelCatalog.isInstalled() {
+                            UserDefaults.standard.set("llamaCpp", forKey: "polishEngine")
+                        } else {
+                            state.polishDownload.confirm()
+                            state.polishDownload.detachToBackground()
+                        }
                     }
                     state.advance()
                     return
@@ -276,12 +280,24 @@ struct OnboardingView: View {
         case .install where !state.modelDownloaded:
             return "Waiting…"
         case .polish where state.enablePolish:
-            return "Download & continue"
+            return PolishModelCatalog.isInstalled() ? "Enable & continue" : "Download & continue"
         case .done:
             return "Done"
         default:
             return "Continue"
         }
+    }
+
+    /// The done-step polish line, derived from the real outcome rather than the
+    /// opt-in flag: a download in flight, an engine just switched on, or nothing.
+    private var polishDoneHint: String? {
+        if case .downloading = state.polishDownload.phase {
+            return "Local LLM polish is downloading in the background — we'll let you know when it's ready."
+        }
+        if UserDefaults.standard.string(forKey: "polishEngine") == "llamaCpp" {
+            return "Local LLM polish is on."
+        }
+        return nil
     }
 
     private var continueDisabled: Bool {
@@ -643,8 +659,12 @@ private struct DemoStep: View {
 
 private struct PolishStep: View {
     @ObservedObject var state: OnboardingState
+    @AppStorage("polishEngine") private var polishEngine: String = "off"
 
     var body: some View {
+        // "Enabled" is the engine setting, not mere file presence — the model
+        // can be on disk while polish is switched off.
+        let installed = PolishModelCatalog.isInstalled()
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "sparkles")
             Text("Polish your dictation").font(.oqTitleSerif)
@@ -654,7 +674,7 @@ private struct PolishStep: View {
                 .frame(maxWidth: 420)
             Spacer().frame(height: Theme.s8)
 
-            if PolishModelCatalog.isInstalled() {
+            if polishEngine == "llamaCpp" {
                 Label("Already enabled — ready to use.", systemImage: "checkmark.circle.fill")
                     .font(.body.weight(.medium))
                     .foregroundStyle(Theme.moss)
@@ -662,7 +682,9 @@ private struct PolishStep: View {
                 VStack(spacing: Theme.s8) {
                     Toggle("Enable local LLM polish", isOn: $state.enablePolish)
                         .frame(maxWidth: 360)
-                    Text("One-time \(PolishModelCatalog.sizeLabel) download · stays on your Mac")
+                    Text(installed
+                         ? "The model is already on your Mac — no download needed."
+                         : "One-time \(PolishModelCatalog.sizeLabel) download · stays on your Mac")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Link("Model license", destination: PolishModelCatalog.licenseURL)
@@ -676,7 +698,7 @@ private struct PolishStep: View {
 }
 
 private struct DoneStep: View {
-    let polishEnabled: Bool
+    let polishHint: String?
 
     var body: some View {
         VStack(spacing: Theme.s16) {
@@ -688,9 +710,8 @@ private struct DoneStep: View {
                 .frame(maxWidth: 420)
             Spacer().frame(height: Theme.s8)
             VStack(alignment: .leading, spacing: Theme.s8) {
-                if polishEnabled {
-                    tipRow(symbol: "sparkles",
-                           text: "Local LLM polish is downloading in the background — we'll let you know when it's ready.")
+                if let polishHint {
+                    tipRow(symbol: "wand.and.stars", text: polishHint)
                 }
                 tipRow(symbol: "slider.horizontal.3",
                        text: "Push-to-talk, custom dictionary, and auto-stop live in Settings.")
