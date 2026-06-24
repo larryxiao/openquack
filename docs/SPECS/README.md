@@ -26,6 +26,7 @@ column tracks *implementation* state, which is what the roadmap drives against:
 | [SPEC-003](SPEC-003-hotkey.md) | Global hotkey | shipped | M2 |
 | [SPEC-003a](SPEC-003a-fn-key.md) | `fn` / Globe key as a bindable hotkey | shipped | M2 |
 | [SPEC-004](SPEC-004-overlay.md) | Recording overlay | shipped | M2 |
+| [SPEC-004a](SPEC-004a-overlay-fullscreen-space.md) | Recording overlay on another app's fullscreen Space (investigation) | draft | M2 |
 | [SPEC-005](SPEC-005-paste.md) | Paste at cursor | shipped | M2 |
 | [SPEC-006](SPEC-006-agent-dispatch.md) | Agent dispatch (closed-loop sessions) | draft | M2 |
 | [SPEC-007](SPEC-007-llm-polish.md) | LLM transcript polish | draft | M2.5 |
