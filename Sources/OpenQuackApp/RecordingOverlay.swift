@@ -84,7 +84,10 @@ final class RecordingOverlay {
         guard let panel else { return }
         if panel.isVisible && panel.alphaValue > 0.95 { return }
         positionTopCentre(panel: panel)
-        panel.orderFront(nil)
+        // `orderFrontRegardless` (not `orderFront`): we're a background accessory
+        // app, so this surfaces the pill onto the currently active Space —
+        // including another app's fullscreen Space — without stealing focus.
+        panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.18
             panel.animator().alphaValue = 1
