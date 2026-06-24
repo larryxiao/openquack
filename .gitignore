@@ -45,3 +45,6 @@ bench/engines/.venv/
 
 # Zed editor (local per-developer LSP/index config)
 .zed/
+
+# graphify knowledge-graph output (rebuilt locally via post-commit hook)
+graphify-out/
