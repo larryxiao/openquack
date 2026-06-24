@@ -111,6 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
     let historyStore = HistoryStore()    // SPEC-014
+    let correctionStore = CorrectionCandidateStore()  // SPEC-022 PR-A
+    private var pasteObserver: PostPasteCorrectionObserver?
 
     /// SPEC-026 — Sparkle updater. Optional + initialized inside
     /// `applicationDidFinishLaunching` (after `installMethod` detection)
@@ -1142,6 +1144,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         kickoffSucceeded = false
                         kickoffErrorMessage = Self.kickoffErrorLabel(error)
                         pasted = false
+                    }
+                }
+
+                // SPEC-022 PR-A: after a successful paste-at-cursor, attach a
+                // one-shot AX observer to the focused field. Captures the
+                // user's in-place edits over the next 60 s (or until focus
+                // leaves), diffs them against the pasted transcript, and
+                // appends correction candidates to the store. Silent no-op
+                // if AX isn't trusted or the field doesn't expose a value.
+                if pasted {
+                    let store = self.correctionStore
+                    let transcript = polished
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        let observer = PostPasteCorrectionObserver(store: store)
+                        if observer.start(transcript: transcript) {
+                            self.pasteObserver = observer
+                        }
                     }
                 }
 
