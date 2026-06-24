@@ -30,9 +30,9 @@ Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
 
 > 📢 **What's new** — full notes on the [Releases page →](https://github.com/larryxiao/openquack/releases)
 >
+> - ✨ **[v2.0.0-alpha.21](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.21) — faster transcription + opt-in AI polish.** ANE performance restored (transcription speed regression fixed), plus onboarding now walks you through enabling on-device LLM polish so you can try it without hunting through settings.
 > - 🛡️ **[v2.0.0-alpha.20](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.20) — it doesn't freeze on you anymore.** If your mic changes mid-recording — AirPods connecting, switching devices — OpenQuack stops cleanly and keeps what you said instead of locking up. Plus on-device transcript polish, in-app model switching, and a faster first launch.
 > - 🌏 **[v2.0.0-alpha.18](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.18) — code-switch without the chaos.** Start a sentence in English and finish it in 中文: your Chinese now comes back as Chinese across a whole recording, not a garbled English "translation," and it's tidied into your system's script (简体 or 繁體).
-> - 🎧 **[v2.0.0-alpha.17](https://github.com/larryxiao/openquack/releases/tag/v2.0.0-alpha.17) — auto-detect that actually detects.** Just talk in any language, no menu-fiddling. Non-English speech stopped getting silently translated to English (253% → 17% WER on the multilingual set).
 ## What it is
 
 OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript appears at the cursor. Wherever you can type, you can talk.
