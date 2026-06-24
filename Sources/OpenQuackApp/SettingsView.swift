@@ -18,6 +18,8 @@ struct SettingsView: View {
     enum Tab: Hashable { case general, shortcut, stats, history, about }
     @State private var selection: Tab = .general
     @ObservedObject var appState: AppState
+    @ObservedObject private var polishDownload = (NSApp.delegate as! AppDelegate).polishDownload
+    @ObservedObject private var speechDownload = (NSApp.delegate as! AppDelegate).speechDownload
 
     var body: some View {
         TabView(selection: $selection) {
@@ -38,6 +40,16 @@ struct SettingsView: View {
                 .tag(Tab.about)
         }
         .frame(minWidth: 580, idealWidth: 580, minHeight: 500, idealHeight: 500)
+        // Download sheets live at the window root, not inside General, so the
+        // menu-bar "Show" affordance can surface them whatever tab is open.
+        .sheet(isPresented: $speechDownload.isPresented,
+               onDismiss: { speechDownload.detachToBackground() }) {
+            SpeechModelDownloadSheet(model: speechDownload)
+        }
+        .sheet(isPresented: $polishDownload.isPresented,
+               onDismiss: { polishDownload.detachToBackground() }) {
+            PolishModelDownloadSheet(model: polishDownload)
+        }
     }
 }
 
@@ -220,10 +232,6 @@ private struct GeneralPane: View {
         .onChange(of: model) { pickerModel = $0; refreshDownloadedModels() }
         .onChange(of: pickerModel) { selectSpeechModel($0) }
         .onChange(of: appState.speechDownload) { _ in refreshDownloadedModels() }
-        .sheet(isPresented: $speechDownload.isPresented,
-               onDismiss: { speechDownload.detachToBackground() }) {
-            SpeechModelDownloadSheet(model: speechDownload)
-        }
     }
 
     var body: some View {
@@ -459,9 +467,6 @@ private struct GeneralPane: View {
         // button) so "Last checked" stays in sync.
         .onChange(of: receivePrereleases) { _ in
             handleCheckNowTap()
-        }
-        .sheet(isPresented: $modelDownload.isPresented, onDismiss: { modelDownload.detachToBackground() }) {
-            PolishModelDownloadSheet(model: modelDownload)
         }
     }
 

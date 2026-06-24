@@ -29,6 +29,7 @@ enum OnboardingStep: Int, CaseIterable {
     case hotkey
     case install
     case demo
+    case polish
     case done
 }
 
@@ -42,6 +43,8 @@ final class OnboardingState: ObservableObject {
     @Published var modelError: String? = nil
     @Published var demoTranscript: String = ""
 
+    @Published var enablePolish: Bool = false
+
     /// Fires the moment the speech model finishes downloading. AppDelegate
     /// hooks this to warm the WhisperKit transcriber in parallel — without
     /// it the demo step has a downloaded model on disk but no in-memory
@@ -49,11 +52,13 @@ final class OnboardingState: ObservableObject {
     var onModelReady: (() -> Void)?
 
     private let appState: AppState
+    let polishDownload: PolishModelDownloadController
     private var cancellables = Set<AnyCancellable>()
     private var permissionTimer: Timer?
 
-    init(appState: AppState) {
+    init(appState: AppState, polishDownload: PolishModelDownloadController) {
         self.appState = appState
+        self.polishDownload = polishDownload
         refreshPermissions()
 
         appState.$lastTranscript
@@ -217,7 +222,8 @@ struct OnboardingView: View {
         case .hotkey:         HotkeyStep()
         case .install:        InstallStep(state: state)
         case .demo:           DemoStep(state: state)
-        case .done:           DoneStep()
+        case .polish:         PolishStep(state: state)
+        case .done:           DoneStep(polishHint: polishDoneHint)
         }
     }
 
@@ -239,8 +245,21 @@ struct OnboardingView: View {
                     onClose()
                     return
                 }
-                // For permission steps, Continue drives the OS grant flow
-                // directly — no separate "Grant access" button.
+                if state.step == .polish {
+                    // Off-by-default: only an explicit opt-in enables polish. If the
+                    // model is already on disk, flip the engine on directly; otherwise
+                    // the download commits the engine on verified success.
+                    if state.enablePolish {
+                        if PolishModelCatalog.isInstalled() {
+                            UserDefaults.standard.set("llamaCpp", forKey: "polishEngine")
+                        } else {
+                            state.polishDownload.confirm()
+                            state.polishDownload.detachToBackground()
+                        }
+                    }
+                    state.advance()
+                    return
+                }
                 let triggeredPrompt = state.continueWillTriggerPermissionPrompt()
                 if !triggeredPrompt {
                     state.advance()
@@ -260,11 +279,25 @@ struct OnboardingView: View {
             return "Open System Settings"
         case .install where !state.modelDownloaded:
             return "Waiting…"
+        case .polish where state.enablePolish:
+            return PolishModelCatalog.isInstalled() ? "Enable & continue" : "Download & continue"
         case .done:
             return "Done"
         default:
             return "Continue"
         }
+    }
+
+    /// The done-step polish line, derived from the real outcome rather than the
+    /// opt-in flag: a download in flight, an engine just switched on, or nothing.
+    private var polishDoneHint: String? {
+        if case .downloading = state.polishDownload.phase {
+            return "Local LLM polish is downloading in the background — we'll let you know when it's ready."
+        }
+        if UserDefaults.standard.string(forKey: "polishEngine") == "llamaCpp" {
+            return "Local LLM polish is on."
+        }
+        return nil
     }
 
     private var continueDisabled: Bool {
@@ -624,7 +657,49 @@ private struct DemoStep: View {
     }
 }
 
+private struct PolishStep: View {
+    @ObservedObject var state: OnboardingState
+    @AppStorage("polishEngine") private var polishEngine: String = "off"
+
+    var body: some View {
+        // "Enabled" is the engine setting, not mere file presence — the model
+        // can be on disk while polish is switched off.
+        let installed = PolishModelCatalog.isInstalled()
+        VStack(spacing: Theme.s16) {
+            StepGlyph(symbol: "sparkles")
+            Text("Polish your dictation").font(.oqTitleSerif)
+            Text("An optional on-device model cleans up filler words, grammar, and punctuation before your text is pasted. Experimental.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 420)
+            Spacer().frame(height: Theme.s8)
+
+            if polishEngine == "llamaCpp" {
+                Label("Already enabled — ready to use.", systemImage: "checkmark.circle.fill")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Theme.moss)
+            } else {
+                VStack(spacing: Theme.s8) {
+                    Toggle("Enable local LLM polish", isOn: $state.enablePolish)
+                        .frame(maxWidth: 360)
+                    Text(installed
+                         ? "The model is already on your Mac — no download needed."
+                         : "One-time \(PolishModelCatalog.sizeLabel) download · stays on your Mac")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Link("Model license", destination: PolishModelCatalog.licenseURL)
+                        .font(.caption)
+                }
+                .frame(maxWidth: 400)
+            }
+            Spacer()
+        }
+    }
+}
+
 private struct DoneStep: View {
+    let polishHint: String?
+
     var body: some View {
         VStack(spacing: Theme.s16) {
             StepGlyph(symbol: "checkmark")
@@ -635,6 +710,9 @@ private struct DoneStep: View {
                 .frame(maxWidth: 420)
             Spacer().frame(height: Theme.s8)
             VStack(alignment: .leading, spacing: Theme.s8) {
+                if let polishHint {
+                    tipRow(symbol: "wand.and.stars", text: polishHint)
+                }
                 tipRow(symbol: "slider.horizontal.3",
                        text: "Push-to-talk, custom dictionary, and auto-stop live in Settings.")
                 tipRow(symbol: "lock.shield",
@@ -665,15 +743,17 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     static func showIfFirstLaunch(
         appState: AppState,
+        polishDownload: PolishModelDownloadController,
         onModelReady: @escaping () -> Void,
         onComplete: @escaping () -> Void
     ) {
         let done = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
-        if !done { show(appState: appState, onModelReady: onModelReady, onComplete: onComplete) }
+        if !done { show(appState: appState, polishDownload: polishDownload, onModelReady: onModelReady, onComplete: onComplete) }
     }
 
     static func show(
         appState: AppState,
+        polishDownload: PolishModelDownloadController,
         onModelReady: @escaping () -> Void,
         onComplete: @escaping () -> Void
     ) {
@@ -688,6 +768,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         NSApp.setActivationPolicy(.regular)
         let controller = OnboardingWindowController(
             appState: appState,
+            polishDownload: polishDownload,
             onModelReady: onModelReady,
             onComplete: onComplete
         )
@@ -696,8 +777,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    init(appState: AppState, onModelReady: @escaping () -> Void, onComplete: @escaping () -> Void) {
-        let state = OnboardingState(appState: appState)
+    init(appState: AppState, polishDownload: PolishModelDownloadController, onModelReady: @escaping () -> Void, onComplete: @escaping () -> Void) {
+        let state = OnboardingState(appState: appState, polishDownload: polishDownload)
         state.onModelReady = onModelReady
         self.state = state
         self.onComplete = onComplete
