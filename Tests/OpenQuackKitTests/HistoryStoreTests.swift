@@ -316,4 +316,26 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(p.maxAge, 14 * 24 * 60 * 60)
         XCTAssertEqual(p.maxBytesOnDisk, 500 * 1024 * 1024)
     }
+
+    func testUserConfiguredPolicy_setsCapWithLooseAgeAndDisk() {
+        let p = RetentionPolicy.userConfigured(maxEntries: 100)
+        XCTAssertEqual(p.maxEntries, 100)
+        XCTAssertEqual(p.maxAge, 365 * 24 * 60 * 60)
+        XCTAssertEqual(p.maxBytesOnDisk, 5 * 1024 * 1024 * 1024)
+    }
+
+    // Regression: a saved cap above .default's 50 must actually govern retention.
+    // Previously the launch store used .default, silently capping history at 50.
+    func testUserConfiguredPolicy_honorsCapAboveDefault() async throws {
+        let store = makeStore(policy: .userConfigured(maxEntries: 60))
+        for i in 0..<55 {
+            _ = try await store.save(audio: nil,
+                                     transcript: "t\(i)",
+                                     language: nil,
+                                     modelID: "m",
+                                     durationSeconds: 1)
+        }
+        let listed = await store.list(limit: 1000)
+        XCTAssertEqual(listed.count, 55)  // all kept; not pruned down to 50
+    }
 }

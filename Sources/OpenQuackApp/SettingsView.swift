@@ -1402,12 +1402,7 @@ private struct HistoryPane: View {
     /// Push the entry-cap to the store. Age and disk caps stay loose so
     /// the entry count is the only lever the user actually feels.
     private func syncPolicy() async {
-        let policy = RetentionPolicy(
-            maxEntries: maxEntries,
-            maxAge: 365 * 24 * 60 * 60,
-            maxBytesOnDisk: 5 * 1024 * 1024 * 1024
-        )
-        await Self.store?.setPolicy(policy)
+        await Self.store?.setPolicy(.userConfigured(maxEntries: maxEntries))
         await Self.store?.enforceRetention()
     }
 

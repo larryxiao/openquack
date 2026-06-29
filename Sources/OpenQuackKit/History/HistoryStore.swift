@@ -73,6 +73,18 @@ public struct RetentionPolicy: Sendable {
     }
 
     public static let `default` = RetentionPolicy()
+
+    /// The user-facing policy: the entry count is the only lever the user sets;
+    /// age/disk caps stay loose. Built here so app launch and the Settings
+    /// picker share one definition — otherwise the saved cap silently reverts
+    /// to `.default` (50) on every launch until Settings → History is opened.
+    public static func userConfigured(maxEntries: Int) -> RetentionPolicy {
+        RetentionPolicy(
+            maxEntries: maxEntries,
+            maxAge: 365 * 24 * 60 * 60,
+            maxBytesOnDisk: 5 * 1024 * 1024 * 1024
+        )
+    }
 }
 
 /// On-disk JSON shape. Versioned so future schema changes can migrate.

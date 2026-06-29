@@ -110,7 +110,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: RecordingOverlay?
     private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
-    let historyStore = HistoryStore()    // SPEC-014
+    // SPEC-014 — seed the saved entry cap at launch; without this the store
+    // falls back to .default (50) until Settings → History is opened.
+    let historyStore = HistoryStore(policy: .userConfigured(
+        maxEntries: UserDefaults.standard.object(forKey: "historyMaxEntries") as? Int ?? 50))
 
     /// SPEC-026 — Sparkle updater. Optional + initialized inside
     /// `applicationDidFinishLaunching` (after `installMethod` detection)
