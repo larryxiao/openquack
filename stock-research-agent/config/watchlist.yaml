@@ -1,0 +1,8 @@
+# 关注标的清单。code 留空表示尚未由 resolver 校验到真实代码。
+# market: cn (A股) / hk (港股) / us (美股)
+watchlist:
+  - name: 航发动力
+    market: cn
+    code: "600893"
+    theme: 中国军工
+    note: 军工产业链龙头（总装/航空发动机）
