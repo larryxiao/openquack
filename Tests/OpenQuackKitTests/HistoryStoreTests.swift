@@ -274,6 +274,36 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertFalse(listed.contains { $0.id == e.id })
     }
 
+    // Regression: crash-recovery entries (audio saved, not yet transcribed) must
+    // survive retention even at maxEntries=0 ("None"), or the launch
+    // enforceRetention would delete the recording before the recovery prompt.
+    func testEnforceRetention_keepsPendingRecoveryEntryAtZeroCap() async throws {
+        let store = makeStore(policy: .userConfigured(maxEntries: 0))
+        let samples = [Float](repeating: 0.1, count: 16_000) // 1 s at 16 kHz
+        let entry = try await store.save(audio: samples,
+                                         transcript: "",      // not yet transcribed
+                                         language: nil,
+                                         modelID: "m",
+                                         durationSeconds: 1.0)
+        await store.enforceRetention()
+        let recoverable = await store.recoverable()
+        XCTAssertTrue(recoverable.contains { $0.id == entry.id },
+                      "pending-recovery entry must not be evicted at maxEntries=0")
+    }
+
+    // A transcribed entry IS subject to the count cap — maxEntries=0 evicts it.
+    func testEnforceRetention_evictsTranscribedEntryAtZeroCap() async throws {
+        let store = makeStore(policy: .userConfigured(maxEntries: 0))
+        let entry = try await store.save(audio: nil,
+                                         transcript: "done",
+                                         language: nil,
+                                         modelID: "m",
+                                         durationSeconds: 1.0)
+        await store.enforceRetention()
+        let listed = await store.list()
+        XCTAssertFalse(listed.contains { $0.id == entry.id })
+    }
+
     func testEnforceRetention_emptyStoreIsNoOp() async throws {
         let store = makeStore()
         await store.enforceRetention()  // must not throw / crash on missing dir
@@ -315,5 +345,27 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(p.maxEntries, 50)
         XCTAssertEqual(p.maxAge, 14 * 24 * 60 * 60)
         XCTAssertEqual(p.maxBytesOnDisk, 500 * 1024 * 1024)
+    }
+
+    func testUserConfiguredPolicy_setsCapWithLooseAgeAndDisk() {
+        let p = RetentionPolicy.userConfigured(maxEntries: 100)
+        XCTAssertEqual(p.maxEntries, 100)
+        XCTAssertEqual(p.maxAge, 365 * 24 * 60 * 60)
+        XCTAssertEqual(p.maxBytesOnDisk, 5 * 1024 * 1024 * 1024)
+    }
+
+    // Regression: a saved cap above .default's 50 must actually govern retention.
+    // Previously the launch store used .default, silently capping history at 50.
+    func testUserConfiguredPolicy_honorsCapAboveDefault() async throws {
+        let store = makeStore(policy: .userConfigured(maxEntries: 60))
+        for i in 0..<55 {
+            _ = try await store.save(audio: nil,
+                                     transcript: "t\(i)",
+                                     language: nil,
+                                     modelID: "m",
+                                     durationSeconds: 1)
+        }
+        let listed = await store.list(limit: 1000)
+        XCTAssertEqual(listed.count, 55)  // all kept; not pruned down to 50
     }
 }

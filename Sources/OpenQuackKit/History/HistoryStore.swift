@@ -57,6 +57,11 @@ public struct HistoryEntry: Sendable, Identifiable, Codable {
         self.modelID = modelID
         self.audioURL = audioURL
     }
+
+    /// Audio saved but not yet transcribed — a crash-recovery candidate, not
+    /// finished history. Exempt from the count/size caps so it survives to the
+    /// next-launch recovery prompt (SPEC-014).
+    public var isPendingRecovery: Bool { audioURL != nil && transcribedAt == nil }
 }
 
 public struct RetentionPolicy: Sendable {
@@ -73,6 +78,21 @@ public struct RetentionPolicy: Sendable {
     }
 
     public static let `default` = RetentionPolicy()
+
+    /// Loose backstops for the user-facing policy below — the entry count is the
+    /// lever the user sets, so age and disk stay generous.
+    public static let looseMaxAge: TimeInterval = 365 * 24 * 60 * 60
+    public static let looseMaxBytesOnDisk: Int64 = 5 * 1024 * 1024 * 1024
+
+    /// The user-facing policy: the entry count is the only lever the user sets;
+    /// age/disk caps stay loose. Built here so app launch and the Settings
+    /// picker share one definition — otherwise the saved cap silently reverts
+    /// to `.default` (50) on every launch until Settings → History is opened.
+    public static func userConfigured(maxEntries: Int) -> RetentionPolicy {
+        RetentionPolicy(maxEntries: maxEntries,
+                        maxAge: looseMaxAge,
+                        maxBytesOnDisk: looseMaxBytesOnDisk)
+    }
 }
 
 /// On-disk JSON shape. Versioned so future schema changes can migrate.
@@ -204,7 +224,7 @@ public actor HistoryStore {
     /// for the next-launch recovery popover.
     public func recoverable() async -> [HistoryEntry] {
         return allEntries()
-            .filter { $0.audioURL != nil && $0.transcribedAt == nil }
+            .filter { $0.isPendingRecovery }
             .sorted { $0.recordedAt > $1.recordedAt }
     }
 
@@ -260,17 +280,24 @@ public actor HistoryStore {
             }
         }
 
-        // Pass 2: enforce count cap, oldest first.
-        while keep.count > policy.maxEntries {
-            evict.append(keep.removeFirst())
+        // Pending-recovery entries (audio, not yet transcribed) are crash-recovery
+        // candidates, not saved history — the count/size caps below must not evict
+        // them, or "None"/a small cap would delete the recording before the
+        // launch recovery prompt. Age (pass 1) still applies, so stale orphans
+        // clean up.
+        var capped = keep.filter { !$0.isPendingRecovery }
+
+        // Pass 2: enforce count cap over saved history, oldest first.
+        while capped.count > policy.maxEntries {
+            evict.append(capped.removeFirst())
         }
 
-        // Pass 3: enforce size cap, oldest first.
+        // Pass 3: enforce size cap over saved history, oldest first.
         var sizes: [UUID: Int64] = [:]
-        for e in keep { sizes[e.id] = entrySize(for: e) }
+        for e in capped { sizes[e.id] = entrySize(for: e) }
         var totalSize: Int64 = sizes.values.reduce(0, +)
-        while totalSize > policy.maxBytesOnDisk, !keep.isEmpty {
-            let oldest = keep.removeFirst()
+        while totalSize > policy.maxBytesOnDisk, !capped.isEmpty {
+            let oldest = capped.removeFirst()
             totalSize -= sizes[oldest.id] ?? 0
             evict.append(oldest)
         }
