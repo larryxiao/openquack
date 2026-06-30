@@ -1317,7 +1317,7 @@ private struct StatsPane: View {
 
 private struct HistoryPane: View {
     @AppStorage("saveAudio")         private var saveAudio: Bool = false
-    @AppStorage("historyMaxEntries") private var maxEntries: Int = 50
+    @AppStorage(HistorySettings.maxEntriesKey) private var maxEntries: Int = HistorySettings.defaultMaxEntries
     @State private var entries: [HistoryEntry] = []
 
     /// Sentinel for the "Unlimited" picker option. `RetentionPolicy` reads

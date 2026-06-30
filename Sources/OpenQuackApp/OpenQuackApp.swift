@@ -28,6 +28,17 @@ struct OpenQuackApp {
     }
 }
 
+/// SPEC-014 — single source for the history entry-cap setting, shared by the
+/// launch store, the `saveTranscripts` gate, and the Settings picker so they
+/// can't drift. `0` means "None — stop saving"; the default keeps transcripts.
+enum HistorySettings {
+    static let maxEntriesKey = "historyMaxEntries"
+    static let defaultMaxEntries = 50
+    static var savedMaxEntries: Int {
+        UserDefaults.standard.object(forKey: maxEntriesKey) as? Int ?? defaultMaxEntries
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -56,12 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let raw = UserDefaults.standard.double(forKey: "vadSilenceSeconds")
         return raw > 0 ? raw : 1.5
     }
-    // SPEC-014 — transcripts persisted by default (entry cap = 50);
-    // audio opt-in (privacy posture). The Settings → History dropdown
-    // sets `historyMaxEntries`; 0 means "None — stop saving".
     private var saveTranscripts: Bool {
-        let raw = UserDefaults.standard.object(forKey: "historyMaxEntries") as? Int
-        return (raw ?? 50) > 0
+        HistorySettings.savedMaxEntries > 0
     }
     private var saveAudio: Bool {
         UserDefaults.standard.bool(forKey: "saveAudio")
@@ -110,10 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: RecordingOverlay?
     private let updateChecker = UpdateChecker()
     let usageStats = UsageStats()        // SPEC-013
-    // SPEC-014 — seed the saved entry cap at launch; without this the store
-    // falls back to .default (50) until Settings → History is opened.
-    let historyStore = HistoryStore(policy: .userConfigured(
-        maxEntries: UserDefaults.standard.object(forKey: "historyMaxEntries") as? Int ?? 50))
+    let historyStore = HistoryStore(policy: .userConfigured(maxEntries: HistorySettings.savedMaxEntries))  // SPEC-014
 
     /// SPEC-026 — Sparkle updater. Optional + initialized inside
     /// `applicationDidFinishLaunching` (after `installMethod` detection)
