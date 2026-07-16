@@ -754,17 +754,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .llamaCpp:
             engine = await MainActor.run { self.retainedLlamaEngine(path: PolishModelCatalog.localURL) }
         }
+        // Custom LLM instructions (SPEC: editable polish prompt). Read fresh
+        // each dictation; blank/absent falls back to the shipped default.
+        let custom = UserDefaults.standard.string(forKey: "polishSystemPrompt")?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let systemInstructions = (custom?.isEmpty ?? true) ? nil : custom
         let result = await PolishPipeline.polish(
             scripted,
             engine: engine,
             regexEnabled: polishEnabled,
-            context: PolishContext(language: defaultLanguage, timestamp: Date())
+            context: PolishContext(language: defaultLanguage, timestamp: Date(),
+                                   systemInstructions: systemInstructions)
         )
         var record: [String: Any] = [
             "raw": scripted,
             "polished": result.text,
             "engine": engineKind.rawValue,
             "llm": result.llmSucceeded,
+            // Confirms which polish prompt was live: "default" or "custom(<n>c)".
+            "prompt": systemInstructions.map { "custom(\($0.count)c)" } ?? "default",
         ]
         if let ms = result.llmMillis { record["ms"] = ms }
         if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),

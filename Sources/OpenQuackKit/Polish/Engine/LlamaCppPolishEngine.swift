@@ -1,5 +1,6 @@
 import Foundation
 import LlamaSwift
+import os
 
 /// In-process polish via an embedded llama.cpp model (GGUF) loaded from a local
 /// file. An actor because the loaded model/context are stateful C handles kept
@@ -9,6 +10,10 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
     private let modelPath: URL
     private var model: OpaquePointer?    // llama_model *
     private var ctx: OpaquePointer?      // llama_context *
+
+    // Prefill token count vs the batch/context caps — handy when tuning a
+    // custom polish prompt against the context window.
+    private static let diag = Logger(subsystem: "org.openquack.OpenQuack", category: "polish.llama")
 
     public nonisolated var modelLabel: String { modelPath.lastPathComponent }
 
@@ -25,11 +30,20 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         case modelNotFound(URL)
         case loadFailed
         case emptyOutput
+        case promptTooLong
     }
+
+    /// Context window and single-decode batch cap. The prompt is prefilled in
+    /// chunks of `nBatch`; one `llama_decode` batch must not exceed it or
+    /// llama.cpp aborts (ggml_abort). `nCtx` bounds prompt + generation. Kept
+    /// in sync with the context created in `ensureLoaded`.
+    private static let nCtx: Int32 = 4096
+    private static let nBatch: Int32 = 512
 
     public func polish(_ raw: String, context: PolishContext) async throws -> String {
         try ensureLoaded()
-        let prompt = Self.gemmaPrompt(system: PolishPrompt.system,
+        let system = PolishPrompt.system(instructions: context.systemInstructions ?? PolishPrompt.defaultInstructions)
+        let prompt = Self.gemmaPrompt(system: system,
                                       user: PolishPrompt.userMessage(raw))
         let out = try generate(prompt: prompt, maxTokens: PolishPrompt.numPredict(raw))
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,8 +92,8 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
             throw PolishError.loadFailed
         }
         var cparams = llama_context_default_params()
-        cparams.n_ctx = 4096
-        cparams.n_batch = 512
+        cparams.n_ctx = UInt32(Self.nCtx)
+        cparams.n_batch = UInt32(Self.nBatch)
         guard let c = llama_init_from_model(m, cparams) else {
             llama_model_free(m)
             throw PolishError.loadFailed
@@ -123,11 +137,25 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         let count = llama_tokenize(vocab, prompt, textLen, &tokens, needed, true, true)
         guard count > 0 else { throw PolishError.loadFailed }
 
-        // Prefill the prompt.
-        let decodeResult = tokens.withUnsafeMutableBufferPointer {
-            llama_decode(ctx, llama_batch_get_one($0.baseAddress, count))
+        Self.diag.debug("prefill tokens=\(count, privacy: .public) n_batch=\(Self.nBatch, privacy: .public) n_ctx=\(Self.nCtx, privacy: .public) maxTokens=\(maxTokens, privacy: .public)")
+
+        // A custom prompt can be arbitrarily long; need at least one token of
+        // room to generate. Bail (caller falls back to regex) rather than abort.
+        guard Int(count) < Int(Self.nCtx) else { throw PolishError.promptTooLong }
+
+        // Prefill in nBatch-sized chunks: a single llama_decode batch must not
+        // exceed n_batch or llama.cpp aborts (ggml_abort). Positions continue
+        // across calls via the just-cleared KV cache, so the final chunk's last
+        // token carries the logits we sample from.
+        var offset = 0
+        while offset < Int(count) {
+            let chunk = min(Int(Self.nBatch), Int(count) - offset)
+            let decodeResult = tokens.withUnsafeMutableBufferPointer {
+                llama_decode(ctx, llama_batch_get_one($0.baseAddress! + offset, Int32(chunk)))
+            }
+            guard decodeResult == 0 else { throw PolishError.loadFailed }
+            offset += chunk
         }
-        guard decodeResult == 0 else { throw PolishError.loadFailed }
 
         // Greedy decode loop.
         let smpl = llama_sampler_init_greedy()
@@ -136,7 +164,10 @@ public actor LlamaCppPolishEngine: TextPolishEngine {
         var outputBytes = [UInt8]()
         outputBytes.reserveCapacity(maxTokens * 4)
 
-        for _ in 0..<maxTokens {
+        // Cap generation so prompt + output never exceeds the context window
+        // (decoding past n_ctx would abort inside llama.cpp).
+        let genBudget = min(maxTokens, Int(Self.nCtx) - Int(count) - 1)
+        for _ in 0..<genBudget {
             let tok = llama_sampler_sample(smpl, ctx, -1)
             if llama_vocab_is_eog(vocab, tok) { break }
 

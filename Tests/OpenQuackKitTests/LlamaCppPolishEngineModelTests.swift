@@ -24,6 +24,22 @@ final class LlamaCppPolishEngineModelTests: XCTestCase {
                        "scaffold/turn markers leaked into output; got: \(out)")
     }
 
+    /// Regression: a long custom prompt tokenises past n_batch (512). The
+    /// prefill must chunk instead of submitting one oversized batch, which
+    /// aborted (ggml_abort / SIGABRT) inside llama_decode.
+    func testLongCustomPromptDoesNotAbort() async throws {
+        guard let path = ProcessInfo.processInfo.environment["OQ_LLAMA_MODEL"] else {
+            throw XCTSkip("set OQ_LLAMA_MODEL=<gguf path> to run")
+        }
+        let engine = LlamaCppPolishEngine(modelPath: URL(fileURLWithPath: path))
+        let longInstructions = PolishPrompt.defaultInstructions + "\n\n"
+            + String(repeating: "Extra guidance line for the formatter. ", count: 60)
+        let ctx = PolishContext(language: "en", timestamp: Date(), systemInstructions: longInstructions)
+        let out = try await engine.polish("this is a short transcript", context: ctx)
+        XCTAssertFalse(out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       "long-prompt polish produced empty output; got: \(out)")
+    }
+
     func testReloadAfterUnloadStillPolishes() async throws {
         guard let path = ProcessInfo.processInfo.environment["OQ_LLAMA_MODEL"] else {
             throw XCTSkip("set OQ_LLAMA_MODEL=<gguf path> to run")

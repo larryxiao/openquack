@@ -60,6 +60,7 @@ private struct GeneralPane: View {
     @AppStorage("autoPaste")           private var autoPaste: Bool = true
     @AppStorage("polishText")          private var polishText: Bool = true
     @AppStorage("polishEngine")        private var polishEngine: String = "off"
+    @AppStorage("polishSystemPrompt")  private var polishSystemPrompt: String = PolishPrompt.defaultInstructions
     @ObservedObject private var modelDownload = (NSApp.delegate as! AppDelegate).polishDownload
     @ObservedObject private var speechDownload = (NSApp.delegate as! AppDelegate).speechDownload
     @AppStorage("language")            private var language: String = ""   // "" = auto-detect (SPEC-035)
@@ -329,6 +330,29 @@ private struct GeneralPane: View {
                         confirmDeletePolishModel()
                     }
                     .help("Remove the downloaded Local LLM model to reclaim disk space. Re-selecting Local LLM will download it again.")
+                }
+                if polishEngine == "llamaCpp" {
+                    VStack(alignment: .leading, spacing: Theme.s4) {
+                        HStack {
+                            Text("LLM polish instructions")
+                            Spacer()
+                            Button("Reset to default") {
+                                polishSystemPrompt = PolishPrompt.defaultInstructions
+                            }
+                            .font(.caption)
+                            .disabled(polishSystemPrompt == PolishPrompt.defaultInstructions)
+                        }
+                        PlaceholderTextEditor(
+                            text: $polishSystemPrompt,
+                            prompt: PolishPrompt.defaultInstructions,
+                            monospaced: true,
+                            minHeight: 120,
+                            idealHeight: 160
+                        )
+                        Text("The system prompt sent to the Local LLM. Takes effect on your next dictation — no restart needed. Leave blank to use the default. The transcript delimiter is added automatically.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Toggle("Play sounds when recording starts / stops", isOn: $playSounds)
                     .help("Subtle system sounds. Useful if the menu-bar icon or overlay isn't visible.")
