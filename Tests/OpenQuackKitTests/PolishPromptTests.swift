@@ -31,7 +31,15 @@ final class PolishPromptTests: XCTestCase {
     }
 
     func testSystemPromptForbidsTranslationAndCommentary() {
-        XCTAssertTrue(PolishPrompt.system.contains("never change the words"))
-        XCTAssertTrue(PolishPrompt.system.contains("Translate"))
+        XCTAssertTrue(PolishPrompt.system().contains("never change the words"))
+        XCTAssertTrue(PolishPrompt.system().contains("Translate"))
+    }
+
+    func testSystemAppendsFixedTranscriptMarker() {
+        // Default and custom bodies both close with the delimiter the injection
+        // contract relies on.
+        XCTAssertTrue(PolishPrompt.system().hasSuffix("<<<TRANSCRIPT>>>"))
+        XCTAssertEqual(PolishPrompt.system(instructions: "Do nothing."),
+                       "Do nothing.\n\n<<<TRANSCRIPT>>>")
     }
 }

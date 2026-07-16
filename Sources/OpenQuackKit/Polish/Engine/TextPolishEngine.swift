@@ -10,10 +10,14 @@ public protocol TextPolishEngine: Sendable {
 public struct PolishContext: Sendable {
     public let language: String?
     public let timestamp: Date
+    /// Custom LLM instruction body, or nil to use `PolishPrompt.defaultInstructions`.
+    /// Read fresh per dictation so Settings edits take effect without a reload.
+    public let systemInstructions: String?
 
-    public init(language: String?, timestamp: Date) {
+    public init(language: String?, timestamp: Date, systemInstructions: String? = nil) {
         self.language = language
         self.timestamp = timestamp
+        self.systemInstructions = systemInstructions
     }
 }
 
