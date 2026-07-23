@@ -56,6 +56,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 - **99 languages.** English, Chinese, Japanese, Korean, Spanish, French, German, Italian, and Portuguese are right in Settings; auto-detect on by default.
 - **Smart formatting** — capitalisation, end-punctuation, "um/uh" cleanup.
 - **Custom dictionary** — teach it the proper nouns and project names you actually use.
+- **Local LLM polish (experimental, opt-in).** A second pass through a small on-device model that tightens phrasing and cleans up obvious mishears — stays local, nothing leaves your Mac. Off by default; turn it on during onboarding or in Settings, with an editable prompt to steer it your way.
 - **Auto-stop after silence.** Finish speaking, OpenQuack wraps up on its own.
 - **Launch at login** — show up in the menu bar after every restart with one toggle.
 
@@ -69,9 +70,8 @@ The full privacy contract is in [`docs/VISION.md`](docs/VISION.md#privacy-contra
 ## Coming next
 
 - **In-context transcription** — OpenQuack reads the surrounding text before transcribing, so domain terms get disambiguated by what you're actually doing.
-- **Thinking mode** — an opt-in second pass through a small local LLM (Ollama or MLX-LM, your pick) that turns a raw spoken sentence into one you'd press send on.
 
-Both deferred while the adoption foundations land. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's queued; [`docs/VISION.md`](docs/VISION.md) for where this is going overall.
+Deferred while the adoption foundations land. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for what's queued; [`docs/VISION.md`](docs/VISION.md) for where this is going overall.
 
 ## Install
 
