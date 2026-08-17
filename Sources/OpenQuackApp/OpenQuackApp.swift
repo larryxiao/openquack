@@ -73,6 +73,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var saveAudio: Bool {
         UserDefaults.standard.bool(forKey: "saveAudio")
     }
+    // SPEC-044 — remote transcription backend (explicitly opt-in in Settings).
+    private var remoteBackendSelected: Bool {
+        UserDefaults.standard.string(forKey: "transcriptionBackend") == "remote"
+    }
+    /// The configured remote profile, or nil when the backend is local or the
+    /// endpoint URL doesn't parse. A selected-but-broken config must surface an
+    /// error at transcribe time, never silently fall back to local.
+    private var remoteProfile: RemoteProfile? {
+        guard remoteBackendSelected,
+              let raw = UserDefaults.standard.string(forKey: "remoteEndpoint")?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let url = URL(string: raw), url.host != nil
+        else { return nil }
+        let auth: RemoteAuth
+        switch UserDefaults.standard.string(forKey: "remoteAuthMethod") ?? "bearer" {
+        case "none":   auth = .none
+        case "header": auth = .header(name: UserDefaults.standard.string(forKey: "remoteAuthHeaderName") ?? "")
+        default:       auth = .bearer
+        }
+        return RemoteProfile(
+            baseURL: url,
+            model: UserDefaults.standard.string(forKey: "remoteModel") ?? "",
+            auth: auth
+        )
+    }
 
     private var lastVoiceAt: Date?
     private static let voiceThreshold: Float = 0.06
@@ -836,10 +862,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let inputUID = UserDefaults.standard.string(forKey: "inputDeviceUID")
                 _ = try recorder.start(outputURL: lastRecordingURL, inputDeviceUID: inputUID)
+                let remoteHost = remoteBackendSelected
+                    ? (remoteProfile?.baseURL.host ?? "remote endpoint") : nil
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
                     appState.resetLevels()
+                    appState.remoteHost = remoteHost   // SPEC-044
                     appState.lastNotice = nil          // SPEC-036
                     recordingInterrupted = false       // SPEC-036
                     lastVoiceAt = nil
@@ -967,7 +996,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 appState.lastCaptureSilent = false   // a non-silent capture clears the warning
             }
 
-            guard let engine = transcriber else {
+            // SPEC-044 — a remote dictation doesn't need the local engine warm.
+            let remoteSelected = remoteBackendSelected
+            let remoteProfile = self.remoteProfile
+            if !remoteSelected, transcriber == nil {
                 await MainActor.run {
                     appState.phase = .error("Still getting ready — try again in a moment.")
                 }
@@ -1008,7 +1040,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let pathLabel: String
                 var chunkCount: Int?
                 var chunkFailures: Int?
-                if audioDuration >= Self.streamingThreshold, let streamer {
+                if remoteSelected {
+                    // SPEC-044 — remote path. Always offline-style (no
+                    // streaming over the wire); the recording is re-encoded to
+                    // 16 kHz mono WAV and POSTed to the configured endpoint.
+                    await tearDownFramesPump()
+                    if let streamer { await streamer.cancel() }
+                    pathLabel = "remote"
+                    guard let profile = remoteProfile else {
+                        throw EngineError.runtimeFailed("Remote endpoint isn't configured — set its URL in Settings → General.")
+                    }
+                    let remote = RemoteEngine(profile: profile)
+                    result = try await remote.transcribe(audioFile: url, language: defaultLanguage)
+                } else if audioDuration >= Self.streamingThreshold, let streamer {
                     await tearDownFramesPump()
                     let r = try await streamer.finish()
                     chunkCount = r.chunkCount
@@ -1025,6 +1069,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     await tearDownFramesPump()
                     if let streamer { await streamer.cancel() }
                     pathLabel = "offline"
+                    guard let engine = transcriber else {
+                        throw EngineError.runtimeFailed("Speech model isn't loaded yet")
+                    }
                     result = try await engine.transcribe(
                         audioFile: url,
                         language: defaultLanguage,
@@ -1177,7 +1224,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // SPEC-013/014 — record stats and persist history. Best-effort:
                 // failures must not block paste (which already happened above).
                 let detectedLanguage = result.detectedLanguage
-                let modelLabel = self.defaultModel
+                // SPEC-044 — history rows carry which backend produced them.
+                let modelLabel = remoteSelected
+                    ? remoteProfile.map { "\($0.model) @ \($0.baseURL.host ?? "?")" } ?? "remote"
+                    : self.defaultModel
                 let audioDuration = result.audioSeconds
                 let saveTranscriptsFlag = self.saveTranscripts
                 let saveAudioFlag = self.saveAudio

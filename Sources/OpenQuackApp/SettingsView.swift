@@ -69,6 +69,14 @@ private struct GeneralPane: View {
     @AppStorage("vadSilenceSeconds")   private var vadSilenceSeconds: Double = 1.5
     @AppStorage("customWords")         private var customWords: String = ""
     @AppStorage("model")               private var model: String = "medium"
+    // SPEC-044 — remote transcription backend. The API key itself never
+    // touches UserDefaults: it lives in the Keychain, keyed by endpoint host.
+    @AppStorage("transcriptionBackend") private var transcriptionBackend: String = "local"
+    @AppStorage("remoteEndpoint")       private var remoteEndpoint: String = ""
+    @AppStorage("remoteModel")          private var remoteModel: String = "whisper-1"
+    @AppStorage("remoteAuthMethod")     private var remoteAuthMethod: String = "bearer"
+    @AppStorage("remoteAuthHeaderName") private var remoteAuthHeaderName: String = ""
+    @State private var remoteSecret: String = ""
     @AppStorage("inputDeviceUID")      private var inputDeviceUID: String = ""  // "" = system default
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
 
@@ -235,10 +243,59 @@ private struct GeneralPane: View {
         .onChange(of: appState.speechDownload) { _ in refreshDownloadedModels() }
     }
 
+    // MARK: SPEC-044 — remote transcription backend
+
+    private var remoteSecretHost: String? {
+        URL(string: remoteEndpoint.trimmingCharacters(in: .whitespacesAndNewlines))?.host
+    }
+
+    private func reloadRemoteSecret() {
+        remoteSecret = remoteSecretHost.flatMap { KeychainCredentialStore().secret(forHost: $0) } ?? ""
+    }
+
+    private func saveRemoteSecret(_ value: String) {
+        guard let host = remoteSecretHost else { return }
+        KeychainCredentialStore().setSecret(value.isEmpty ? nil : value, forHost: host)
+    }
+
+    @ViewBuilder
+    private var remoteBackendRows: some View {
+        TextField("Endpoint URL", text: $remoteEndpoint, prompt: Text("https://api.openai.com/v1"))
+            .autocorrectionDisabled()
+            .onChange(of: remoteEndpoint) { _ in reloadRemoteSecret() }
+        TextField("Model", text: $remoteModel, prompt: Text("whisper-1"))
+            .autocorrectionDisabled()
+        Picker("Authentication", selection: $remoteAuthMethod) {
+            Text("None").tag("none")
+            Text("API key (Bearer)").tag("bearer")
+            Text("Custom header").tag("header")
+        }
+        if remoteAuthMethod == "header" {
+            TextField("Header name", text: $remoteAuthHeaderName, prompt: Text("X-Api-Key"))
+                .autocorrectionDisabled()
+        }
+        if remoteAuthMethod != "none" {
+            SecureField("API key", text: $remoteSecret)
+                .onChange(of: remoteSecret) { saveRemoteSecret($0) }
+        }
+        Text("Recordings are sent to this OpenAI-compatible endpoint (POST /audio/transcriptions) while this is on. The key is stored in your Keychain, tied to this exact host — change the host and you'll enter it again.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
     var body: some View {
         Form {
             Section {
+                Picker("Transcription", selection: $transcriptionBackend) {
+                    Text("On this Mac").tag("local")
+                    Text("Remote endpoint (experimental)").tag("remote")
+                }
+                .help("Remote sends each recording to the server you configure below. Local is the default; nothing leaves your Mac unless you switch.")
+                if transcriptionBackend == "remote" {
+                    remoteBackendRows
+                }
                 speechModelPicker
+                    .disabled(transcriptionBackend == "remote")
                 speechDownloadRow
                 Text("Switches right away (downloads first if the model isn't on your Mac). A switch during dictation applies once it finishes.")
                     .font(.caption)
@@ -247,6 +304,7 @@ private struct GeneralPane: View {
             } header: {
                 SectionHeader("Speech-to-text")
             }
+            .onAppear { reloadRemoteSecret() }
 
             Section {
                 Picker("Microphone", selection: $inputDeviceUID) {

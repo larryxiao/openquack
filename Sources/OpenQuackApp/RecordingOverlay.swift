@@ -122,6 +122,8 @@ struct OverlayPill: View {
             if state.recordingMode == .agentKickoff,
                case .recording = state.phase {
                 modeChip
+            } else if showsRemoteChip {
+                remoteChip
             }
         }
         .padding(.horizontal, Theme.s16)
@@ -200,6 +202,37 @@ struct OverlayPill: View {
         )
     }
 
+    /// SPEC-044 — the privacy contract's network indicator for remote
+    /// transcription: visible the whole time audio destined for the wire is
+    /// being captured or sent.
+    private var showsRemoteChip: Bool {
+        guard state.remoteHost != nil else { return false }
+        switch state.phase {
+        case .recording, .transcribing: return true
+        default: return false
+        }
+    }
+
+    private var remoteChip: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "globe")
+                .font(.caption2)
+            Text("remote")
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundStyle(Theme.amber)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Theme.amber.opacity(0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Theme.amber.opacity(0.35), lineWidth: 1)
+                )
+        )
+    }
+
     private var sublineView: some View {
         Text(plainSubline)
             .font(.system(size: 12))
@@ -227,6 +260,9 @@ struct OverlayPill: View {
             let secs = String(format: "%.1f", state.elapsedSeconds)
             return "\(secs)s · press to stop"
         case .transcribing:
+            // SPEC-044 — never claim "On your Mac" when audio is being sent
+            // to a configured remote endpoint.
+            if let host = state.remoteHost { return "via \(host)" }
             return "On your Mac"
         case .polishing:
             return "On your Mac"
