@@ -6,7 +6,7 @@
 
 **OpenQuack** *Speak. Send. Privately.*
 
-Voice dictation for macOS. Nothing leaves your device — audio, text, nothing.
+Voice dictation for macOS. Nothing leaves your device by default — audio, text, nothing.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](docs/INSTALL.md)
@@ -41,7 +41,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 ## Why
 
-**Local.** Everything runs on your device — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction. And because there's no API call in the loop, it just keeps working — offline, on a plane, behind a corporate firewall.
+**Local.** Everything runs on your device by default — recording, transcription, optional polish. Nothing leaves: no audio, no text, no telemetry, no signup. Confidential work stays confidential, by construction. And because there's no API call in the default loop, it just keeps working — offline, on a plane, behind a corporate firewall. (Want a bigger model? You can point transcription at your own OpenAI-compatible endpoint — strictly opt-in, clearly indicated while in use.)
 
 **Fast, especially on long clips.** Whisper streams while you speak, so a 5-minute dictation finishes in about 3 seconds after you stop — the wait doesn't grow with length. ~2.6% word-error rate on real human speech on a baseline M4 / 16 GB, ~6.3% in realistic office noise. Full bench matrix in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md).
 
@@ -62,7 +62,7 @@ Speech recognition happens on your Mac. No cloud, no account, no signup, no tele
 
 ## Privacy, in one screen
 
-1. **Nothing leaves your device — audio, text, nothing.** Recording and transcription are fully local. Always.
+1. **Nothing leaves your device by default — audio, text, nothing.** Recording and transcription are fully local out of the box. The one exception: a remote transcription endpoint you configure yourself — off by default, and the recording overlay shows when it's in use.
 2. **No analytics, no telemetry, no signup.**
 
 The full privacy contract is in [`docs/VISION.md`](docs/VISION.md#privacy-contract).
