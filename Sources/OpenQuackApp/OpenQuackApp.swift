@@ -1338,6 +1338,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func transcriptionBackendChanged() {
         if remoteBackendSelected {
+            // A swap deferred while dictating must not fire (and possibly
+            // download a model) after a remote dictation ends.
+            pendingSwap = false
             guard transcriber == nil else { return }
             warmTask?.cancel()
             warmingModel = nil
@@ -1345,6 +1348,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if case .warming = appState.phase { appState.phase = .idle }
         } else if transcriber == nil {
             startWarm()
+        } else {
+            swapModel()   // re-derive any model change made while remote was active
         }
     }
 
