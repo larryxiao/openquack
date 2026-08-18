@@ -282,7 +282,13 @@ private struct GeneralPane: View {
         }
         remoteEndpoint = value
         reloadRemoteSecret()
-        refreshCFAccessState()
+        // Changing the endpoint mid-sign-in supersedes that flow — the row
+        // must not keep claiming a sign-in for a host no longer configured.
+        if cfState == .signingIn {
+            cancelCFSignIn()
+        } else {
+            refreshCFAccessState()
+        }
     }
 
     // MARK: SPEC-045 — Cloudflare Access sign-in
@@ -298,9 +304,11 @@ private struct GeneralPane: View {
         return comps.url
     }
 
-    private func refreshCFAccessState() {
+    /// `force` lets the sign-in flow's own completions repaint the row; every
+    /// other caller yields to an in-flight sign-in.
+    private func refreshCFAccessState(force: Bool = false) {
         guard remoteAuthMethod == "cloudflareAccess" else { return }
-        if cfState == .signingIn { return }   // an in-flight sign-in owns the row
+        if !force, cfState == .signingIn { return }   // an in-flight sign-in owns the row
         cfGeneration += 1
         let generation = cfGeneration
         cfState = .checking
@@ -309,7 +317,7 @@ private struct GeneralPane: View {
         Task.detached(priority: .userInitiated) {
             let installed = CloudflareAccessClient.cloudflaredPath() != nil
             let jwt = host.flatMap {
-                KeychainCredentialStore().secret(forHost: CloudflareAccessClient.credentialKey(forHost: $0))
+                CloudflareAccessClient.accessToken(forHost: $0, in: KeychainCredentialStore())
             }
             await MainActor.run {
                 guard generation == cfGeneration, remoteAuthMethod == "cloudflareAccess" else { return }
@@ -340,9 +348,8 @@ private struct GeneralPane: View {
                 await MainActor.run {
                     // Cancelled or superseded → discard; store nothing.
                     guard generation == cfGeneration else { return }
-                    KeychainCredentialStore().setSecret(jwt, forHost: CloudflareAccessClient.credentialKey(forHost: host))
-                    cfState = .checking
-                    refreshCFAccessState()
+                    CloudflareAccessClient.setAccessToken(jwt, forHost: host, in: KeychainCredentialStore())
+                    refreshCFAccessState(force: true)
                 }
             } catch {
                 let firstLine = "\(error)".components(separatedBy: "\n")[0]
@@ -356,13 +363,13 @@ private struct GeneralPane: View {
 
     private func cancelCFSignIn() {
         cfGeneration += 1   // orphans the in-flight Task's completion
-        cfState = .checking
-        refreshCFAccessState()
+        CloudflareAccessClient.cancelActiveLogin()   // and kills the cloudflared child
+        refreshCFAccessState(force: true)
     }
 
     private func signOutCloudflare() {
         if let host = remoteSecretHost {
-            KeychainCredentialStore().setSecret(nil, forHost: CloudflareAccessClient.credentialKey(forHost: host))
+            CloudflareAccessClient.setAccessToken(nil, forHost: host, in: KeychainCredentialStore())
         }
         refreshCFAccessState()
     }
@@ -392,7 +399,7 @@ private struct GeneralPane: View {
             // TimelineView re-evaluates periodically so an expiry that passes
             // while Settings sits open flips the row without a manual refresh.
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                if expires.timeIntervalSince(context.date) <= 60 {
+                if expires.timeIntervalSince(context.date) <= CloudflareAccessClient.expiryLeeway {
                     expiredRow
                 } else {
                     HStack(spacing: Theme.s8) {

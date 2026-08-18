@@ -7,11 +7,25 @@ import Foundation
 /// typed — the code never knows which IdP sits behind it.
 public enum CloudflareAccessClient {
 
+    /// Tokens within this margin of expiry are treated as expired everywhere
+    /// (send path and Settings UI alike).
+    public static let expiryLeeway: TimeInterval = 60
+
     /// Keychain account for the Access JWT: namespaced so it can never
     /// collide with (or destroy) a Bearer/header API key saved for the
     /// same host.
     public static func credentialKey(forHost host: String) -> String {
         "cf-access:\(host)"
+    }
+
+    /// Typed accessors so call sites can't accidentally spell the bare host
+    /// and read/clobber the Bearer slot.
+    public static func accessToken(forHost host: String, in store: any CredentialStore) -> String? {
+        store.secret(forHost: credentialKey(forHost: host))
+    }
+
+    public static func setAccessToken(_ jwt: String?, forHost host: String, in store: any CredentialStore) {
+        store.setSecret(jwt, forHost: credentialKey(forHost: host))
     }
 
     /// Pure-filesystem scan over $PATH plus known install dirs — fork-free,
@@ -26,17 +40,38 @@ public enum CloudflareAccessClient {
         let fm = FileManager.default
         for dir in dirs where !dir.isEmpty {
             let candidate = dir + "/cloudflared"
-            if fm.isExecutableFile(atPath: candidate) { return candidate }
+            var isDirectory: ObjCBool = false
+            // isExecutableFile alone returns true for directories too.
+            if fm.isExecutableFile(atPath: candidate),
+               fm.fileExists(atPath: candidate, isDirectory: &isDirectory),
+               !isDirectory.boolValue {
+                return candidate
+            }
         }
         return nil
     }
 
     /// Opens the browser and blocks until the user completes the IdP flow
     /// (or the timeout fires — abandoning the browser must not hang Settings).
+    /// Only one login runs at a time: starting a new one terminates the old.
     public static func login(appURL: URL) async throws {
         let bin = try requireCloudflared()
-        _ = try await runAsync(bin, ["access", "login", appURL.absoluteString], timeout: 300)
+        cancelActiveLogin()
+        _ = try await runAsync(bin, ["access", "login", appURL.absoluteString], timeout: 300, trackAsLogin: true)
     }
+
+    /// Terminates the in-flight `access login` child (Cancel button, or a
+    /// superseding sign-in). Safe to call when none is running.
+    public static func cancelActiveLogin() {
+        activeLoginLock.lock()
+        let process = activeLogin
+        activeLogin = nil
+        activeLoginLock.unlock()
+        if let process, process.isRunning { process.terminate() }
+    }
+
+    private static let activeLoginLock = NSLock()
+    nonisolated(unsafe) private static var activeLogin: Process?
 
     /// Reads the JWT `access login` minted for this app from cloudflared's
     /// local cache.
@@ -74,7 +109,7 @@ public enum CloudflareAccessClient {
     /// Usable = well-formed and not within `leeway` of expiry. Access treats
     /// an expired token as a *failed* authentication — worse than sending
     /// none — so near-expiry tokens are refused too.
-    public static func isUsable(_ jwt: String, leeway: TimeInterval = 60) -> Bool {
+    public static func isUsable(_ jwt: String, leeway: TimeInterval = CloudflareAccessClient.expiryLeeway) -> Bool {
         guard let exp = expiry(of: jwt) else { return false }
         return exp.timeIntervalSinceNow > leeway
     }
@@ -88,11 +123,11 @@ public enum CloudflareAccessClient {
         return bin
     }
 
-    private static func runAsync(_ launchPath: String, _ args: [String], timeout: TimeInterval) async throws -> String {
+    private static func runAsync(_ launchPath: String, _ args: [String], timeout: TimeInterval, trackAsLogin: Bool = false) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    continuation.resume(returning: try run(launchPath, args, timeout: timeout))
+                    continuation.resume(returning: try run(launchPath, args, timeout: timeout, trackAsLogin: trackAsLogin))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -111,11 +146,12 @@ public enum CloudflareAccessClient {
         }
     }
 
-    private static func drain(_ pipe: Pipe, into collector: PipeCollector) {
+    private static func drain(_ pipe: Pipe, into collector: PipeCollector, eof: DispatchSemaphore) {
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty {
                 handle.readabilityHandler = nil   // EOF
+                eof.signal()
             } else {
                 collector.append(data)
             }
@@ -126,7 +162,7 @@ public enum CloudflareAccessClient {
     /// 64 KB pipe would otherwise deadlock a chatty child), hard timeout with
     /// SIGKILL escalation. The deadline uses systemUptime, which pauses during
     /// machine sleep — a closed lid mid-login doesn't burn the budget.
-    private static func run(_ launchPath: String, _ args: [String], timeout: TimeInterval) throws -> String {
+    private static func run(_ launchPath: String, _ args: [String], timeout: TimeInterval, trackAsLogin: Bool = false) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: launchPath)
         process.arguments = args
@@ -137,9 +173,23 @@ public enum CloudflareAccessClient {
         process.standardInput = FileHandle.nullDevice
         let outCollector = PipeCollector()
         let errCollector = PipeCollector()
-        drain(stdout, into: outCollector)
-        drain(stderr, into: errCollector)
+        let outEOF = DispatchSemaphore(value: 0)
+        let errEOF = DispatchSemaphore(value: 0)
+        drain(stdout, into: outCollector, eof: outEOF)
+        drain(stderr, into: errCollector, eof: errEOF)
         try process.run()
+        if trackAsLogin {
+            activeLoginLock.lock()
+            activeLogin = process
+            activeLoginLock.unlock()
+        }
+        defer {
+            if trackAsLogin {
+                activeLoginLock.lock()
+                if activeLogin === process { activeLogin = nil }
+                activeLoginLock.unlock()
+            }
+        }
 
         let deadline = ProcessInfo.processInfo.systemUptime + timeout
         while process.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
@@ -154,6 +204,11 @@ public enum CloudflareAccessClient {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             throw EngineError.runtimeFailed("cloudflared \(args.prefix(2).joined(separator: " ")) timed out")
         }
+        // The last output chunk is delivered to readabilityHandler
+        // asynchronously — wait (bounded) for both pipes to reach EOF before
+        // reading, or a token printed right at exit could be truncated.
+        _ = outEOF.wait(timeout: .now() + 2)
+        _ = errEOF.wait(timeout: .now() + 2)
         guard process.terminationStatus == 0 else {
             let detail = errCollector.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)
             throw EngineError.runtimeFailed("cloudflared failed (exit \(process.terminationStatus))"
