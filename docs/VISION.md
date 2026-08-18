@@ -11,13 +11,13 @@ Voice input is the surface. The product is what happens after.
 ## What this isn't
 
 - Not just dictation — other tools type what you said, OpenQuack does what you said.
-- Not a cloud product. Audio never leaves your machine. Agents *may* call cloud APIs (e.g. Claude through Claude Code), but only because *you* configured them to — and the default agent backend is local-only.
+- Not a cloud product. Audio never leaves your machine unless you point it somewhere yourself. Agents *may* call cloud APIs (e.g. Claude through Claude Code), and transcription *may* use a remote endpoint you supply (SPEC-044) — but only because *you* configured them to. Every default is local-only.
 
 ## Why use it
 
 Three things, in priority order:
 
-1. **Local.** Recording, transcription, polishing — all on your Mac. Audio never leaves the machine. There's nothing to leak: no cloud upload, no telemetry, no signup. Confidential work stays confidential by construction, not by promise. Detailed [privacy contract](#privacy-contract) below.
+1. **Local.** Recording, transcription, polishing — all on your Mac, by default. Audio never leaves the machine unless you explicitly configure a remote transcription endpoint (SPEC-044). There's nothing to leak: no cloud upload, no telemetry, no signup. Confidential work stays confidential by construction, not by promise. Detailed [privacy contract](#privacy-contract) below.
 2. **Fast.** WhisperKit on Apple Silicon hits roughly 2.6% word-error rate on real human speech at ~0.22× realtime on a baseline M4 / 16 GB. Faster than typing in most cases, accurate on natural conversation. Numbers in [BENCHMARKS.md](BENCHMARKS.md); contributions of bench results from other Macs welcome.
 3. **Open.** MIT-licensed. Every line is auditable; every change happens in public. The version in your menu bar is the version in this repo. No tracking pixels, no analytics, no remote toggle that can change the rules.
 
@@ -67,10 +67,10 @@ The pieces have shipped. OpenQuack is the surface that ties them together.
 
 ## Privacy contract
 
-1. **Audio never leaves the machine.** Capture → transcription is fully local. Always. No telemetry of audio or transcripts.
+1. **Audio never leaves the machine, by default.** Capture → transcription is fully local out of the box, and there is no telemetry of audio or transcripts, ever. The one exception is a remote transcription endpoint *you* configure (SPEC-044): explicitly opt-in, off by default, destination chosen and typed by you.
 2. **Default agent does no network IO.** `passthrough` (paste-at-cursor) is the out-of-the-box behaviour.
 3. **Network-using agents are explicitly opt-in.** Switching from `passthrough` to `claude-code` triggers a clear consent prompt naming the destination ("this routes your transcripts to Anthropic via Claude Code").
-4. **Per-agent network indicator** is visible in the recording overlay any time a network-using agent is active.
+4. **Network indicator** is visible in the recording overlay any time a network-using agent or a remote transcription endpoint is active.
 5. **No analytics in the default build.** A future opt-in telemetry build for crash reports may exist, never on by default.
 
 ## Status
