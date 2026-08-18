@@ -37,7 +37,7 @@ Voice dictation for macOS. Nothing leaves your device by default — audio, text
 
 OpenQuack is a tiny menu-bar app for macOS. Press a hotkey, speak, press it again — your transcript appears at the cursor. Wherever you can type, you can talk.
 
-Speech recognition happens on your Mac. No cloud, no account, no signup, no telemetry.
+Speech recognition happens on your Mac by default. No cloud, no account, no signup, no telemetry.
 
 ## Why
 

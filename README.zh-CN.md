@@ -6,7 +6,7 @@
 
 **OpenQuack** *开口说，立即输入。隐私优先。*
 
-macOS 上的语音听写工具。一切都不离开你的设备 —— 音频不传、文本不传，什么都不传。
+macOS 上的语音听写工具。默认一切都不离开你的设备 —— 音频不传、文本不传，什么都不传。
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%2013%2B-lightgrey.svg)](docs/INSTALL.md)
@@ -56,7 +56,7 @@ OpenQuack 是一个 macOS 菜单栏小程序。按一下快捷键开口说话,�
 
 ## 隐私,一屏说清
 
-1. **什么都不离开你的设备 —— 音频、文本,什么都不传。** 录音和转写完全本地。永远是。
+1. **默认什么都不离开你的设备 —— 音频、文本,什么都不传。** 录音和转写开箱即用完全本地。唯一的例外:你可以自己配置一个远程转写端点(默认关闭,使用时录音悬浮层会明确显示)。
 2. **没有数据分析、没有遥测、不用注册。**
 
 完整的隐私契约见 [`docs/VISION.md`](docs/VISION.md#privacy-contract)。

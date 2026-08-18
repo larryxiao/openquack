@@ -73,6 +73,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var saveAudio: Bool {
         UserDefaults.standard.bool(forKey: "saveAudio")
     }
+    // SPEC-044 — remote transcription backend (explicitly opt-in in Settings).
+    private var remoteBackendSelected: Bool {
+        UserDefaults.standard.string(forKey: "transcriptionBackend") == "remote"
+    }
+    /// The configured remote profile, or nil when the backend is local or the
+    /// endpoint URL doesn't parse. A selected-but-broken config must surface an
+    /// error at transcribe time, never silently fall back to local.
+    private var remoteProfile: RemoteProfile? {
+        guard remoteBackendSelected,
+              let raw = UserDefaults.standard.string(forKey: "remoteEndpoint")?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty,
+              let url = URL(string: raw), url.host != nil
+        else { return nil }
+        let auth: RemoteAuth
+        switch UserDefaults.standard.string(forKey: "remoteAuthMethod") ?? "bearer" {
+        case "none":   auth = .none
+        case "header": auth = .header(name: UserDefaults.standard.string(forKey: "remoteAuthHeaderName") ?? "")
+        default:       auth = .bearer
+        }
+        return RemoteProfile(
+            baseURL: url,
+            model: UserDefaults.standard.string(forKey: "remoteModel") ?? "",
+            auth: auth
+        )
+    }
 
     private var lastVoiceAt: Date?
     private static let voiceThreshold: Float = 0.06
@@ -83,6 +109,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingInterrupted = false
     /// SPEC-036 — summary of the most recent recording for the bug-report dump.
     private var lastRecordingDiag: DiagnosticsReport.LastRecording?
+
+    /// SPEC-044 — backend snapshot taken when the recording starts, so the
+    /// destination the overlay showed is the destination actually used at stop
+    /// (a Settings change mid-recording applies to the *next* dictation).
+    private var recordingRemoteSelected = false
+    private var recordingRemoteProfile: RemoteProfile?
 
     private let appState = AppState()
     private let recorder = AudioRecorder()
@@ -254,8 +286,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if hasOnboarded {
-            // Seasoned user — warm the model in the background.
-            startWarm()
+            if remoteBackendSelected {
+                // SPEC-044 — don't block dictation on (or download) a local
+                // model the remote path doesn't use; warm lazily if the user
+                // switches back (transcriptionBackendChanged / recovery).
+                appState.phase = .idle
+            } else {
+                // Seasoned user — warm the model in the background.
+                startWarm()
+            }
         } else {
             // First launch. Warm the transcriber the moment the onboarding's
             // model download finishes, not when the window closes — the demo
@@ -775,7 +814,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "prompt": systemInstructions.map { "custom(\($0.count)c)" } ?? "default",
         ]
         if let ms = result.llmMillis { record["ms"] = ms }
-        if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
+        // SPEC-044 — the remote path promises "no transcript logging"; the
+        // debug record embeds raw + polished text, so skip it entirely there.
+        // Gate on the recording's snapshot, not the live setting — a mid-flight
+        // backend switch must not resurrect the log for a remote transcript.
+        if !recordingRemoteSelected,
+           let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             Self.polishLog.debug("\(json, privacy: .public)")
         }
@@ -803,8 +847,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // isn't warm yet, framesHandler stays nil and we pay nothing.
             let language = defaultLanguage
             let words = customWords
+            // SPEC-044 — snapshot the backend for this recording's whole
+            // lifetime (indicator + transcription must agree).
+            recordingRemoteSelected = remoteBackendSelected
+            recordingRemoteProfile = remoteProfile
             await tearDownFramesPump()
-            if let streamer {
+            // SPEC-044 — no local streaming work when the audio is headed to a
+            // remote endpoint anyway.
+            if let streamer, !recordingRemoteSelected {
                 // Pump pattern: the audio thread `yield`s into an unbounded
                 // AsyncStream; a single Task drains it serially into the
                 // actor. This preserves FIFO order — `Task { await ... }` per
@@ -836,10 +886,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let inputUID = UserDefaults.standard.string(forKey: "inputDeviceUID")
                 _ = try recorder.start(outputURL: lastRecordingURL, inputDeviceUID: inputUID)
+                let remoteHost = recordingRemoteSelected
+                    ? (recordingRemoteProfile?.baseURL.host ?? "remote endpoint") : nil
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
                     appState.resetLevels()
+                    appState.remoteHost = remoteHost   // SPEC-044
                     appState.lastNotice = nil          // SPEC-036
                     recordingInterrupted = false       // SPEC-036
                     lastVoiceAt = nil
@@ -967,7 +1020,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 appState.lastCaptureSilent = false   // a non-silent capture clears the warning
             }
 
-            guard let engine = transcriber else {
+            // SPEC-044 — use the backend snapshotted at recording start, not
+            // the live setting: what the overlay disclosed is what runs.
+            let remoteSelected = recordingRemoteSelected
+            let remoteProfile = recordingRemoteProfile
+            if !remoteSelected, transcriber == nil {
                 await MainActor.run {
                     appState.phase = .error("Still getting ready — try again in a moment.")
                 }
@@ -1008,7 +1065,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let pathLabel: String
                 var chunkCount: Int?
                 var chunkFailures: Int?
-                if audioDuration >= Self.streamingThreshold, let streamer {
+                if remoteSelected {
+                    // SPEC-044 — remote path. Always offline-style (no
+                    // streaming over the wire); the recording is re-encoded to
+                    // 16 kHz mono WAV and POSTed to the configured endpoint.
+                    await tearDownFramesPump()
+                    if let streamer { await streamer.cancel() }
+                    pathLabel = "remote"
+                    guard let profile = remoteProfile else {
+                        throw EngineError.runtimeFailed("Remote endpoint isn't configured — set its URL in Settings → General.")
+                    }
+                    let remote = RemoteEngine(profile: profile)
+                    result = try await remote.transcribe(audioFile: url, language: defaultLanguage)
+                } else if audioDuration >= Self.streamingThreshold, let streamer {
                     await tearDownFramesPump()
                     let r = try await streamer.finish()
                     chunkCount = r.chunkCount
@@ -1025,6 +1094,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     await tearDownFramesPump()
                     if let streamer { await streamer.cancel() }
                     pathLabel = "offline"
+                    guard let engine = transcriber else {
+                        throw EngineError.runtimeFailed("Speech model isn't loaded yet")
+                    }
                     result = try await engine.transcribe(
                         audioFile: url,
                         language: defaultLanguage,
@@ -1177,7 +1249,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // SPEC-013/014 — record stats and persist history. Best-effort:
                 // failures must not block paste (which already happened above).
                 let detectedLanguage = result.detectedLanguage
-                let modelLabel = self.defaultModel
+                // SPEC-044 — history rows carry which backend produced them.
+                let modelLabel = remoteSelected
+                    ? remoteProfile.map { "\($0.model) @ \($0.baseURL.host ?? "?")" } ?? "remote"
+                    : self.defaultModel
                 let audioDuration = result.audioSeconds
                 let saveTranscriptsFlag = self.saveTranscripts
                 let saveAudioFlag = self.saveAudio
@@ -1198,6 +1273,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             } catch {
+                // SPEC-044 — failures need a diagnostics trail too (a 401/timeout
+                // is exactly when the bug report matters). Diagnostics persist and
+                // export, so keep only the error's first line — a server's error
+                // body (second line) could echo credentials or transcript.
+                let firstLine = "\(error)".components(separatedBy: "\n")[0]
+                Diagnostics.shared.log(
+                    .transcription, .error,
+                    "transcribe failed (\(remoteSelected ? "remote" : "local")): \(firstLine)"
+                )
                 await MainActor.run {
                     appState.phase = .error("Transcription failed: \(error)")
                     schedulePolishIdleUnload()
@@ -1214,6 +1298,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func startWarm(force: Bool = false) {
         if !force, transcriber != nil { return }
+        // SPEC-044 — never stomp a live dictation's phase (possible now that a
+        // remote dictation can run with no local engine loaded); warm at idle.
+        if isDictating { pendingSwap = true; return }
         let model = defaultModel
         if !force, warmingModel == model { return }   // already warming this one
         warmTask?.cancel()
@@ -1245,6 +1332,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startWarm(force: true)
     }
 
+    /// SPEC-044 — Settings backend picker changed. Switching to remote releases
+    /// any launch warm-up gate (no local model needed); switching back to local
+    /// warms the engine that launch skipped.
+    @MainActor
+    func transcriptionBackendChanged() {
+        if remoteBackendSelected {
+            // A swap deferred while dictating must not fire (and possibly
+            // download a model) after a remote dictation ends.
+            pendingSwap = false
+            guard transcriber == nil else { return }
+            warmTask?.cancel()
+            warmingModel = nil
+            appState.speechDownload = .inactive
+            if case .warming = appState.phase { appState.phase = .idle }
+        } else if transcriber == nil {
+            startWarm()
+        } else {
+            swapModel()   // re-derive any model change made while remote was active
+        }
+    }
+
     /// Phase-observer hook: apply a deferred swap once dictation ends.
     @MainActor
     func applyPendingSwapIfIdle() {
@@ -1255,6 +1363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func warmBody(model: String, force: Bool = false) async {
         if !force, self.transcriber != nil { return }
+        // SPEC-044 — a backend switch may have cancelled this warm (and set
+        // the phase to idle) before we got scheduled; don't resurrect .warming.
+        if Task.isCancelled { return }
         await MainActor.run {
             appState.phase = .warming(modelLabel: model)
             // Clear any banner left by a just-retargeted warm-up so it doesn't
@@ -1289,6 +1400,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // load window overlapped a dictation, don't swap under it — defer to
             // idle. (A large model briefly holds old + new engine in memory here.)
             let swapped = await MainActor.run { () -> Bool in
+                // SPEC-044 — a backend switch cancelled us mid-load: the phase
+                // is already idle and the engine isn't wanted; drop it.
+                if Task.isCancelled { return false }
                 // A dictation started during the load window: don't swap under it.
                 // We discard this just-loaded engine and re-load on idle rather
                 // than stash it — keeps the swap state machine to one in-flight

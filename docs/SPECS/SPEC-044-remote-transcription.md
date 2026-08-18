@@ -43,14 +43,15 @@ No secret lives in the profile or in UserDefaults. Secrets go in the Keychain vi
 2. `POST {base}/audio/transcriptions` (path not appended if the user already pasted the full path), multipart: `file`, `model`, optional `language`, `response_format=json`.
 3. Parse `{"text": …}`; plain-text bodies accepted as a fallback for non-conforming servers.
 
-Transport rules: HTTPS required (plain HTTP allowed for loopback only, for local whisper.cpp/Ollama-style servers); ephemeral `URLSession` so no response ever lands in the on-disk URL cache; 60 s request timeout. Errors surface through the existing `EngineError` path — a misconfigured remote **errors**, it never silently falls back to local.
+Transport rules: HTTPS required (plain HTTP allowed for loopback only, for local whisper.cpp/Ollama-style servers); HTTP redirects refused — audio and credential go only to the configured host, never wherever a 3xx points; URLs with embedded `user:pass@` rejected (and auto-stripped in Settings) so no secret can ride into UserDefaults; ephemeral `URLSession` so no response ever lands in the on-disk URL cache; 60 s request timeout. Errors surface through the existing `EngineError` path — a misconfigured remote **errors**, it never silently falls back to local.
 
 `EngineKind` is untouched: the app constructs `RemoteEngine` directly (as it already does `WhisperKitEngine`), because `makeEngine(model:)` cannot carry profile config. CLI/bench remote support is out of scope.
 
 ### App integration
 
 - New Settings rows under Speech-to-text: a `Transcription` picker (`On this Mac` / `Remote endpoint (experimental)`), and when remote: endpoint URL, model, auth method, and a Keychain-backed API-key field tied to the URL's host. UserDefaults keys: `transcriptionBackend`, `remoteEndpoint`, `remoteModel`, `remoteAuthMethod`, `remoteAuthHeaderName`.
-- Dictation flow: when remote is selected the offline file path is always used (the streaming path never uploads), the local warm-engine guard is skipped, and diagnostics record `path=remote`.
+- Dictation flow: the backend is **snapshotted at recording start**, so the destination the overlay disclosed is the destination used at stop (a Settings change applies to the next dictation). When remote is selected the offline file path is always used, the local streaming transcriber is not fed (no wasted local compute), the local warm-engine guard is skipped, and diagnostics record `path=remote`; failures log a diagnostics event too (backend kind + error, never transcript).
+- Launch: with remote selected, the local model warm-up (and its potential multi-GB download) is skipped and the app goes straight to idle; switching back to local in Settings warms lazily, as does history recovery.
 - History rows record the backend (`modelID` becomes `"<model> @ <host>"` for remote runs). Pending-recovery re-transcription stays local.
 - Agent-kickoff recordings follow the same transcription backend as dictation.
 
@@ -58,8 +59,10 @@ Transport rules: HTTPS required (plain HTTP allowed for loopback only, for local
 
 While a remote profile is active, the recording overlay must never claim locality:
 
-- an amber `globe · remote` chip is shown during recording and transcribing (same treatment as the SPEC-031 kickoff chip, which is the contract's existing network indicator);
-- the transcribing subline reads `via <host>` instead of `On your Mac` (polishing keeps `On your Mac` — polish stays local).
+- an amber `globe · remote` chip is shown during recording and transcribing (same treatment as the SPEC-031 kickoff chip, which is the contract's existing network indicator); a kickoff recording with a remote backend shows **both** chips — each network hop gets disclosed;
+- the transcribing subline reads `via <host>` instead of `On your Mac` (polishing keeps `On your Mac` — polish stays local);
+- the menu-bar popover follows suit (`Sending to <host>…` / `transcribing via <host>` instead of the local claims);
+- the polish debug log (which embeds raw + polished text) is suppressed for remote dictations.
 
 VISION.md privacy-contract clause 1 and README wording change from unconditional to default-scoped in the same PR; the sentence pattern follows the agent carve-out already in VISION.md.
 
@@ -78,7 +81,7 @@ This is the first feature that can send audio off-device, so the change is fence
 - [ ] Default build behaviour unchanged: with `transcriptionBackend` unset or `local`, no code in this spec executes on the dictation path (code review + existing tests green).
 - [ ] `RemoteEngine` sends a well-formed OpenAI-compatible multipart request with bearer / custom-header / no auth (unit tests: request shape, auth headers, full-path URL not doubled).
 - [ ] Credential is looked up strictly by request host; missing credential fails **before** any network IO (unit test).
-- [ ] Non-HTTPS endpoints rejected except loopback (unit test).
+- [ ] Non-HTTPS endpoints rejected except loopback; embedded `user:pass@` rejected; redirects refused without a second request (unit tests).
 - [ ] Upload is 16 kHz mono WAV regardless of capture format (unit tests: resampler output format; multipart size bound).
 - [ ] Non-2xx responses surface status + body detail as an `EngineError` (unit test).
 - [ ] Overlay shows the remote chip and `via <host>` subline during a remote dictation, and `On your Mac` never appears while remote is active (manual: configure endpoint, dictate, observe overlay).
@@ -93,4 +96,5 @@ This is the first feature that can send audio off-device, so the change is fence
 - **CLI + bench remote support**, and bench methodology for network-dominated latency.
 - **Automatic fallback to local on remote failure** — deliberate: silent fallback hides misconfiguration; revisit with real usage data.
 - **Remote polish** — the polish layer could reuse `RemoteProfile`, but that is its own spec.
+- **Translated README stubs** (`docs/i18n/*`) — machine-translated; the "nothing leaves" → "by default" sweep lands with the next translation refresh (English README, zh-CN README, docs site, VISION, and in-app copy are amended in this spec).
 - **`detectedLanguage` from remote** (`verbose_json` is not universally supported; SPEC-035 normalisation falls back to system language).

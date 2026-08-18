@@ -93,6 +93,10 @@ public final class AppState: ObservableObject {
     /// banner/notification copy ("No sound from <device>").
     @Published public var lastSilentDeviceName: String?
     @Published public var modelLabel: String = "medium"
+    /// SPEC-044 — host of the remote endpoint this recording will be sent to,
+    /// or nil when transcription is local. Drives the overlay's network
+    /// indicator (privacy contract).
+    @Published public var remoteHost: String?
     /// Lifecycle of an update check — drives both the menu-bar 🦆⬆
     /// indicator and the Settings → About status line. Single source of
     /// truth so a manual "Check for updates" click can flip from

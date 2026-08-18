@@ -239,7 +239,8 @@ struct MenuBarContent: View {
         case .transcribing:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text("Audio stays on your Mac.")
+                // SPEC-044 — never claim locality while a remote backend runs.
+                Text(state.remoteHost.map { "Sending to \($0)…" } ?? "Audio stays on your Mac.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
         case .warming:
@@ -316,6 +317,7 @@ struct MenuBarContent: View {
         case .recording:
             return "Press to finish."
         case .transcribing:
+            if let host = state.remoteHost { return "Wait a moment — transcribing via \(host)." }
             return "Wait a moment — transcribing locally."
         case .polishing:
             return "Polishing your text…"

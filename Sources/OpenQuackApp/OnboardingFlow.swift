@@ -364,8 +364,8 @@ private struct WelcomeStep: View {
             VStack(spacing: Theme.s8) {
                 privacyRow(
                     icon: "lock.shield",
-                    title: "Local-only by design",
-                    body: "Audio never leaves your Mac. No cloud, no signup, no telemetry."
+                    title: "Local by default, by design",
+                    body: "Audio never leaves your Mac by default. No cloud, no signup, no telemetry."
                 )
                 privacyRow(
                     icon: "bolt.fill",
@@ -491,7 +491,7 @@ private struct MicrophoneStep: View {
         case .denied, .restricted:
             return "Microphone access was denied. Open System Settings → Privacy & Security → Microphone to enable it."
         case .notDetermined:
-            return "OpenQuack transcribes locally — audio never leaves your Mac. Click Allow microphone to grant access."
+            return "OpenQuack transcribes locally by default — audio never leaves your Mac. Click Allow microphone to grant access."
         @unknown default:
             return ""
         }
@@ -716,7 +716,7 @@ private struct DoneStep: View {
                 tipRow(symbol: "slider.horizontal.3",
                        text: "Push-to-talk, custom dictionary, and auto-stop live in Settings.")
                 tipRow(symbol: "lock.shield",
-                       text: "Audio stays on your Mac. Dictation makes no network calls.")
+                       text: "Audio stays on your Mac. Dictation makes no network calls unless you opt in to a remote endpoint in Settings.")
                 tipRow(symbol: "sparkles",
                        text: "🦆 has more tricks up its feathers. Stay tuned.")
             }

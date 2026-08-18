@@ -1,0 +1,41 @@
+import Foundation
+
+/// SPEC-044 — where a remote transcription request goes and how it proves
+/// identity. The secret itself never lives here: engines fetch it from a
+/// `CredentialStore` keyed by the endpoint's host, so a profile whose URL is
+/// later edited can never carry the old host's credential to the new one.
+public struct RemoteProfile: Sendable, Equatable {
+    public var baseURL: URL
+    public var model: String
+    public var auth: RemoteAuth
+
+    public init(baseURL: URL, model: String, auth: RemoteAuth) {
+        self.baseURL = baseURL
+        self.model = model
+        self.auth = auth
+    }
+
+    /// POST target: `{base}/audio/transcriptions` (OpenAI-compatible), unless
+    /// the user already pasted the full path (with or without trailing slash).
+    public var requestURL: URL {
+        // URLComponents, not URL.path — the latter silently drops a trailing
+        // slash, which would defeat both the suffix check and the rebuild.
+        if var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) {
+            var path = comps.path
+            while path.hasSuffix("/") { path.removeLast() }
+            if path.hasSuffix("/audio/transcriptions") {
+                comps.path = path
+                return comps.url ?? baseURL
+            }
+        }
+        return baseURL
+            .appendingPathComponent("audio")
+            .appendingPathComponent("transcriptions")
+    }
+}
+
+public enum RemoteAuth: Sendable, Equatable {
+    case none
+    case bearer                 // Authorization: Bearer <secret>
+    case header(name: String)   // <name>: <secret>
+}

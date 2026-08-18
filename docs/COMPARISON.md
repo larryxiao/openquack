@@ -53,8 +53,9 @@ optimises for; pick the one whose tradeoffs match yours.
   notes, lecture / meeting fieldnotes, brain-dumping a thought. The
   streaming-chunk architecture means the wait after stop is
   ~constant rather than scaling with clip length.
-- Privacy is non-negotiable. Audio never leaves the device. No
-  account, no telemetry, MIT-licensed so you can verify.
+- Privacy is non-negotiable. Audio never leaves the device unless
+  you opt in to a remote endpoint. No account, no telemetry,
+  MIT-licensed so you can verify.
 - You want polish as a separate concern, not bundled in. The default
   pipeline is raw transcript → regex cleanup → paste. Optional LLM
   polish via Ollama / MLX-LM is opt-in.
