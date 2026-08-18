@@ -124,6 +124,18 @@ public final class RemoteEngine: TranscriptionEngine {
                 throw EngineError.runtimeFailed("Custom auth header name is empty — set it in Settings → General.")
             }
             request.setValue(try secret(), forHTTPHeaderField: trimmed)
+        case .cloudflareAccess:
+            guard let host = target.host,
+                  let jwt = credentials.secret(forHost: host), !jwt.isEmpty
+            else {
+                throw EngineError.runtimeFailed("Not signed in to \(target.host ?? "this endpoint") — sign in in Settings → General.")
+            }
+            // An expired Access token reads as a *failed* authentication
+            // server-side — refuse to send it rather than let it burn.
+            guard CloudflareAccessClient.isUsable(jwt) else {
+                throw EngineError.runtimeFailed("Access session expired — sign in again in Settings → General.")
+            }
+            request.setValue(jwt, forHTTPHeaderField: "cf-access-token")
         }
     }
 

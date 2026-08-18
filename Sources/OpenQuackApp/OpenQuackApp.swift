@@ -89,9 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return nil }
         let auth: RemoteAuth
         switch UserDefaults.standard.string(forKey: "remoteAuthMethod") ?? "bearer" {
-        case "none":   auth = .none
-        case "header": auth = .header(name: UserDefaults.standard.string(forKey: "remoteAuthHeaderName") ?? "")
-        default:       auth = .bearer
+        case "none":             auth = .none
+        case "header":           auth = .header(name: UserDefaults.standard.string(forKey: "remoteAuthHeaderName") ?? "")
+        case "cloudflareAccess": auth = .cloudflareAccess   // SPEC-045
+        default:                 auth = .bearer
         }
         return RemoteProfile(
             baseURL: url,
