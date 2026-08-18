@@ -8,12 +8,16 @@ final class RemoteStubURLProtocol: URLProtocol {
     nonisolated(unsafe) static var lastBody: Data?
     nonisolated(unsafe) static var status = 200
     nonisolated(unsafe) static var responseBody = Data(#"{"text": "hello"}"#.utf8)
+    nonisolated(unsafe) static var redirectTo: String?
+    nonisolated(unsafe) static var requestCount = 0
 
     static func reset() {
         lastRequest = nil
         lastBody = nil
         status = 200
         responseBody = Data(#"{"text": "hello"}"#.utf8)
+        redirectTo = nil
+        requestCount = 0
     }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -22,6 +26,20 @@ final class RemoteStubURLProtocol: URLProtocol {
 
     override func startLoading() {
         Self.lastRequest = request
+        Self.requestCount += 1
+        if let location = Self.redirectTo, Self.requestCount == 1 {
+            let redirect = HTTPURLResponse(
+                url: request.url!, statusCode: 307, httpVersion: nil,
+                headerFields: ["Location": location]
+            )!
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: URL(string: location)!), redirectResponse: redirect)
+            // If the session's delegate refuses the redirect, the task
+            // completes with this 307 and no second request is made.
+            client?.urlProtocol(self, didReceive: redirect, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data())
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         if let stream = request.httpBodyStream {
             var data = Data()
             stream.open()
@@ -206,6 +224,39 @@ final class RemoteEngineTests: XCTestCase {
             XCTAssertTrue("\(error)".contains("401"))
             XCTAssertTrue("\(error)".contains("bad key"))
         }
+    }
+
+    func testRedirectIsRefused() async {
+        RemoteStubURLProtocol.redirectTo = "https://evil.example/steal"
+        let store = InMemoryCredentialStore(["api.example.com": "sk-test"])
+        let engine = makeEngine(base: "https://api.example.com/v1", auth: .bearer, store: store)
+        do {
+            _ = try await engine.transcribe(audioFile: wavURL, language: nil)
+            XCTFail("expected the refused redirect to surface as an HTTP error")
+        } catch {
+            XCTAssertTrue("\(error)".contains("307"))
+        }
+        XCTAssertEqual(RemoteStubURLProtocol.requestCount, 1, "audio must never follow a redirect to another host")
+    }
+
+    func testUserinfoInURLRejected() async {
+        let engine = makeEngine(base: "https://user:tok@api.example.com/v1")
+        do {
+            _ = try await engine.transcribe(audioFile: wavURL, language: nil)
+            XCTFail("expected embedded-credentials rejection")
+        } catch {
+            XCTAssertTrue("\(error)".contains("embed"))
+        }
+        XCTAssertNil(RemoteStubURLProtocol.lastRequest)
+    }
+
+    func testTrailingSlashVariants() {
+        func target(_ s: String) -> String {
+            RemoteProfile(baseURL: URL(string: s)!, model: "m", auth: .none).requestURL.absoluteString
+        }
+        XCTAssertEqual(target("https://h/v1/audio/transcriptions/"), "https://h/v1/audio/transcriptions")
+        XCTAssertEqual(target("https://h/v1/"), "https://h/v1/audio/transcriptions")
+        XCTAssertEqual(target("https://h"), "https://h/audio/transcriptions")
     }
 
     func testParseTextFallsBackToPlainBody() throws {

@@ -51,7 +51,9 @@ public final class RemoteEngine: TranscriptionEngine {
             language: language
         )
 
-        let (data, response) = try await session.data(for: request)
+        // Redirects are refused: audio + credential go only to the host the
+        // user configured, never wherever a 3xx points.
+        let (data, response) = try await session.data(for: request, delegate: RedirectRefusal.shared)
         guard let http = response as? HTTPURLResponse else {
             throw EngineError.runtimeFailed("Remote endpoint returned a non-HTTP response")
         }
@@ -73,11 +75,24 @@ public final class RemoteEngine: TranscriptionEngine {
         )
     }
 
+    private final class RedirectRefusal: NSObject, URLSessionTaskDelegate {
+        static let shared = RedirectRefusal()
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest
+        ) async -> URLRequest? { nil }
+    }
+
     /// Plain HTTP is allowed only for loopback (local whisper.cpp/Ollama-style
     /// servers); anything else must be HTTPS.
     static func validate(endpoint: URL) throws {
         guard let host = endpoint.host, !host.isEmpty else {
             throw EngineError.runtimeFailed("Remote endpoint URL has no host — check Settings → General.")
+        }
+        guard endpoint.user == nil, endpoint.password == nil else {
+            throw EngineError.runtimeFailed("Remote endpoint URL must not embed credentials — use the API key field in Settings instead.")
         }
         let loopback = host == "localhost" || host == "127.0.0.1" || host == "::1"
         guard endpoint.scheme == "https" || (endpoint.scheme == "http" && loopback) else {

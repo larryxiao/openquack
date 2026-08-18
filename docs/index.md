@@ -1,5 +1,5 @@
 ---
-title: OpenQuack — Local-only voice dictation for macOS
+title: OpenQuack — Local-first voice dictation for macOS
 description: Free, open-source Mac dictation app. Press a hotkey, speak, transcript appears at your cursor. WhisperKit on Apple Silicon, 99 languages, no cloud, no telemetry, MIT licensed.
 image: https://github.com/larryxiao/openquack/raw/main/docs/images/banner.png
 twitter:
@@ -9,10 +9,10 @@ twitter:
 
 # OpenQuack
 
-**Local-only voice dictation for macOS.** Press a hotkey, speak, the transcript appears at your cursor. Nothing leaves your device — audio, text, telemetry, nothing.
+**Local-first voice dictation for macOS.** Press a hotkey, speak, the transcript appears at your cursor. Nothing leaves your device by default — audio, text, telemetry, nothing.
 
 - **MIT licensed** — every line is auditable
-- **All local** — Whisper runs on Apple Silicon via WhisperKit; no cloud, no account, no subscription
+- **Local by default** — Whisper runs on Apple Silicon via WhisperKit; no cloud, no account, no subscription
 - **Fast** — ~2.6% word-error rate on real human speech, ~3 seconds post-stop wait even on 5-minute clips
 - **99 languages** — English, Chinese, Japanese, Korean, Spanish, French, German, and 92 more
 - **Tiny** — ~8 MB menu-bar app plus the speech model on first run
@@ -61,7 +61,7 @@ macOS 13 (Ventura) or later on Apple Silicon (M1 or newer). Intel Macs are not s
 On real human speech, ~2.6% word-error rate with the default model on an M4 / 16 GB Mac. In realistic office noise: ~6.3% WER. Full benchmark matrix in [BENCHMARKS.md](BENCHMARKS.md).
 
 **Does it send my audio or transcripts anywhere?**
-No. Audio is recorded, transcribed, and discarded entirely on your Mac. No analytics, no telemetry, no account, no API calls in the dictation path. Source is MIT-licensed and auditable.
+Not by default. Audio is recorded, transcribed, and discarded entirely on your Mac — no analytics, no telemetry, no account, no API calls in the dictation path. The one opt-in exception: you can point transcription at your own OpenAI-compatible endpoint, and the overlay shows whenever that's in use. Source is MIT-licensed and auditable.
 
 **How is this different from the built-in macOS Dictation?**
 macOS Dictation sends audio to Apple's servers by default. OpenQuack runs fully local, supports 99 languages with no toggle, uses Whisper rather than Apple's proprietary model, and is open source.

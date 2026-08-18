@@ -250,6 +250,14 @@ private struct GeneralPane: View {
     }
 
     private func reloadRemoteSecret() {
+        // Strip pasted user:pass@ — secrets never persist in UserDefaults.
+        if var comps = URLComponents(string: remoteEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
+           comps.user != nil || comps.password != nil {
+            comps.user = nil
+            comps.password = nil
+            remoteEndpoint = comps.string ?? ""
+            return   // onChange re-enters with the sanitised URL
+        }
         remoteSecret = remoteSecretHost.flatMap { KeychainCredentialStore().secret(forHost: $0) } ?? ""
     }
 
@@ -291,6 +299,9 @@ private struct GeneralPane: View {
                     Text("Remote endpoint (experimental)").tag("remote")
                 }
                 .help("Remote sends each recording to the server you configure below. Local is the default; nothing leaves your Mac unless you switch.")
+                .onChange(of: transcriptionBackend) { _ in
+                    (NSApp.delegate as? AppDelegate)?.transcriptionBackendChanged()
+                }
                 if transcriptionBackend == "remote" {
                     remoteBackendRows
                 }

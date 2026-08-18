@@ -119,10 +119,14 @@ struct OverlayPill: View {
                 sublineView
             }
             Spacer(minLength: 0)
+            // Both chips can coexist: a kickoff recording with a remote
+            // backend uploads audio *and* routes the transcript to claude —
+            // each network hop gets disclosed.
             if state.recordingMode == .agentKickoff,
                case .recording = state.phase {
                 modeChip
-            } else if showsRemoteChip {
+            }
+            if showsRemoteChip {
                 remoteChip
             }
         }

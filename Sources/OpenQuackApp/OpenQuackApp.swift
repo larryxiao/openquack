@@ -110,6 +110,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC-036 — summary of the most recent recording for the bug-report dump.
     private var lastRecordingDiag: DiagnosticsReport.LastRecording?
 
+    /// SPEC-044 — backend snapshot taken when the recording starts, so the
+    /// destination the overlay showed is the destination actually used at stop
+    /// (a Settings change mid-recording applies to the *next* dictation).
+    private var recordingRemoteSelected = false
+    private var recordingRemoteProfile: RemoteProfile?
+
     private let appState = AppState()
     private let recorder = AudioRecorder()
     private let hotkey = HotkeyManager()
@@ -280,8 +286,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if hasOnboarded {
-            // Seasoned user — warm the model in the background.
-            startWarm()
+            if remoteBackendSelected {
+                // SPEC-044 — don't block dictation on (or download) a local
+                // model the remote path doesn't use; warm lazily if the user
+                // switches back (transcriptionBackendChanged / recovery).
+                appState.phase = .idle
+            } else {
+                // Seasoned user — warm the model in the background.
+                startWarm()
+            }
         } else {
             // First launch. Warm the transcriber the moment the onboarding's
             // model download finishes, not when the window closes — the demo
@@ -801,7 +814,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "prompt": systemInstructions.map { "custom(\($0.count)c)" } ?? "default",
         ]
         if let ms = result.llmMillis { record["ms"] = ms }
-        if let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
+        // SPEC-044 — the remote path promises "no transcript logging"; the
+        // debug record embeds raw + polished text, so skip it entirely there.
+        if !remoteBackendSelected,
+           let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             Self.polishLog.debug("\(json, privacy: .public)")
         }
@@ -829,8 +845,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // isn't warm yet, framesHandler stays nil and we pay nothing.
             let language = defaultLanguage
             let words = customWords
+            // SPEC-044 — snapshot the backend for this recording's whole
+            // lifetime (indicator + transcription must agree).
+            recordingRemoteSelected = remoteBackendSelected
+            recordingRemoteProfile = remoteProfile
             await tearDownFramesPump()
-            if let streamer {
+            // SPEC-044 — no local streaming work when the audio is headed to a
+            // remote endpoint anyway.
+            if let streamer, !recordingRemoteSelected {
                 // Pump pattern: the audio thread `yield`s into an unbounded
                 // AsyncStream; a single Task drains it serially into the
                 // actor. This preserves FIFO order — `Task { await ... }` per
@@ -862,8 +884,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let inputUID = UserDefaults.standard.string(forKey: "inputDeviceUID")
                 _ = try recorder.start(outputURL: lastRecordingURL, inputDeviceUID: inputUID)
-                let remoteHost = remoteBackendSelected
-                    ? (remoteProfile?.baseURL.host ?? "remote endpoint") : nil
+                let remoteHost = recordingRemoteSelected
+                    ? (recordingRemoteProfile?.baseURL.host ?? "remote endpoint") : nil
                 await MainActor.run {
                     appState.phase = .recording
                     appState.elapsedSeconds = 0
@@ -996,9 +1018,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 appState.lastCaptureSilent = false   // a non-silent capture clears the warning
             }
 
-            // SPEC-044 — a remote dictation doesn't need the local engine warm.
-            let remoteSelected = remoteBackendSelected
-            let remoteProfile = self.remoteProfile
+            // SPEC-044 — use the backend snapshotted at recording start, not
+            // the live setting: what the overlay disclosed is what runs.
+            let remoteSelected = recordingRemoteSelected
+            let remoteProfile = recordingRemoteProfile
             if !remoteSelected, transcriber == nil {
                 await MainActor.run {
                     appState.phase = .error("Still getting ready — try again in a moment.")
@@ -1248,6 +1271,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             } catch {
+                // SPEC-044 — failures need a diagnostics trail too (a 401/timeout
+                // is exactly when the bug report matters). Error detail carries
+                // status + server message, never transcript or credentials.
+                Diagnostics.shared.log(
+                    .transcription, .error,
+                    "transcribe failed (\(remoteSelected ? "remote" : "local")): \(error)"
+                )
                 await MainActor.run {
                     appState.phase = .error("Transcription failed: \(error)")
                     schedulePolishIdleUnload()
@@ -1293,6 +1323,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isDictating { pendingSwap = true; return }
         pendingSwap = false
         startWarm(force: true)
+    }
+
+    /// SPEC-044 — Settings backend picker changed. Switching to remote releases
+    /// any launch warm-up gate (no local model needed); switching back to local
+    /// warms the engine that launch skipped.
+    @MainActor
+    func transcriptionBackendChanged() {
+        if remoteBackendSelected {
+            guard transcriber == nil else { return }
+            warmTask?.cancel()
+            warmingModel = nil
+            appState.speechDownload = .inactive
+            if case .warming = appState.phase { appState.phase = .idle }
+        } else if transcriber == nil {
+            startWarm()
+        }
     }
 
     /// Phase-observer hook: apply a deferred swap once dictation ends.

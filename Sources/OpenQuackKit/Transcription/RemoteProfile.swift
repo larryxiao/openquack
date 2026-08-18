@@ -16,9 +16,18 @@ public struct RemoteProfile: Sendable, Equatable {
     }
 
     /// POST target: `{base}/audio/transcriptions` (OpenAI-compatible), unless
-    /// the user already pasted the full path.
+    /// the user already pasted the full path (with or without trailing slash).
     public var requestURL: URL {
-        if baseURL.path.hasSuffix("/audio/transcriptions") { return baseURL }
+        // URLComponents, not URL.path — the latter silently drops a trailing
+        // slash, which would defeat both the suffix check and the rebuild.
+        if var comps = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) {
+            var path = comps.path
+            while path.hasSuffix("/") { path.removeLast() }
+            if path.hasSuffix("/audio/transcriptions") {
+                comps.path = path
+                return comps.url ?? baseURL
+            }
+        }
         return baseURL
             .appendingPathComponent("audio")
             .appendingPathComponent("transcriptions")
