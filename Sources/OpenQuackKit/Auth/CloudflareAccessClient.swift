@@ -7,16 +7,28 @@ import Foundation
 /// typed — the code never knows which IdP sits behind it.
 public enum CloudflareAccessClient {
 
-    /// Well-known install locations first, then $PATH (Settings may run
-    /// outside a login shell, so `which` alone isn't enough).
+    /// Keychain account for the Access JWT: namespaced so it can never
+    /// collide with (or destroy) a Bearer/header API key saved for the
+    /// same host.
+    public static func credentialKey(forHost host: String) -> String {
+        "cf-access:\(host)"
+    }
+
+    /// Pure-filesystem scan over $PATH plus known install dirs — fork-free,
+    /// and independent of the minimal PATH a Finder-launched app gets.
     public static func cloudflaredPath() -> String? {
-        let known = ["/opt/homebrew/bin/cloudflared", "/usr/local/bin/cloudflared"]
-        if let hit = known.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-            return hit
+        var dirs = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":").map(String.init)
+        dirs += [
+            "/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin",
+            NSHomeDirectory() + "/.local/bin", NSHomeDirectory() + "/bin",
+        ]
+        let fm = FileManager.default
+        for dir in dirs where !dir.isEmpty {
+            let candidate = dir + "/cloudflared"
+            if fm.isExecutableFile(atPath: candidate) { return candidate }
         }
-        let out = try? run("/usr/bin/env", ["which", "cloudflared"], timeout: 5)
-        let path = out?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return path.isEmpty ? nil : path
+        return nil
     }
 
     /// Opens the browser and blocks until the user completes the IdP flow
@@ -88,7 +100,32 @@ public enum CloudflareAccessClient {
         }
     }
 
-    /// Argument-array Process (no shell), stdout captured, hard timeout.
+    /// Thread-safe accumulator for pipe output collected via readabilityHandler.
+    private final class PipeCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var buffer = Data()
+        func append(_ data: Data) { lock.lock(); buffer.append(data); lock.unlock() }
+        var text: String {
+            lock.lock(); defer { lock.unlock() }
+            return String(data: buffer, encoding: .utf8) ?? ""
+        }
+    }
+
+    private static func drain(_ pipe: Pipe, into collector: PipeCollector) {
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil   // EOF
+            } else {
+                collector.append(data)
+            }
+        }
+    }
+
+    /// Argument-array Process (no shell), output drained continuously (a full
+    /// 64 KB pipe would otherwise deadlock a chatty child), hard timeout with
+    /// SIGKILL escalation. The deadline uses systemUptime, which pauses during
+    /// machine sleep — a closed lid mid-login doesn't burn the budget.
     private static func run(_ launchPath: String, _ args: [String], timeout: TimeInterval) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: launchPath)
@@ -98,23 +135,30 @@ public enum CloudflareAccessClient {
         process.standardOutput = stdout
         process.standardError = stderr
         process.standardInput = FileHandle.nullDevice
+        let outCollector = PipeCollector()
+        let errCollector = PipeCollector()
+        drain(stdout, into: outCollector)
+        drain(stderr, into: errCollector)
         try process.run()
 
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while process.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
             Thread.sleep(forTimeInterval: 0.1)
         }
         if process.isRunning {
             process.terminate()
+            let killDeadline = ProcessInfo.processInfo.systemUptime + 2
+            while process.isRunning && ProcessInfo.processInfo.systemUptime < killDeadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             throw EngineError.runtimeFailed("cloudflared \(args.prefix(2).joined(separator: " ")) timed out")
         }
-        let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else {
-            let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let detail = err.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)
+            let detail = errCollector.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)
             throw EngineError.runtimeFailed("cloudflared failed (exit \(process.terminationStatus))"
                                             + (detail.isEmpty ? "" : ":\n\(detail)"))
         }
-        return out
+        return outCollector.text
     }
 }

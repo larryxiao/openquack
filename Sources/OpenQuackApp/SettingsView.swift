@@ -91,6 +91,10 @@ private struct GeneralPane: View {
         case failed(String)
     }
     @State private var cfState: CFAccessUIState = .checking
+    /// Bumped on every sign-in, cancel, and refresh; async completions compare
+    /// against it and discard themselves when stale — Cancel really cancels,
+    /// and out-of-order keystroke probes can't clobber newer state.
+    @State private var cfGeneration = 0
     @AppStorage("inputDeviceUID")      private var inputDeviceUID: String = ""  // "" = system default
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
 
@@ -296,22 +300,24 @@ private struct GeneralPane: View {
 
     private func refreshCFAccessState() {
         guard remoteAuthMethod == "cloudflareAccess" else { return }
+        if cfState == .signingIn { return }   // an in-flight sign-in owns the row
+        cfGeneration += 1
+        let generation = cfGeneration
         cfState = .checking
         let host = remoteSecretHost
-        // cloudflared detection may shell out to `which`; keep it off the UI thread.
+        // Keychain read off the UI thread; path detection is a fast stat() scan.
         Task.detached(priority: .userInitiated) {
             let installed = CloudflareAccessClient.cloudflaredPath() != nil
-            let jwt = host.flatMap { KeychainCredentialStore().secret(forHost: $0) }
+            let jwt = host.flatMap {
+                KeychainCredentialStore().secret(forHost: CloudflareAccessClient.credentialKey(forHost: $0))
+            }
             await MainActor.run {
-                guard remoteAuthMethod == "cloudflareAccess" else { return }
+                guard generation == cfGeneration, remoteAuthMethod == "cloudflareAccess" else { return }
                 if !installed {
                     cfState = .missingCloudflared
-                } else if let jwt, !jwt.isEmpty {
-                    if let exp = CloudflareAccessClient.expiry(of: jwt), exp.timeIntervalSinceNow > 60 {
-                        cfState = .signedIn(expires: exp)
-                    } else {
-                        cfState = .expired
-                    }
+                } else if let jwt, !jwt.isEmpty, let exp = CloudflareAccessClient.expiry(of: jwt) {
+                    // Same freshness rule as the send path (single source of truth).
+                    cfState = CloudflareAccessClient.isUsable(jwt) ? .signedIn(expires: exp) : .expired
                 } else {
                     cfState = .signedOut
                 }
@@ -324,23 +330,39 @@ private struct GeneralPane: View {
             cfState = .failed("Enter a valid endpoint URL first.")
             return
         }
+        cfGeneration += 1
+        let generation = cfGeneration
         cfState = .signingIn
         Task {
             do {
                 try await CloudflareAccessClient.login(appURL: origin)
                 let jwt = try await CloudflareAccessClient.fetchToken(appURL: origin)
-                KeychainCredentialStore().setSecret(jwt, forHost: host)
-                await MainActor.run { refreshCFAccessState() }
+                await MainActor.run {
+                    // Cancelled or superseded → discard; store nothing.
+                    guard generation == cfGeneration else { return }
+                    KeychainCredentialStore().setSecret(jwt, forHost: CloudflareAccessClient.credentialKey(forHost: host))
+                    cfState = .checking
+                    refreshCFAccessState()
+                }
             } catch {
                 let firstLine = "\(error)".components(separatedBy: "\n")[0]
-                await MainActor.run { cfState = .failed(firstLine) }
+                await MainActor.run {
+                    guard generation == cfGeneration else { return }
+                    cfState = .failed(firstLine)
+                }
             }
         }
     }
 
+    private func cancelCFSignIn() {
+        cfGeneration += 1   // orphans the in-flight Task's completion
+        cfState = .checking
+        refreshCFAccessState()
+    }
+
     private func signOutCloudflare() {
         if let host = remoteSecretHost {
-            KeychainCredentialStore().setSecret(nil, forHost: host)
+            KeychainCredentialStore().setSecret(nil, forHost: CloudflareAccessClient.credentialKey(forHost: host))
         }
         refreshCFAccessState()
     }
@@ -364,27 +386,39 @@ private struct GeneralPane: View {
             HStack(spacing: Theme.s8) {
                 ProgressView().controlSize(.small)
                 Text("Finish signing in in your browser…").font(.caption).foregroundStyle(.secondary)
-                Button("Cancel") { refreshCFAccessState() }.font(.caption)
+                Button("Cancel") { cancelCFSignIn() }.font(.caption)
             }
         case .signedIn(let expires):
-            HStack(spacing: Theme.s8) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.moss)
-                Text("Signed in · expires \(expires.formatted(.relative(presentation: .named)))")
-                    .font(.caption)
-                Spacer()
-                Button("Sign out") { signOutCloudflare() }.font(.caption)
+            // TimelineView re-evaluates periodically so an expiry that passes
+            // while Settings sits open flips the row without a manual refresh.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                if expires.timeIntervalSince(context.date) <= 60 {
+                    expiredRow
+                } else {
+                    HStack(spacing: Theme.s8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.moss)
+                        Text("Signed in · expires \(expires.formatted(.relative(presentation: .named)))")
+                            .font(.caption)
+                        Spacer()
+                        Button("Sign out") { signOutCloudflare() }.font(.caption)
+                    }
+                }
             }
         case .expired:
-            HStack(spacing: Theme.s8) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
-                Text("Session expired").font(.caption)
-                Button("Sign in again") { signInCloudflare() }.font(.caption)
-            }
+            expiredRow
         case .failed(let message):
             HStack(spacing: Theme.s8) {
                 Text(message).font(.caption).foregroundStyle(.red)
                 Button("Try again") { signInCloudflare() }.font(.caption)
             }
+        }
+    }
+
+    private var expiredRow: some View {
+        HStack(spacing: Theme.s8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
+            Text("Session expired").font(.caption)
+            Button("Sign in again") { signInCloudflare() }.font(.caption)
         }
     }
 

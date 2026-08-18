@@ -125,8 +125,11 @@ public final class RemoteEngine: TranscriptionEngine {
             }
             request.setValue(try secret(), forHTTPHeaderField: trimmed)
         case .cloudflareAccess:
+            // Namespaced slot: never reads (or clobbers) a Bearer/header key
+            // saved for the same host. Unparseable contents = not signed in.
             guard let host = target.host,
-                  let jwt = credentials.secret(forHost: host), !jwt.isEmpty
+                  let jwt = credentials.secret(forHost: CloudflareAccessClient.credentialKey(forHost: host)),
+                  !jwt.isEmpty, CloudflareAccessClient.expiry(of: jwt) != nil
             else {
                 throw EngineError.runtimeFailed("Not signed in to \(target.host ?? "this endpoint") — sign in in Settings → General.")
             }

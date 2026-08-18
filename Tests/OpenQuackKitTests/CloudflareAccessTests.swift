@@ -81,10 +81,12 @@ final class CloudflareAccessTests: XCTestCase {
         return url
     }
 
+    private let cfKey = CloudflareAccessClient.credentialKey(forHost: "stt.corp.example")
+
     func testValidJWTAttachedAsCFAccessTokenHeader() async throws {
         RemoteStubURLProtocol.reset()
         let jwt = makeJWT(exp: Date().addingTimeInterval(3600).timeIntervalSince1970)
-        let store = InMemoryCredentialStore(["stt.corp.example": jwt])
+        let store = InMemoryCredentialStore([cfKey: jwt])
         let wav = makeWAV()
         defer { try? FileManager.default.removeItem(at: wav) }
 
@@ -98,7 +100,7 @@ final class CloudflareAccessTests: XCTestCase {
     func testExpiredJWTRefusedBeforeNetwork() async {
         RemoteStubURLProtocol.reset()
         let store = InMemoryCredentialStore(
-            ["stt.corp.example": makeJWT(exp: Date().addingTimeInterval(-60).timeIntervalSince1970)]
+            [cfKey: makeJWT(exp: Date().addingTimeInterval(-60).timeIntervalSince1970)]
         )
         let wav = makeWAV()
         defer { try? FileManager.default.removeItem(at: wav) }
@@ -122,6 +124,43 @@ final class CloudflareAccessTests: XCTestCase {
             XCTFail("expected not-signed-in error")
         } catch {
             XCTAssertTrue("\(error)".contains("sign in"))
+        }
+        XCTAssertNil(RemoteStubURLProtocol.lastRequest)
+    }
+
+    func testJWTSlotIsNamespacedAwayFromAPIKey() async throws {
+        // A Bearer key and an Access JWT for the same host must coexist:
+        // the CF path reads only its namespaced slot, never the API key.
+        RemoteStubURLProtocol.reset()
+        let jwt = makeJWT(exp: Date().addingTimeInterval(3600).timeIntervalSince1970)
+        let store = InMemoryCredentialStore([
+            "stt.corp.example": "sk-live-bearer-key",
+            cfKey: jwt,
+        ])
+        let wav = makeWAV()
+        defer { try? FileManager.default.removeItem(at: wav) }
+
+        _ = try await makeEngine(store: store).transcribe(audioFile: wav, language: nil)
+
+        let request = try XCTUnwrap(RemoteStubURLProtocol.lastRequest)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "cf-access-token"), jwt)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertEqual(store.requestedHosts, [cfKey], "CF auth must never read the bearer slot")
+    }
+
+    func testNonJWTInSlotReadsAsNotSignedIn() async {
+        // Garbage in the CF slot is "not signed in", not "session expired".
+        RemoteStubURLProtocol.reset()
+        let store = InMemoryCredentialStore([cfKey: "sk-not-a-jwt"])
+        let wav = makeWAV()
+        defer { try? FileManager.default.removeItem(at: wav) }
+
+        do {
+            _ = try await makeEngine(store: store).transcribe(audioFile: wav, language: nil)
+            XCTFail("expected not-signed-in error")
+        } catch {
+            XCTAssertTrue("\(error)".contains("sign in"))
+            XCTAssertFalse("\(error)".contains("expired"))
         }
         XCTAssertNil(RemoteStubURLProtocol.lastRequest)
     }
