@@ -72,6 +72,19 @@ the paths above are safe to leave or remove by hand.
 
 Nothing else is downloaded by default.
 
+## Optional: cloudflared (for Company SSO transcription)
+
+Only needed if you point transcription at a company endpoint behind
+Cloudflare Access (Settings → General → Authentication → Company SSO):
+
+```sh
+brew install cloudflared
+```
+
+OpenQuack drives `cloudflared access login` / `access token` for the
+browser sign-in; without it that option shows an install hint and stays
+disabled. Everything else works without cloudflared.
+
 ## Permissions you'll be asked for
 
 1. **Microphone** — required. We can't transcribe what we can't hear.
