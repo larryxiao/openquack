@@ -64,7 +64,7 @@ On real human speech, ~2.6% word-error rate with the default model on an M4 / 16
 Not by default. Audio is recorded, transcribed, and discarded entirely on your Mac — no analytics, no telemetry, no account, no API calls in the dictation path. The one opt-in exception: you can point transcription at your own OpenAI-compatible endpoint, and the overlay shows whenever that's in use. Source is MIT-licensed and auditable.
 
 **How is this different from the built-in macOS Dictation?**
-macOS Dictation sends audio to Apple's servers by default. OpenQuack runs fully local, supports 99 languages with no toggle, uses Whisper rather than Apple's proprietary model, and is open source.
+macOS Dictation sends audio to Apple's servers by default. OpenQuack runs fully local by default, supports 99 languages with no toggle, uses Whisper rather than Apple's proprietary model, and is open source.
 
 **How do I use it for typeless coding workflows?**
 OpenQuack pastes at wherever your cursor is — including the prompt bars of Claude Code, Cursor, Windsurf, or any terminal. Press the hotkey, speak the prompt, press again, and it appears.

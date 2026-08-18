@@ -364,7 +364,7 @@ private struct WelcomeStep: View {
             VStack(spacing: Theme.s8) {
                 privacyRow(
                     icon: "lock.shield",
-                    title: "Local-only by design",
+                    title: "Local by default, by design",
                     body: "Audio never leaves your Mac by default. No cloud, no signup, no telemetry."
                 )
                 privacyRow(

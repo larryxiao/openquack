@@ -1,6 +1,6 @@
 # OpenQuack Tutorial
 
-A 5-minute walkthrough from install to your first dictation. Everything runs locally on your Mac.
+A 5-minute walkthrough from install to your first dictation. Everything runs locally on your Mac by default.
 
 ## 1. Install
 

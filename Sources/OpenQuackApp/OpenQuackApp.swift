@@ -816,7 +816,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let ms = result.llmMillis { record["ms"] = ms }
         // SPEC-044 — the remote path promises "no transcript logging"; the
         // debug record embeds raw + polished text, so skip it entirely there.
-        if !remoteBackendSelected,
+        // Gate on the recording's snapshot, not the live setting — a mid-flight
+        // backend switch must not resurrect the log for a remote transcript.
+        if !recordingRemoteSelected,
            let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             Self.polishLog.debug("\(json, privacy: .public)")
@@ -1272,11 +1274,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 // SPEC-044 — failures need a diagnostics trail too (a 401/timeout
-                // is exactly when the bug report matters). Error detail carries
-                // status + server message, never transcript or credentials.
+                // is exactly when the bug report matters). Diagnostics persist and
+                // export, so keep only the error's first line — a server's error
+                // body (second line) could echo credentials or transcript.
+                let firstLine = "\(error)".components(separatedBy: "\n")[0]
                 Diagnostics.shared.log(
                     .transcription, .error,
-                    "transcribe failed (\(remoteSelected ? "remote" : "local")): \(error)"
+                    "transcribe failed (\(remoteSelected ? "remote" : "local")): \(firstLine)"
                 )
                 await MainActor.run {
                     appState.phase = .error("Transcription failed: \(error)")
@@ -1294,6 +1298,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @MainActor
     func startWarm(force: Bool = false) {
         if !force, transcriber != nil { return }
+        // SPEC-044 — never stomp a live dictation's phase (possible now that a
+        // remote dictation can run with no local engine loaded); warm at idle.
+        if isDictating { pendingSwap = true; return }
         let model = defaultModel
         if !force, warmingModel == model { return }   // already warming this one
         warmTask?.cancel()
@@ -1351,6 +1358,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func warmBody(model: String, force: Bool = false) async {
         if !force, self.transcriber != nil { return }
+        // SPEC-044 — a backend switch may have cancelled this warm (and set
+        // the phase to idle) before we got scheduled; don't resurrect .warming.
+        if Task.isCancelled { return }
         await MainActor.run {
             appState.phase = .warming(modelLabel: model)
             // Clear any banner left by a just-retargeted warm-up so it doesn't
@@ -1385,6 +1395,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // load window overlapped a dictation, don't swap under it — defer to
             // idle. (A large model briefly holds old + new engine in memory here.)
             let swapped = await MainActor.run { () -> Bool in
+                // SPEC-044 — a backend switch cancelled us mid-load: the phase
+                // is already idle and the engine isn't wanted; drop it.
+                if Task.isCancelled { return false }
                 // A dictation started during the load window: don't swap under it.
                 // We discard this just-loaded engine and re-load on idle rather
                 // than stash it — keeps the swap state machine to one in-flight

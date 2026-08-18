@@ -77,6 +77,9 @@ private struct GeneralPane: View {
     @AppStorage("remoteAuthMethod")     private var remoteAuthMethod: String = "bearer"
     @AppStorage("remoteAuthHeaderName") private var remoteAuthHeaderName: String = ""
     @State private var remoteSecret: String = ""
+    /// Draft mirror of `remoteEndpoint` — the field binds here so a pasted
+    /// `user:pass@` URL is sanitised *before* anything reaches UserDefaults.
+    @State private var remoteEndpointDraft: String = ""
     @AppStorage("inputDeviceUID")      private var inputDeviceUID: String = ""  // "" = system default
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
 
@@ -250,15 +253,20 @@ private struct GeneralPane: View {
     }
 
     private func reloadRemoteSecret() {
-        // Strip pasted user:pass@ — secrets never persist in UserDefaults.
-        if var comps = URLComponents(string: remoteEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
+        remoteSecret = remoteSecretHost.flatMap { KeychainCredentialStore().secret(forHost: $0) } ?? ""
+    }
+
+    private func commitRemoteEndpoint(_ raw: String) {
+        var value = raw
+        if var comps = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
            comps.user != nil || comps.password != nil {
             comps.user = nil
             comps.password = nil
-            remoteEndpoint = comps.string ?? ""
-            return   // onChange re-enters with the sanitised URL
+            value = comps.string ?? ""
+            remoteEndpointDraft = value   // reflect the strip in the field
         }
-        remoteSecret = remoteSecretHost.flatMap { KeychainCredentialStore().secret(forHost: $0) } ?? ""
+        remoteEndpoint = value
+        reloadRemoteSecret()
     }
 
     private func saveRemoteSecret(_ value: String) {
@@ -268,9 +276,10 @@ private struct GeneralPane: View {
 
     @ViewBuilder
     private var remoteBackendRows: some View {
-        TextField("Endpoint URL", text: $remoteEndpoint, prompt: Text("https://api.openai.com/v1"))
+        TextField("Endpoint URL", text: $remoteEndpointDraft, prompt: Text("https://api.openai.com/v1"))
             .autocorrectionDisabled()
-            .onChange(of: remoteEndpoint) { _ in reloadRemoteSecret() }
+            .onAppear { remoteEndpointDraft = remoteEndpoint }
+            .onChange(of: remoteEndpointDraft) { commitRemoteEndpoint($0) }
         TextField("Model", text: $remoteModel, prompt: Text("whisper-1"))
             .autocorrectionDisabled()
         Picker("Authentication", selection: $remoteAuthMethod) {

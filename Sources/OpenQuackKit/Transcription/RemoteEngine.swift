@@ -60,9 +60,11 @@ public final class RemoteEngine: TranscriptionEngine {
         guard (200..<300).contains(http.statusCode) else {
             let detail = String(data: data.prefix(300), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // Detail goes on its own line: callers that persist diagnostics keep
+            // only the first line, since a server's error body may echo secrets.
             throw EngineError.runtimeFailed(
                 "Remote endpoint returned HTTP \(http.statusCode)"
-                + (detail.isEmpty ? "" : ": \(detail)")
+                + (detail.isEmpty ? "" : ":\n\(detail)")
             )
         }
 
