@@ -38,4 +38,5 @@ public enum RemoteAuth: Sendable, Equatable {
     case none
     case bearer                 // Authorization: Bearer <secret>
     case header(name: String)   // <name>: <secret>
+    case cloudflareAccess       // cf-access-token: <jwt via browser SSO> (SPEC-045)
 }

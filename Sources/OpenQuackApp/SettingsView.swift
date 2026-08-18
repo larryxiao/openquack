@@ -80,6 +80,21 @@ private struct GeneralPane: View {
     /// Draft mirror of `remoteEndpoint` — the field binds here so a pasted
     /// `user:pass@` URL is sanitised *before* anything reaches UserDefaults.
     @State private var remoteEndpointDraft: String = ""
+    // SPEC-045 — Cloudflare Access sign-in state machine.
+    private enum CFAccessUIState: Equatable {
+        case checking
+        case missingCloudflared
+        case signedOut
+        case signingIn
+        case signedIn(expires: Date)
+        case expired
+        case failed(String)
+    }
+    @State private var cfState: CFAccessUIState = .checking
+    /// Bumped on every sign-in, cancel, and refresh; async completions compare
+    /// against it and discard themselves when stale — Cancel really cancels,
+    /// and out-of-order keystroke probes can't clobber newer state.
+    @State private var cfGeneration = 0
     @AppStorage("inputDeviceUID")      private var inputDeviceUID: String = ""  // "" = system default
     @AppStorage("launchAtLogin")       private var launchAtLogin: Bool = false
 
@@ -267,6 +282,151 @@ private struct GeneralPane: View {
         }
         remoteEndpoint = value
         reloadRemoteSecret()
+        // Changing the endpoint mid-sign-in supersedes that flow — the row
+        // must not keep claiming a sign-in for a host no longer configured.
+        if cfState == .signingIn {
+            cancelCFSignIn()
+        } else {
+            refreshCFAccessState()
+        }
+    }
+
+    // MARK: SPEC-045 — Cloudflare Access sign-in
+
+    /// The Access "app URL": the endpoint's origin (scheme + host + port).
+    private var remoteEndpointOrigin: URL? {
+        guard var comps = URLComponents(string: remoteEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
+              comps.host != nil
+        else { return nil }
+        comps.path = ""
+        comps.query = nil
+        comps.fragment = nil
+        return comps.url
+    }
+
+    /// `force` lets the sign-in flow's own completions repaint the row; every
+    /// other caller yields to an in-flight sign-in.
+    private func refreshCFAccessState(force: Bool = false) {
+        guard remoteAuthMethod == "cloudflareAccess" else { return }
+        if !force, cfState == .signingIn { return }   // an in-flight sign-in owns the row
+        cfGeneration += 1
+        let generation = cfGeneration
+        cfState = .checking
+        let host = remoteSecretHost
+        // Keychain read off the UI thread; path detection is a fast stat() scan.
+        Task.detached(priority: .userInitiated) {
+            let installed = CloudflareAccessClient.cloudflaredPath() != nil
+            let jwt = host.flatMap {
+                CloudflareAccessClient.accessToken(forHost: $0, in: KeychainCredentialStore())
+            }
+            await MainActor.run {
+                guard generation == cfGeneration, remoteAuthMethod == "cloudflareAccess" else { return }
+                if !installed {
+                    cfState = .missingCloudflared
+                } else if let jwt, !jwt.isEmpty, let exp = CloudflareAccessClient.expiry(of: jwt) {
+                    // Same freshness rule as the send path (single source of truth).
+                    cfState = CloudflareAccessClient.isUsable(jwt) ? .signedIn(expires: exp) : .expired
+                } else {
+                    cfState = .signedOut
+                }
+            }
+        }
+    }
+
+    private func signInCloudflare() {
+        guard let origin = remoteEndpointOrigin, let host = origin.host else {
+            cfState = .failed("Enter a valid endpoint URL first.")
+            return
+        }
+        cfGeneration += 1
+        let generation = cfGeneration
+        cfState = .signingIn
+        Task {
+            do {
+                try await CloudflareAccessClient.login(appURL: origin)
+                let jwt = try await CloudflareAccessClient.fetchToken(appURL: origin)
+                await MainActor.run {
+                    // Cancelled or superseded → discard; store nothing.
+                    guard generation == cfGeneration else { return }
+                    CloudflareAccessClient.setAccessToken(jwt, forHost: host, in: KeychainCredentialStore())
+                    refreshCFAccessState(force: true)
+                }
+            } catch {
+                let firstLine = "\(error)".components(separatedBy: "\n")[0]
+                await MainActor.run {
+                    guard generation == cfGeneration else { return }
+                    cfState = .failed(firstLine)
+                }
+            }
+        }
+    }
+
+    private func cancelCFSignIn() {
+        cfGeneration += 1   // orphans the in-flight Task's completion
+        CloudflareAccessClient.cancelActiveLogin()   // and kills the cloudflared child
+        refreshCFAccessState(force: true)
+    }
+
+    private func signOutCloudflare() {
+        if let host = remoteSecretHost {
+            CloudflareAccessClient.setAccessToken(nil, forHost: host, in: KeychainCredentialStore())
+        }
+        refreshCFAccessState()
+    }
+
+    @ViewBuilder
+    private var cloudflareAccessRow: some View {
+        switch cfState {
+        case .checking:
+            HStack(spacing: Theme.s8) {
+                ProgressView().controlSize(.small)
+                Text("Checking for cloudflared…").font(.caption).foregroundStyle(.secondary)
+            }
+        case .missingCloudflared:
+            Text("Requires cloudflared: install with `brew install cloudflared`, then reopen this pane. Your company's IdP handles the actual login — OpenQuack never sees your password.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case .signedOut:
+            Button("Sign in with your browser…") { signInCloudflare() }
+                .help("Opens your browser to sign in through your organisation's identity provider. The resulting token is stored in your Keychain, tied to this host.")
+        case .signingIn:
+            HStack(spacing: Theme.s8) {
+                ProgressView().controlSize(.small)
+                Text("Finish signing in in your browser…").font(.caption).foregroundStyle(.secondary)
+                Button("Cancel") { cancelCFSignIn() }.font(.caption)
+            }
+        case .signedIn(let expires):
+            // TimelineView re-evaluates periodically so an expiry that passes
+            // while Settings sits open flips the row without a manual refresh.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                if expires.timeIntervalSince(context.date) <= CloudflareAccessClient.expiryLeeway {
+                    expiredRow
+                } else {
+                    HStack(spacing: Theme.s8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.moss)
+                        Text("Signed in · expires \(expires.formatted(.relative(presentation: .named)))")
+                            .font(.caption)
+                        Spacer()
+                        Button("Sign out") { signOutCloudflare() }.font(.caption)
+                    }
+                }
+            }
+        case .expired:
+            expiredRow
+        case .failed(let message):
+            HStack(spacing: Theme.s8) {
+                Text(message).font(.caption).foregroundStyle(.red)
+                Button("Try again") { signInCloudflare() }.font(.caption)
+            }
+        }
+    }
+
+    private var expiredRow: some View {
+        HStack(spacing: Theme.s8) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
+            Text("Session expired").font(.caption)
+            Button("Sign in again") { signInCloudflare() }.font(.caption)
+        }
     }
 
     private func saveRemoteSecret(_ value: String) {
@@ -286,14 +446,20 @@ private struct GeneralPane: View {
             Text("None").tag("none")
             Text("API key (Bearer)").tag("bearer")
             Text("Custom header").tag("header")
+            Text("Company SSO (Cloudflare Access)").tag("cloudflareAccess")
         }
+        .onChange(of: remoteAuthMethod) { _ in refreshCFAccessState() }
         if remoteAuthMethod == "header" {
             TextField("Header name", text: $remoteAuthHeaderName, prompt: Text("X-Api-Key"))
                 .autocorrectionDisabled()
         }
-        if remoteAuthMethod != "none" {
+        if remoteAuthMethod == "bearer" || remoteAuthMethod == "header" {
             SecureField("API key", text: $remoteSecret)
                 .onChange(of: remoteSecret) { saveRemoteSecret($0) }
+        }
+        if remoteAuthMethod == "cloudflareAccess" {
+            cloudflareAccessRow
+                .onAppear { refreshCFAccessState() }
         }
         Text("Recordings are sent to this OpenAI-compatible endpoint (POST /audio/transcriptions) while this is on. The key is stored in your Keychain, tied to this exact host — change the host and you'll enter it again.")
             .font(.caption)
