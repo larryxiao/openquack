@@ -42,7 +42,11 @@ public final class RemoteEngine: TranscriptionEngine {
         var request = URLRequest(url: target)
         request.httpMethod = "POST"
         try attachAuth(to: &request, target: target)
-        let boundary = "openquack-\(UUID().uuidString)"
+        // Explicit User-Agent and an app-neutral boundary: the CFNetwork
+        // default UA embeds the app's bundle name, which would advertise the
+        // calling app to the endpoint.
+        request.setValue(profile.resolvedUserAgent, forHTTPHeaderField: "User-Agent")
+        let boundary = "Boundary-\(UUID().uuidString)"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = Self.multipartBody(
             boundary: boundary,

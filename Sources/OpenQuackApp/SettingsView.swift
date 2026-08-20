@@ -76,6 +76,7 @@ private struct GeneralPane: View {
     @AppStorage("remoteModel")          private var remoteModel: String = "whisper-1"
     @AppStorage("remoteAuthMethod")     private var remoteAuthMethod: String = "bearer"
     @AppStorage("remoteAuthHeaderName") private var remoteAuthHeaderName: String = ""
+    @AppStorage("remoteUserAgent")      private var remoteUserAgent: String = ""
     @State private var remoteSecret: String = ""
     /// Draft mirror of `remoteEndpoint` — the field binds here so a pasted
     /// `user:pass@` URL is sanitised *before* anything reaches UserDefaults.
@@ -442,6 +443,8 @@ private struct GeneralPane: View {
             .onChange(of: remoteEndpointDraft) { commitRemoteEndpoint($0) }
         TextField("Model", text: $remoteModel, prompt: Text("whisper-1"))
             .autocorrectionDisabled()
+        TextField("User agent", text: $remoteUserAgent, prompt: Text(RemoteProfile.defaultUserAgent))
+            .autocorrectionDisabled()
         Picker("Authentication", selection: $remoteAuthMethod) {
             Text("None").tag("none")
             Text("API key (Bearer)").tag("bearer")
@@ -461,7 +464,7 @@ private struct GeneralPane: View {
             cloudflareAccessRow
                 .onAppear { refreshCFAccessState() }
         }
-        Text("Recordings are sent to this OpenAI-compatible endpoint (POST /audio/transcriptions) while this is on. The key is stored in your Keychain, tied to this exact host — change the host and you'll enter it again.")
+        Text("Recordings are sent to this OpenAI-compatible endpoint (POST /audio/transcriptions) while this is on. The key is stored in your Keychain, tied to this exact host — change the host and you'll enter it again. Requests identify themselves only by the user agent above (a neutral default when empty), never by the app's name.")
             .font(.caption)
             .foregroundStyle(.secondary)
     }
