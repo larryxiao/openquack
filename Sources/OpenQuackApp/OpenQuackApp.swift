@@ -97,7 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return RemoteProfile(
             baseURL: url,
             model: UserDefaults.standard.string(forKey: "remoteModel") ?? "",
-            auth: auth
+            auth: auth,
+            userAgent: UserDefaults.standard.string(forKey: "remoteUserAgent") ?? ""
         )
     }
 

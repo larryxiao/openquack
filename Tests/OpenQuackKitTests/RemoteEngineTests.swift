@@ -126,12 +126,13 @@ final class RemoteEngineTests: XCTestCase {
         base: String,
         model: String = "whisper-1",
         auth: RemoteAuth = .none,
+        userAgent: String = "",
         store: InMemoryCredentialStore = InMemoryCredentialStore()
     ) -> RemoteEngine {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.protocolClasses = [RemoteStubURLProtocol.self]
         return RemoteEngine(
-            profile: RemoteProfile(baseURL: URL(string: base)!, model: model, auth: auth),
+            profile: RemoteProfile(baseURL: URL(string: base)!, model: model, auth: auth, userAgent: userAgent),
             credentials: store,
             session: URLSession(configuration: cfg)
         )
@@ -167,6 +168,28 @@ final class RemoteEngineTests: XCTestCase {
             RemoteStubURLProtocol.lastRequest?.url?.absoluteString,
             "https://api.example.com/v1/audio/transcriptions"
         )
+    }
+
+    func testRequestNeverAdvertisesTheApp() async throws {
+        let engine = makeEngine(base: "https://api.example.com/v1")
+        _ = try await engine.transcribe(audioFile: wavURL, language: nil)
+        let request = try XCTUnwrap(RemoteStubURLProtocol.lastRequest)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), RemoteProfile.defaultUserAgent)
+        // Neither headers (UA, multipart boundary) nor body may name the app.
+        let headers = (request.allHTTPHeaderFields ?? [:]).map { "\($0.key)=\($0.value)" }.joined()
+        XCTAssertFalse(headers.lowercased().contains("quack"))
+        let body = try XCTUnwrap(RemoteStubURLProtocol.lastBody)
+        XCTAssertFalse(String(decoding: body, as: UTF8.self).lowercased().contains("quack"))
+    }
+
+    func testConfiguredUserAgentIsSentFoldedToOneLine() async throws {
+        let engine = makeEngine(base: "https://api.example.com/v1", userAgent: " my-client/2.0 \r\nX-Sneaky: 1")
+        _ = try await engine.transcribe(audioFile: wavURL, language: nil)
+        let request = try XCTUnwrap(RemoteStubURLProtocol.lastRequest)
+        let sent = try XCTUnwrap(request.value(forHTTPHeaderField: "User-Agent"))
+        XCTAssertTrue(sent.hasPrefix("my-client/2.0"))
+        XCTAssertFalse(sent.contains("\r") || sent.contains("\n"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "X-Sneaky"))
     }
 
     func testCustomHeaderAuth() async throws {
