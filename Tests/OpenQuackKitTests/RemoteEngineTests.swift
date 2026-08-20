@@ -1,5 +1,6 @@
 import AVFoundation
 import XCTest
+import Network
 @testable import OpenQuackKit
 
 /// Captures the one request the engine sends and serves a canned response.
@@ -183,13 +184,34 @@ final class RemoteEngineTests: XCTestCase {
     }
 
     func testConfiguredUserAgentIsSentFoldedToOneLine() async throws {
-        let engine = makeEngine(base: "https://api.example.com/v1", userAgent: " my-client/2.0 \r\nX-Sneaky: 1")
+        let engine = makeEngine(base: "https://api.example.com/v1", userAgent: " my-client/2.0 \r\nX-Sneaky: 1\u{0}\ttail")
         _ = try await engine.transcribe(audioFile: wavURL, language: nil)
         let request = try XCTUnwrap(RemoteStubURLProtocol.lastRequest)
         let sent = try XCTUnwrap(request.value(forHTTPHeaderField: "User-Agent"))
         XCTAssertTrue(sent.hasPrefix("my-client/2.0"))
-        XCTAssertFalse(sent.contains("\r") || sent.contains("\n"))
+        XCTAssertNil(sent.unicodeScalars.first { CharacterSet.controlCharacters.contains($0) })
         XCTAssertNil(request.value(forHTTPHeaderField: "X-Sneaky"))
+    }
+
+    // A URLProtocol stub sees the constructed URLRequest, not the wire — a
+    // header CFNetwork adds afterwards would be invisible to it. This test
+    // captures the actual bytes via a real loopback server.
+    func testWireHeadersCarryOnlyTheConfiguredIdentity() async throws {
+        let server = try LoopbackCaptureServer(responseBody: "{\"text\":\"hello\"}")
+        let engine = RemoteEngine(
+            profile: RemoteProfile(
+                baseURL: URL(string: "http://127.0.0.1:\(server.port)/v1")!,
+                model: "whisper-1",
+                auth: .none
+            ),
+            credentials: InMemoryCredentialStore()
+        )
+        let result = try await engine.transcribe(audioFile: wavURL, language: nil)
+        XCTAssertEqual(result.text, "hello")
+        let raw = String(decoding: server.capturedRequest, as: UTF8.self)
+        let headerBlock = try XCTUnwrap(raw.components(separatedBy: "\r\n\r\n").first)
+        XCTAssertTrue(headerBlock.contains("User-Agent: \(RemoteProfile.defaultUserAgent)"))
+        XCTAssertFalse(headerBlock.lowercased().contains("quack"))
     }
 
     func testCustomHeaderAuth() async throws {
@@ -300,5 +322,68 @@ final class RemoteEngineTests: XCTestCase {
         XCTAssertEqual(file.fileFormat.channelCount, 1)
         let outSeconds = Double(file.length) / file.fileFormat.sampleRate
         XCTAssertEqual(outSeconds, 1.0, accuracy: 0.05)
+    }
+}
+
+// Minimal loopback HTTP/1.1 server that records the raw request bytes and
+// serves one fixed JSON response, so tests can assert on what actually hits
+// the wire rather than on the pre-transport URLRequest.
+private final class LoopbackCaptureServer: @unchecked Sendable {
+    private(set) var port: UInt16 = 0
+    private let listener: NWListener
+    private let lock = NSLock()
+    private var buffer = Data()
+    private let requestComplete = DispatchSemaphore(value: 0)
+
+    var capturedRequest: Data {
+        _ = requestComplete.wait(timeout: .now() + 10)
+        lock.lock(); defer { lock.unlock() }
+        return buffer
+    }
+
+    init(responseBody: String) throws {
+        listener = try NWListener(using: .tcp, on: .any)
+        let ready = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { if case .ready = $0 { ready.signal() } }
+        listener.newConnectionHandler = { [weak self] connection in
+            connection.start(queue: .global())
+            self?.pump(connection, responseBody: responseBody)
+        }
+        listener.start(queue: .global())
+        guard ready.wait(timeout: .now() + 5) == .success, let bound = listener.port?.rawValue else {
+            throw EngineError.runtimeFailed("loopback listener failed to start")
+        }
+        port = bound
+    }
+
+    deinit { listener.cancel() }
+
+    private func pump(_ connection: NWConnection, responseBody: String) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { [weak self] data, _, _, error in
+            guard let self, let data, error == nil else { return }
+            self.lock.lock()
+            self.buffer.append(data)
+            let snapshot = self.buffer
+            self.lock.unlock()
+            guard Self.isCompleteRequest(snapshot) else {
+                self.pump(connection, responseBody: responseBody)
+                return
+            }
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                + "Content-Length: \(responseBody.utf8.count)\r\nConnection: close\r\n\r\n\(responseBody)"
+            connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            self.requestComplete.signal()
+        }
+    }
+
+    private static func isCompleteRequest(_ data: Data) -> Bool {
+        guard let headerEnd = data.range(of: Data("\r\n\r\n".utf8)) else { return false }
+        let head = String(decoding: data[..<headerEnd.lowerBound], as: UTF8.self)
+        let contentLength = head.components(separatedBy: "\r\n")
+            .first { $0.lowercased().hasPrefix("content-length:") }
+            .flatMap { Int($0.drop(while: { $0 != ":" }).dropFirst().trimmingCharacters(in: .whitespaces)) } ?? 0
+        return data.count >= headerEnd.upperBound + contentLength
     }
 }

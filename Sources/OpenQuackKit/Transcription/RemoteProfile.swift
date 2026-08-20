@@ -21,11 +21,12 @@ public struct RemoteProfile: Sendable, Equatable {
         self.userAgent = userAgent
     }
 
-    /// The `User-Agent` value to send: the configured one (folded to a single
-    /// header line), or the neutral default when unset.
+    /// The `User-Agent` value to send: the configured one (control characters
+    /// stripped so it stays one valid header line — RFC 9110 §5.5), or the
+    /// neutral default when unset.
     public var resolvedUserAgent: String {
         let folded = userAgent
-            .components(separatedBy: .newlines).joined(separator: " ")
+            .components(separatedBy: .controlCharacters).joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
         return folded.isEmpty ? Self.defaultUserAgent : folded
     }
