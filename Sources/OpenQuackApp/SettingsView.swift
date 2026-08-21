@@ -165,8 +165,15 @@ private struct GeneralPane: View {
                     // "Active" = the model actually loaded right now (hot-swap
                     // updates it). `model` is the selection; they differ only
                     // briefly when a swap is deferred behind an in-progress dictation.
-                    let isLoaded = (variant == appState.modelLabel)
-                    let isProtected = isLoaded || (variant == model)
+                    let remoteSelected = (transcriptionBackend == "remote")
+                    let isLoaded = !remoteSelected && variant == appState.modelLabel
+                    let canDelete = SpeechModelCatalog.canDelete(
+                        variant: variant,
+                        selected: model,
+                        loaded: appState.modelLabel,
+                        remoteBackend: remoteSelected,
+                        dictating: appState.isDictating
+                    )
                     HStack(spacing: Theme.s8) {
                         Text(SpeechModelCatalog.displayName(for: variant))
                         Text(SpeechModelCatalog.sizeLabel(for: variant))
@@ -177,10 +184,12 @@ private struct GeneralPane: View {
                         }
                         Button("Delete") { confirmDeleteSpeechModel(variant) }
                             .font(.caption)
-                            .disabled(isProtected)
-                            .help(isProtected
-                                  ? "This model is in use. Switch to another model first, then delete it."
-                                  : "Remove this model from disk to free space.")
+                            .disabled(!canDelete)
+                            .help(canDelete
+                                  ? "Remove this model from disk to free space."
+                                  : appState.isDictating
+                                    ? "Dictation in progress. Try again once it finishes."
+                                    : "This model is in use. Switch to another model first, then delete it.")
                     }
                 }
             }
@@ -190,7 +199,9 @@ private struct GeneralPane: View {
     private func confirmDeleteSpeechModel(_ variant: String) {
         let alert = NSAlert()
         alert.messageText = "Delete \(SpeechModelCatalog.displayName(for: variant))?"
+        let stillSelected = (variant == model)
         alert.informativeText = "Frees \(SpeechModelCatalog.sizeLabel(for: variant)) of disk. You can re-download it any time from the Speech model menu."
+            + (stillSelected ? " It stays your Speech model choice, so switching back to On this Mac downloads it again." : "")
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
