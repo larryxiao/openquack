@@ -21,6 +21,14 @@ public struct RemoteProfile: Sendable, Equatable {
         self.userAgent = userAgent
     }
 
+    /// History's backend label — `"<model> @ <host>"`, or just the host when
+    /// the endpoint picks the model itself and the field was left empty.
+    public static func historyLabel(model: String, host: String?) -> String {
+        let host = host ?? "?"
+        let model = model.trimmingCharacters(in: .whitespaces)
+        return model.isEmpty ? host : "\(model) @ \(host)"
+    }
+
     /// The `User-Agent` value to send: the configured one (control characters
     /// stripped so it stays one valid header line — RFC 9110 §5.5), or the
     /// neutral default when unset.

@@ -35,7 +35,7 @@ public final class RemoteEngine: TranscriptionEngine {
         let target = profile.requestURL
         try Self.validate(endpoint: target)
 
-        let upload = try AudioResampler.wav16kMono(from: url)
+        let upload = try await AudioResampler.upload(from: url)
         defer { try? FileManager.default.removeItem(at: upload.url) }
         let audio = try Data(contentsOf: upload.url)
 
@@ -51,6 +51,8 @@ public final class RemoteEngine: TranscriptionEngine {
         request.httpBody = Self.multipartBody(
             boundary: boundary,
             audio: audio,
+            filename: upload.filename,
+            mimeType: upload.mimeType,
             model: profile.model,
             language: language
         )
@@ -146,7 +148,14 @@ public final class RemoteEngine: TranscriptionEngine {
         }
     }
 
-    static func multipartBody(boundary: String, audio: Data, model: String, language: String?) -> Data {
+    static func multipartBody(
+        boundary: String,
+        audio: Data,
+        filename: String = "audio.wav",
+        mimeType: String = "audio/wav",
+        model: String,
+        language: String?
+    ) -> Data {
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
@@ -156,8 +165,8 @@ public final class RemoteEngine: TranscriptionEngine {
         field("response_format", "json")
         body.append(Data((
             "--\(boundary)\r\n"
-            + "Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n"
-            + "Content-Type: audio/wav\r\n\r\n"
+            + "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
+            + "Content-Type: \(mimeType)\r\n\r\n"
         ).utf8))
         body.append(audio)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))

@@ -171,6 +171,48 @@ final class RemoteEngineTests: XCTestCase {
         )
     }
 
+    func testShortRecordingUploadsWAV() async throws {
+        let upload = try await AudioResampler.upload(from: wavURL)
+        defer { try? FileManager.default.removeItem(at: upload.url) }
+        XCTAssertEqual(upload.filename, "audio.wav")
+        XCTAssertEqual(upload.mimeType, "audio/wav")
+    }
+
+    func testLongRecordingUploadsCompressedAudio() async throws {
+        // 30 s of 16 kHz mono WAV is ~960 KB — past a 1 MB gateway cap.
+        let long = Self.makeWAV(seconds: 30, sampleRate: 16_000, channels: 1)
+        defer { try? FileManager.default.removeItem(at: long) }
+        let wavBytes = try Data(contentsOf: long).count
+
+        let upload = try await AudioResampler.upload(from: long)
+        defer { try? FileManager.default.removeItem(at: upload.url) }
+
+        XCTAssertEqual(upload.filename, "audio.m4a")
+        XCTAssertEqual(upload.mimeType, "audio/m4a")
+        XCTAssertEqual(upload.seconds, 30, accuracy: 0.1)
+        let compressed = try Data(contentsOf: upload.url).count
+        XCTAssertLessThan(compressed, wavBytes / 4, "AAC should be several times smaller than WAV")
+        XCTAssertLessThan(compressed, 1_000_000, "a 30 s clip must fit a 1 MB body cap")
+        // Still decodable audio of the same duration, not a truncated stub.
+        let decoded = try AVAudioFile(forReading: upload.url)
+        XCTAssertEqual(Double(decoded.length) / decoded.fileFormat.sampleRate, 30, accuracy: 0.5)
+    }
+
+    func testCompressedUploadIsDeclaredInTheMultipartPart() async throws {
+        let long = Self.makeWAV(seconds: 30, sampleRate: 16_000, channels: 1)
+        defer { try? FileManager.default.removeItem(at: long) }
+        let engine = makeEngine(base: "https://api.example.com/v1")
+        _ = try await engine.transcribe(audioFile: long, language: nil)
+        let printable = String(decoding: try XCTUnwrap(RemoteStubURLProtocol.lastBody), as: UTF8.self)
+        XCTAssertTrue(printable.contains("filename=\"audio.m4a\""))
+        XCTAssertTrue(printable.contains("Content-Type: audio/m4a"))
+    }
+
+    func testHistoryLabelDropsTheEmptyModel() {
+        XCTAssertEqual(RemoteProfile.historyLabel(model: "", host: "stt.example"), "stt.example")
+        XCTAssertEqual(RemoteProfile.historyLabel(model: "whisper-1", host: "stt.example"), "whisper-1 @ stt.example")
+    }
+
     func testRequestNeverAdvertisesTheApp() async throws {
         let engine = makeEngine(base: "https://api.example.com/v1")
         _ = try await engine.transcribe(audioFile: wavURL, language: nil)

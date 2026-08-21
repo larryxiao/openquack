@@ -1253,7 +1253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let detectedLanguage = result.detectedLanguage
                 // SPEC-044 — history rows carry which backend produced them.
                 let modelLabel = remoteSelected
-                    ? remoteProfile.map { "\($0.model) @ \($0.baseURL.host ?? "?")" } ?? "remote"
+                    ? remoteProfile.map { RemoteProfile.historyLabel(model: $0.model, host: $0.baseURL.host) } ?? "remote"
                     : self.defaultModel
                 let audioDuration = result.audioSeconds
                 let saveTranscriptsFlag = self.saveTranscripts
