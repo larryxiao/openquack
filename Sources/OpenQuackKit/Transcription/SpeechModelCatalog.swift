@@ -9,6 +9,23 @@ public enum SpeechModelCatalog {
     /// The variants offered in Settings, in display order.
     public static let all = ["tiny", "base", "small", "medium", "large-v3"]
 
+    /// Whether a downloaded variant may be removed from disk. On the local
+    /// backend the selected and loaded models are protected; a remote backend
+    /// (SPEC-044) loads none of them, so they are just disk to reclaim. An
+    /// in-flight dictation protects everything — switching to remote mid-
+    /// dictation leaves the local engine finishing that one recording.
+    public static func canDelete(
+        variant: String,
+        selected: String,
+        loaded: String?,
+        remoteBackend: Bool,
+        dictating: Bool
+    ) -> Bool {
+        if dictating { return false }
+        if remoteBackend { return true }
+        return variant != selected && variant != loaded
+    }
+
     public static func displayName(for variant: String) -> String {
         switch variant {
         case "tiny":     return "Tiny"

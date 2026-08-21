@@ -1314,12 +1314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// True while a dictation is in flight — we never swap the engine under it.
-    @MainActor private var isDictating: Bool {
-        switch appState.phase {
-        case .starting, .recording, .transcribing, .polishing: return true
-        default: return false
-        }
-    }
+    @MainActor private var isDictating: Bool { appState.isDictating }
 
     /// Hot-swap the live engine to the current `defaultModel`. Cold start →
     /// normal warm-up; already running it → no-op; mid-dictation → deferred
@@ -1343,11 +1338,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A swap deferred while dictating must not fire (and possibly
             // download a model) after a remote dictation ends.
             pendingSwap = false
-            guard transcriber == nil else { return }
             warmTask?.cancel()
             warmingModel = nil
             appState.speechDownload = .inactive
             if case .warming = appState.phase { appState.phase = .idle }
+            // Remote transcription never reaches the local engine: release it so
+            // its weights leave memory and its files become deletable. A local
+            // dictation already running keeps its engine (ARC) until it ends.
+            if !isDictating { transcriber = nil }
         } else if transcriber == nil {
             startWarm()
         } else {

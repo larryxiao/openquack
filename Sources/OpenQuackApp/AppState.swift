@@ -35,6 +35,15 @@ public final class AppState: ObservableObject {
 
     public static let barCount = 11
 
+    /// True while a recording is in flight, in any of its stages — the window
+    /// during which the engine must not be swapped or its files removed.
+    public var isDictating: Bool {
+        switch phase {
+        case .starting, .recording, .transcribing, .polishing: return true
+        default: return false
+        }
+    }
+
     public func pushLevel(_ level: Float) {
         currentLevel = level
         var h = levelHistory

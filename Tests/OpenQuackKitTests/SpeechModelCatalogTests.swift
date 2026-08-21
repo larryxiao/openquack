@@ -21,4 +21,35 @@ final class SpeechModelCatalogTests: XCTestCase {
     func testSizeLabel_unknownVariantFallsBack() {
         XCTAssertEqual(SpeechModelCatalog.sizeLabel(for: "mystery"), "the model")
     }
+
+    private func canDelete(
+        _ variant: String,
+        selected: String = "large-v3",
+        loaded: String? = "large-v3",
+        remote: Bool = false,
+        dictating: Bool = false
+    ) -> Bool {
+        SpeechModelCatalog.canDelete(
+            variant: variant, selected: selected, loaded: loaded,
+            remoteBackend: remote, dictating: dictating
+        )
+    }
+
+    func testLocalBackendProtectsSelectedAndLoadedModels() {
+        XCTAssertFalse(canDelete("large-v3"))                       // selected + loaded
+        XCTAssertFalse(canDelete("medium", selected: "medium", loaded: "large-v3"))
+        XCTAssertTrue(canDelete("small"))
+    }
+
+    func testRemoteBackendFreesEverySelectedModel() {
+        // SPEC-044 — nothing is loaded locally, so the selection is just disk.
+        XCTAssertTrue(canDelete("large-v3", remote: true))
+        XCTAssertTrue(canDelete("small", remote: true))
+    }
+
+    func testDictationProtectsEveryModelOnEitherBackend() {
+        XCTAssertFalse(canDelete("small", dictating: true))
+        // A local dictation started before the switch is still using its engine.
+        XCTAssertFalse(canDelete("large-v3", remote: true, dictating: true))
+    }
 }
