@@ -25,10 +25,14 @@ final class RecordingOverlay {
             }
     }
 
+    /// Long enough to read an instruction like "sign in again in Settings".
+    private static let errorLinger: TimeInterval = 6
+
     private func handle(phase: AppState.Phase) {
         switch phase {
         case .recording, .transcribing, .polishing:
             ensurePanel()
+            resizePanel(for: phase)
             showAnimated()
         case .ready:
             // Linger briefly so the user sees the "Pasted" / "Copied" state.
@@ -37,7 +41,18 @@ final class RecordingOverlay {
                     self?.hideAnimated()
                 }
             }
-        case .idle, .warming, .starting, .error:
+        case .error:
+            // A failure must never look like a dictation that simply vanished:
+            // show what went wrong, and hold long enough to read a sentence.
+            ensurePanel()
+            resizePanel(for: phase)
+            showAnimated()
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.errorLinger) { [weak self] in
+                if case .error = self?.state.phase {
+                    self?.hideAnimated()
+                }
+            }
+        case .idle, .warming, .starting:
             hideAnimated()
         }
     }
@@ -47,7 +62,7 @@ final class RecordingOverlay {
 
         let pill = OverlayPill(state: state)
         let host = NSHostingView(rootView: pill)
-        host.frame = NSRect(x: 0, y: 0, width: 320, height: 60)
+        host.frame = NSRect(origin: .zero, size: OverlayPill.size(for: state.phase))
 
         let panel = NSPanel(
             contentRect: host.frame,
@@ -68,6 +83,16 @@ final class RecordingOverlay {
 
         self.panel = panel
         self.hostingView = host
+    }
+
+    /// The panel is created at one size; an error pill is bigger, so match the
+    /// window to the SwiftUI frame before showing it or the content clips.
+    private func resizePanel(for phase: AppState.Phase) {
+        guard let panel else { return }
+        let size = OverlayPill.size(for: phase)
+        guard panel.frame.size != size else { return }
+        panel.setContentSize(size)
+        hostingView?.frame = NSRect(origin: .zero, size: size)
     }
 
     private func positionTopCentre(panel: NSPanel) {
@@ -132,7 +157,8 @@ struct OverlayPill: View {
         }
         .padding(.horizontal, Theme.s16)
         .padding(.vertical, Theme.s12)
-        .frame(width: 320, height: 60)
+        .frame(width: Self.size(for: state.phase).width,
+               height: Self.size(for: state.phase).height)
         .background {
             // Thinking-phase progress is rendered as a quiet amber wash
             // filling left → right behind the material, instead of a
@@ -143,7 +169,7 @@ struct OverlayPill: View {
                 if case .transcribing = state.phase {
                     Rectangle()
                         .fill(Theme.amber.opacity(0.22))
-                        .frame(width: 320 * CGFloat(state.transcriptionProgress))
+                        .frame(width: Self.size(for: state.phase).width * CGFloat(state.transcriptionProgress))
                         .animation(.easeOut(duration: 0.20), value: state.transcriptionProgress)
                 }
             }
@@ -176,6 +202,10 @@ struct OverlayPill: View {
                     .font(.body)
                     .foregroundStyle(Theme.moss)
             }
+        case .error:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.body)
+                .foregroundStyle(Theme.coral)
         default:
             Image(systemName: "mic")
                 .font(.system(size: 14))
@@ -238,9 +268,24 @@ struct OverlayPill: View {
     }
 
     private var sublineView: some View {
+        // An error is an instruction ("sign in again in Settings → General"),
+        // so it gets the room to be read rather than a truncating single line.
         Text(plainSubline)
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
+            .lineLimit(isError ? 2 : 1)
+            .fixedSize(horizontal: false, vertical: isError)
+    }
+
+    private var isError: Bool {
+        if case .error = state.phase { return true }
+        return false
+    }
+
+    /// Errors need a bigger pill than the one-line phases.
+    static func size(for phase: AppState.Phase) -> CGSize {
+        if case .error = phase { return CGSize(width: 380, height: 78) }
+        return CGSize(width: 320, height: 60)
     }
 
     private var headline: String {
@@ -254,6 +299,7 @@ struct OverlayPill: View {
                 return state.lastKickoffSucceeded ? "Launched claude" : "Kickoff failed"
             }
             return state.lastPasted ? "Pasted at cursor" : "Copied to clipboard"
+        case .error:        return "Dictation failed"
         default:            return "OpenQuack"
         }
     }
@@ -277,6 +323,8 @@ struct OverlayPill: View {
                 return state.lastKickoffError ?? "Transcript copied to clipboard"
             }
             return state.lastTranscript.map { String($0.prefix(48)) } ?? ""
+        case .error(let message):
+            return message
         default:
             return ""
         }

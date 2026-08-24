@@ -102,6 +102,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// SPEC-044 — nil when the configured backend is ready to record against.
+    @MainActor
+    private func remotePreflightMessage() -> String? {
+        guard let profile = remoteProfile else {
+            return remoteBackendSelected
+                ? "Remote endpoint URL is missing or invalid — check Settings → General."
+                : nil
+        }
+        return DictationFailure.remotePreflightMessage(
+            profile: profile,
+            credentials: KeychainCredentialStore()
+        )
+    }
+
     private var lastVoiceAt: Date?
     private static let voiceThreshold: Float = 0.06
     private static let vadMinDuration: Double = 0.8
@@ -836,6 +850,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return
             }
+            // SPEC-044 — an expired sign-in or missing key would only surface
+            // after the user finished speaking, losing the dictation. Say so
+            // before recording starts; the transcribe path still re-checks.
+            if let blocker = await MainActor.run(body: { remotePreflightMessage() }) {
+                await MainActor.run { appState.phase = .error(blocker) }
+                return
+            }
             await MainActor.run {
                 appState.phase = .starting
                 cancelPolishIdleUnload()
@@ -1285,7 +1306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     "transcribe failed (\(remoteSelected ? "remote" : "local")): \(firstLine)"
                 )
                 await MainActor.run {
-                    appState.phase = .error("Transcription failed: \(error)")
+                    appState.phase = .error(DictationFailure.message(for: error))
                     schedulePolishIdleUnload()
                 }
             }

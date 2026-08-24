@@ -54,6 +54,7 @@ Transport rules: HTTPS required (plain HTTP allowed for loopback only, for local
 - Launch: with remote selected, the local model warm-up (and its potential multi-GB download) is skipped and the app goes straight to idle; switching back to local in Settings warms lazily, as does history recovery. Switching *to* remote also releases a loaded local engine (unless a dictation is mid-flight, which keeps its engine until it ends), so its weights leave memory — and, since nothing is loaded, every downloaded speech model becomes deletable in Settings including the selected one (`SpeechModelCatalog.canDelete`); an in-flight dictation protects them all.
 - History rows record the backend (`modelID` becomes `"<model> @ <host>"` for remote runs). Pending-recovery re-transcription stays local.
 - Agent-kickoff recordings follow the same transcription backend as dictation.
+- Failures are visible, not silent: the recording overlay stays up on `.error` (it used to hide as if the dictation had evaporated), showing `DictationFailure.message(for:)` — the engine's user-facing line, wrapper and server body stripped. A remote profile that cannot work (no key, not signed in, expired Access session) is caught by `DictationFailure.remotePreflightMessage` *before* recording starts, so the user reads the instruction instead of losing an utterance to it.
 
 ### Privacy indicator
 
@@ -86,6 +87,7 @@ This is the first feature that can send audio off-device, so the change is fence
 - [ ] Non-2xx responses surface status + body detail as an `EngineError` (unit test).
 - [ ] Overlay shows the remote chip and `via <host>` subline during a remote dictation, and `On your Mac` never appears while remote is active (manual: configure endpoint, dictate, observe overlay).
 - [ ] History entry for a remote dictation shows `<model> @ <host>` (manual).
+- [ ] A remote failure (wrong key, expired sign-in, unreachable host) shows an error in the overlay rather than dismissing it, and an unusable profile is reported before recording starts (unit tests: message shaping, preflight cases; manual: dictate with an expired session).
 - [ ] Manual end-to-end: against a live OpenAI-compatible endpoint, hotkey → speak → paste lands the remote transcript; with a wrong key, dictation shows the HTTP 401 error and nothing is pasted.
 
 ## Out of scope
