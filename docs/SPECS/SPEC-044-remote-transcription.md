@@ -39,7 +39,7 @@ No secret lives in the profile or in UserDefaults. Secrets go in the Keychain vi
 
 `RemoteEngine` implements the existing `TranscriptionEngine` protocol (no protocol changes). Per request:
 
-1. Re-encode the recording to 16 kHz mono 16-bit WAV (`AudioResampler`, AVFoundation only — the recorder writes device-native rate, often 48 kHz stereo, which is ~6× the upload weight for zero quality gain).
+1. Re-encode the recording to 16 kHz mono 16-bit WAV (`AudioResampler`, AVFoundation only — the recorder writes device-native rate, often 48 kHz stereo, which is ~6× the upload weight for zero quality gain). Above `compressAboveBytes` (700 KB, ~22 s) the WAV is further encoded to 32 kbps mono AAC/m4a — ~7× smaller, so long dictations stay inside gateway body caps and upload faster. Measured against a live endpoint, WAV and AAC transcripts matched on clean, noisy, and Chinese speech. Encoding runs through `AVAssetWriter` (`AVAudioFile` cannot write compressed formats), and any encoder failure falls back to the WAV rather than failing the dictation.
 2. `POST {base}/audio/transcriptions` (path not appended if the user already pasted the full path), multipart: `file`, `model`, optional `language`, `response_format=json`.
 3. Parse `{"text": …}`; plain-text bodies accepted as a fallback for non-conforming servers.
 
@@ -91,7 +91,7 @@ This is the first feature that can send audio off-device, so the change is fence
 ## Out of scope
 
 - **Cloudflare Access / SSO auth** (browser login → JWT, service tokens) — follow-up spec; `RemoteAuth` is a closed enum designed to grow cases without touching transport.
-- **Ogg Opus upload encoding** — only worth it for endpoints with ~1 MB body caps; 16 kHz WAV (~32 KB/s) covers realistic dictation lengths.
+- **Ogg Opus upload encoding** — superseded by AAC/m4a above (also an OpenAI-accepted format, and encodable with no new dependency; macOS can only put Opus in a CAF container, so shipping `.ogg` would mean bundling libopus + libogg for a marginal size win).
 - **Multiple profiles / per-app or per-language routing.**
 - **CLI + bench remote support**, and bench methodology for network-dominated latency.
 - **Automatic fallback to local on remote failure** — deliberate: silent fallback hides misconfiguration; revisit with real usage data.
