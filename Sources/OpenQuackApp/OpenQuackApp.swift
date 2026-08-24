@@ -523,6 +523,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Refresh now so the AX banner reflects the latest state immediately
             // when the popover opens.
             refreshPermissions()
+            // Size the popover to its SwiftUI content *before* showing it: the
+            // arrow notch is drawn against the geometry at placement time, so a
+            // window that resizes afterwards leaves the arrow pointing wide of
+            // the status item.
+            if let content = popover.contentViewController?.view {
+                content.layoutSubtreeIfNeeded()
+                let fitting = content.fittingSize
+                if fitting.width > 0, fitting.height > 0 { popover.contentSize = fitting }
+            }
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
             monitorClicksOutside()
