@@ -236,7 +236,27 @@ private struct GeneralPane: View {
                 Button("Dismiss") { speechDownload.cancel() }.font(.caption)
             }
         default:
-            EmptyView()
+            // Launch warm-up downloads without a sheet; its only other surface
+            // is the menu-bar banner, which is hidden while this window is up.
+            if case .downloading(let variant, let fraction) = appState.speechDownload,
+               !speechDownload.canResurface {
+                HStack(spacing: Theme.s8) {
+                    ProgressView(value: fraction).frame(maxWidth: 160)
+                    Text("\(SpeechModelCatalog.displayName(for: variant)) · \(SpeechModelDownloadSheet.percentLabel(fraction))")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }
+            } else if transcriptionBackend == "local", !WhisperKitEngine.hasModelWeights(for: model) {
+                // Local can't transcribe without these weights, and the picker
+                // can't re-offer them — this model is already the selection.
+                // Reachable by cancelling a download or deleting the model.
+                HStack(spacing: Theme.s8) {
+                    Text("\(SpeechModelCatalog.displayName(for: model)) isn't on your Mac yet.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Download") { speechDownload.begin(target: model) }.font(.caption)
+                }
+            }
         }
     }
 
@@ -244,16 +264,17 @@ private struct GeneralPane: View {
     /// not-yet-downloaded one opens the download sheet and the visual pick reverts.
     private func selectSpeechModel(_ target: String) {
         guard target != model else { return }
-        var warmingNow = false
-        if case .downloading = appState.speechDownload, !speechDownload.canResurface { warmingNow = true }
-        if !warmingNow, !WhisperKitEngine.hasModelWeights(for: target) {
-            // App is warm but the model isn't downloaded → confirm + download;
-            // the controller hot-swaps the engine once it lands.
+        if !WhisperKitEngine.hasModelWeights(for: target) {
+            // Not downloaded → confirm + download; the controller hot-swaps the
+            // engine once it lands. This holds even while a warm-path download
+            // is already running: retargeting that one instead would spend
+            // gigabytes with no confirmation and no way to stop it (the sheet's
+            // Download stands the warm transfer down).
             speechDownload.begin(target: target)
             pickerModel = model
         } else {
-            // Downloaded (hot-swap now) or mid warm-up (retarget) — commit and let
-            // AppDelegate apply it: immediately, or after the current dictation.
+            // Downloaded — commit and let AppDelegate apply it: immediately, or
+            // after the current dictation.
             model = target
             (NSApp.delegate as? AppDelegate)?.swapModel()
         }
@@ -1822,7 +1843,7 @@ private struct SpeechModelDownloadSheet: View {
 
             switch model.phase {
             case .idle, .confirming:
-                Text("This speech model needs a one-time \(SpeechModelCatalog.sizeLabel(for: model.target)) download. It stays on your Mac and takes effect the next time OpenQuack launches.")
+                Text("This speech model needs a one-time \(SpeechModelCatalog.sizeLabel(for: model.target)) download. It stays on your Mac and takes effect as soon as it lands.")
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()

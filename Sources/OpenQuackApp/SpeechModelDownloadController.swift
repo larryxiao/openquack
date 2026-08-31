@@ -5,8 +5,8 @@ import OpenQuackKit
 /// Long-lived owner of the Whisper speech-model download. Held by `AppDelegate`
 /// so the transfer survives sheet/window dismissal. Commits the new
 /// `@AppStorage("model")` value only on verified success; mirrors progress into
-/// `AppState` for the menu-bar banner. The model takes effect on next launch
-/// (no live engine hot-swap) — the existing `warmTranscriber` path loads it.
+/// `AppState` for the menu-bar banner. On success `onCommitted` hot-swaps the
+/// live engine to the new model.
 @MainActor
 final class SpeechModelDownloadController: ObservableObject {
     enum Phase: Equatable {
@@ -30,15 +30,34 @@ final class SpeechModelDownloadController: ObservableObject {
     /// preference, so AppDelegate can hot-swap the live engine to it.
     var onCommitted: (() -> Void)?
 
+    /// Called (main actor) just before this controller starts transferring, so
+    /// AppDelegate can stand down a warm-path download and keep the app to one
+    /// multi-gigabyte transfer at a time.
+    var onWillDownload: (() -> Void)?
+
+    /// Called (main actor) after a cancel has torn the transfer down, so
+    /// AppDelegate can restart whatever warm-up this download displaced.
+    var onCancelled: (() -> Void)?
+
     private var task: Task<Void, Never>?
+    /// Bumped whenever a transfer is abandoned (cancelled or replaced). Every
+    /// callback carries the generation it was started under: cancellation is
+    /// asynchronous, so a superseded task can still deliver progress or reach
+    /// its completion handler and would otherwise commit or dismiss its
+    /// successor's download.
+    private var generation = 0
     /// The "model" preference value when the current download started. Used to
     /// avoid clobbering a newer explicit selection the user made mid-download.
     private var baselineModel = ""
 
-    /// Open the sheet for a target the picker found not-yet-downloaded. If a
-    /// download is already running, re-surface it instead of resetting to confirm.
+    /// Open the sheet for a target that isn't downloaded yet. A transfer already
+    /// running for the *same* target is re-surfaced rather than restarted; one
+    /// for a different target is replaced, so the app never runs two multi-
+    /// gigabyte downloads at once. Replacing leaves the abandoned partial
+    /// weights in the cache — re-selecting that model resumes them.
     func begin(target: String) {
-        guard task == nil else { resurface(); return }
+        if task != nil, self.target == target { resurface(); return }
+        abandonTask()
         self.target = target
         phase = .confirming
         isPresented = true
@@ -63,11 +82,22 @@ final class SpeechModelDownloadController: ObservableObject {
     /// partial weights stay in WhisperKit's cache; re-selecting the model
     /// re-runs the download (HubApi resumes from where it stopped).
     func cancel() {
-        task?.cancel()
-        task = nil
+        abandonTask()
         phase = .idle
-        appState?.speechDownload = .inactive
         isPresented = false
+        onCancelled?()
+    }
+
+    /// Drop the in-flight transfer and make sure nothing it does afterwards
+    /// reaches this controller's state. No-op without a task of our own — the
+    /// banner then belongs to a warm-path download, which `onWillDownload`
+    /// stands down at the point we actually start.
+    private func abandonTask() {
+        guard let task else { return }
+        task.cancel()
+        self.task = nil
+        generation &+= 1
+        appState?.speechDownload = .inactive
     }
 
     /// Re-open the sheet on a background download (from the Settings row or the
@@ -85,23 +115,25 @@ final class SpeechModelDownloadController: ObservableObject {
     /// Idempotent: starting while a task already runs is a no-op.
     private func start() {
         guard task == nil else { return }
+        onWillDownload?()
         baselineModel = UserDefaults.standard.string(forKey: "model") ?? "medium"
         phase = .downloading(0)
         let variant = target
+        let gen = generation
         appState?.speechDownload = .downloading(model: variant, fraction: 0)
         task = Task { [weak self] in
             guard let self else { return }
             do {
                 try await WhisperKitEngine.ensureDownloaded(model: variant) { fraction in
-                    Task { @MainActor in self.ingest(fraction: fraction) }
+                    Task { @MainActor in self.ingest(fraction: fraction, gen: gen) }
                 }
-                self.finishSuccessfully()
+                self.finishSuccessfully(gen: gen)
             } catch {
                 // A user cancel tears down state in cancel(); detect it via the
                 // task's flag. `ensureDownloaded` currently absorbs
                 // CancellationError, but guard on it too so this stays correct
                 // if that ever changes.
-                if Task.isCancelled || error is CancellationError { self.task = nil; return }
+                guard gen == self.generation, !Task.isCancelled, !(error is CancellationError) else { return }
                 self.task = nil
                 self.phase = .failed("Download failed. Check your connection and retry.")
                 self.appState?.speechDownload = .inactive
@@ -109,7 +141,8 @@ final class SpeechModelDownloadController: ObservableObject {
         }
     }
 
-    private func finishSuccessfully() {
+    private func finishSuccessfully(gen: Int) {
+        guard gen == generation else { return }
         task = nil
         phase = .idle
         // Adopt the freshly downloaded model only if the user hasn't switched to
@@ -124,8 +157,8 @@ final class SpeechModelDownloadController: ObservableObject {
         isPresented = false
     }
 
-    private func ingest(fraction: Double) {
-        guard case .downloading = phase else { return }
+    private func ingest(fraction: Double, gen: Int) {
+        guard gen == generation, case .downloading = phase else { return }
         phase = .downloading(fraction)
         appState?.speechDownload = .downloading(model: target, fraction: fraction)
     }
