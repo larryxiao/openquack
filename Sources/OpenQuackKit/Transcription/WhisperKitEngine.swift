@@ -112,12 +112,23 @@ public final class WhisperKitEngine: TranscriptionEngine {
     /// weights; the small tokenizer is pulled lazily at model load. The Settings
     /// picker and the launch warm-up gate use this so a downloaded model isn't
     /// re-offered for download just because its tokenizer hasn't been fetched yet.
+    ///
+    /// Checks each bundle's `weights/weight.bin`, not the bundle directory:
+    /// HubApi creates the directory and fills in the small files (`model.mil`,
+    /// `metadata.json`, `coremldata.bin`) as soon as the transfer starts, and
+    /// only moves the gigabyte-scale weight file in when it completes. Testing
+    /// the directory made every torn download — a cancel, a quit, a dropped
+    /// connection — read back as a finished one, which then downloaded silently
+    /// inside `WhisperKit`'s own init and listed as deletable in Settings.
     public static func hasModelWeights(for variant: String, downloadBase: URL? = nil) -> Bool {
         let fm = FileManager.default
         let modelFolder = localModelFolder(for: variant, downloadBase: downloadBase)
         let required = ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"]
         return required.allSatisfy {
-            fm.fileExists(atPath: modelFolder.appendingPathComponent($0).path)
+            fm.fileExists(atPath: modelFolder
+                .appendingPathComponent($0, isDirectory: true)
+                .appendingPathComponent("weights", isDirectory: true)
+                .appendingPathComponent("weight.bin").path)
         }
     }
 
