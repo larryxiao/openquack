@@ -149,6 +149,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// sheet). Wired to `appState` in didFinishLaunching.
     @MainActor lazy var speechDownload = SpeechModelDownloadController()
     private var transcriber: WhisperKitEngine?
+    /// The model whose warm-path download a Settings download stood down, so a
+    /// cancel can restart exactly that one and nothing else.
+    private var displacedWarmModel: String?
     private var streamer: StreamingTranscriber?   // SPEC-012; long-lived after warm
     /// Cancellable warm-up. Restarted (retargeted) when the user switches the
     /// active model while the launch download is still running.
@@ -253,7 +256,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         polishDownload.reconcileOnLaunch()
         speechDownload.appState = appState
         // Hot-swap the live engine when a Settings download commits a new model.
-        speechDownload.onCommitted = { [weak self] in self?.swapModel() }
+        speechDownload.onCommitted = { [weak self] in
+            self?.displacedWarmModel = nil
+            self?.swapModel()
+        }
+        speechDownload.onWillDownload = { [weak self] in self?.cancelWarmDownload() }
+        speechDownload.onCancelled = { [weak self] in self?.speechDownloadCancelled() }
 
         // SPEC-031 — kickoff notification plumbing. Set the delegate
         // BEFORE any notification is posted so first-press clicks are
@@ -716,6 +724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func toggleRecording() {
         switch appState.phase {
         case .idle, .ready, .error:
+            guard localEngineReady() else { return }
             appState.recordingMode = .dictation
             startRecording()
         case .recording:
@@ -724,6 +733,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Ignore — the user gets a hotkey-tap during a transition; we just drop it.
             NSSound.beep()
         }
+    }
+
+    /// A local dictation started with no engine loaded records happily and then
+    /// throws the utterance away at the nil-engine guard in `stopAndTranscribe`.
+    /// Refuse up front instead: the model is downloading, or waiting on the
+    /// Settings download sheet, and the user should hear about it before they
+    /// speak. `.warming` already beeps in the callers, so this only covers the
+    /// idle-but-engineless window a Settings download opens.
+    @MainActor
+    private func localEngineReady() -> Bool {
+        if remoteBackendSelected || transcriber != nil { return true }
+        NSSound.beep()
+        appState.phase = .error("Speech model isn't ready yet — finish the download in Settings.")
+        return false
     }
 
     /// SPEC-031 — agent-kickoff hotkey. Press to start a recording whose
@@ -735,7 +758,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func toggleKickoff() {
         switch appState.phase {
         case .idle, .ready, .error:
-            guard ensureKickoffConsent() else { return }
+            guard localEngineReady(), ensureKickoffConsent() else { return }
             appState.recordingMode = .agentKickoff
             startRecording()
         case .recording:
@@ -1351,6 +1374,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// until the dictation finishes (see `applyPendingSwapIfIdle`).
     @MainActor
     func swapModel() {
+        // The user moved to remote while the swap (or its download) was in
+        // flight: remote needs no local engine, so drop the swap.
+        guard !remoteBackendSelected else { return }
         let target = defaultModel
         guard transcriber != nil else { startWarm(); return }
         guard transcriber?.modelID != target else { return }
@@ -1376,11 +1402,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // its weights leave memory and its files become deletable. A local
             // dictation already running keeps its engine (ARC) until it ends.
             if !isDictating { transcriber = nil }
+        } else if !WhisperKitEngine.hasModelWeights(for: defaultModel) {
+            // The weights may be gone (freed while remote was on) or never
+            // fetched. Warming would download gigabytes silently behind the
+            // Settings window, with the menu-bar banner as its only surface —
+            // route it through the sheet so it's visible and cancellable.
+            speechDownload.begin(target: defaultModel)
         } else if transcriber == nil {
             startWarm()
         } else {
             swapModel()   // re-derive any model change made while remote was active
         }
+    }
+
+    /// A Settings download was cancelled (or dismissed after failing). Put back
+    /// only the warm-up this download displaced — the user cancelled *their*
+    /// transfer, not the one we stood down behind their back. With nothing
+    /// displaced the app stays engineless on purpose: restarting the warm path
+    /// would re-fetch the gigabytes they just refused (or try to load a torn
+    /// cache), and Settings offers the download again instead.
+    @MainActor
+    func speechDownloadCancelled() {
+        guard let displaced = displacedWarmModel else { return }
+        displacedWarmModel = nil
+        guard !remoteBackendSelected, displaced == defaultModel else { return }
+        startWarm()
+    }
+
+    /// Stop a warm-path download so the Settings sheet can own the transfer —
+    /// two multi-gigabyte fetches must never run at once. Only the download
+    /// phase is interruptible; once the engine is loading there's nothing large
+    /// left to stop, and nothing to put back.
+    @MainActor
+    func cancelWarmDownload() {
+        guard case .downloading(let model, _) = appState.speechDownload else { return }
+        displacedWarmModel = model
+        warmTask?.cancel()
+        warmingModel = nil
+        appState.speechDownload = .inactive
+        if case .warming = appState.phase { appState.phase = .idle }
     }
 
     /// Phase-observer hook: apply a deferred swap once dictation ends.
