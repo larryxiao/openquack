@@ -18,12 +18,23 @@ final class WhisperKitEngineCacheTests: XCTestCase {
         try await super.tearDown()
     }
 
-    private func seedCompleteCache(for variant: String) throws {
+    /// Every `.mlmodelc` in `argmaxinc/whisperkit-coreml` carries its payload in
+    /// `weights/weight.bin`; the rest of the bundle is small metadata.
+    private func seedWeights(for variant: String, bundles: [String] = WhisperKitEngineCacheTests.allBundles) throws {
         let fm = FileManager.default
         let model = WhisperKitEngine.localModelFolder(for: variant, downloadBase: base)
-        for name in ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"] {
-            try fm.createDirectory(at: model.appendingPathComponent(name), withIntermediateDirectories: true)
+        for name in bundles {
+            let weights = model.appendingPathComponent(name).appendingPathComponent("weights")
+            try fm.createDirectory(at: weights, withIntermediateDirectories: true)
+            try Data().write(to: weights.appendingPathComponent("weight.bin"))
         }
+    }
+
+    private static let allBundles = ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"]
+
+    private func seedCompleteCache(for variant: String) throws {
+        let fm = FileManager.default
+        try seedWeights(for: variant)
         let tokenizer = WhisperKitEngine.localTokenizerFolder(for: variant, downloadBase: base)
         try fm.createDirectory(at: tokenizer, withIntermediateDirectories: true)
         try Data().write(to: tokenizer.appendingPathComponent("tokenizer.json"))
@@ -55,14 +66,33 @@ final class WhisperKitEngineCacheTests: XCTestCase {
     }
 
     func testHasModelWeights_trueWhenWeightsPresentEvenWithoutTokenizer() throws {
-        let fm = FileManager.default
-        let model = WhisperKitEngine.localModelFolder(for: "tiny", downloadBase: base)
-        for name in ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc", "TextDecoder.mlmodelc"] {
-            try fm.createDirectory(at: model.appendingPathComponent(name), withIntermediateDirectories: true)
-        }
         // No tokenizer — mirrors a fresh `ensureDownloaded` (weights only).
+        try seedWeights(for: "tiny")
         XCTAssertTrue(WhisperKitEngine.hasModelWeights(for: "tiny", downloadBase: base))
         XCTAssertFalse(WhisperKitEngine.hasCompleteLocalCache(for: "tiny", downloadBase: base))
+    }
+
+    /// A torn download (cancel, quit, dropped connection) leaves the bundle
+    /// directories and their small files behind but not the weight payload.
+    /// That must read as "not downloaded", or the app skips its own visible
+    /// download and lets WhisperKit fetch gigabytes silently at load time.
+    func testHasModelWeights_falseWhenBundleDirsExistWithoutWeightFiles() throws {
+        let fm = FileManager.default
+        let model = WhisperKitEngine.localModelFolder(for: "tiny", downloadBase: base)
+        for name in Self.allBundles {
+            let bundle = model.appendingPathComponent(name)
+            try fm.createDirectory(at: bundle, withIntermediateDirectories: true)
+            try Data().write(to: bundle.appendingPathComponent("model.mil"))
+            try Data().write(to: bundle.appendingPathComponent("coremldata.bin"))
+        }
+        XCTAssertFalse(WhisperKitEngine.hasModelWeights(for: "tiny", downloadBase: base))
+    }
+
+    func testHasModelWeights_falseWhenOneBundlesWeightIsStillMissing() throws {
+        try seedWeights(for: "tiny", bundles: ["AudioEncoder.mlmodelc", "MelSpectrogram.mlmodelc"])
+        XCTAssertFalse(WhisperKitEngine.hasModelWeights(for: "tiny", downloadBase: base))
+        try seedWeights(for: "tiny", bundles: ["TextDecoder.mlmodelc"])
+        XCTAssertTrue(WhisperKitEngine.hasModelWeights(for: "tiny", downloadBase: base))
     }
 
     func testHasModelWeights_falseWhenAWeightIsMissing() throws {

@@ -44,6 +44,12 @@ public enum EngineKind: String, CaseIterable, Sendable { case whisperkit, lightn
 | WhisperCpp | future | Non-MLX reference for cross-platform later |
 | MLXAudioEngine (`mlx-audio-swift`) | future | Voxtral / Qwen3-ASR / Parakeet variants |
 
+## Model cache
+
+Weights live in `~/Library/Application Support/OpenQuack/WhisperKit/models/argmaxinc/whisperkit-coreml/openai_whisper-<variant>/`, shared by the app, the CLI and the bench. Each variant is three `.mlmodelc` bundles, and a bundle's payload is its `weights/weight.bin` — everything else in it is small metadata.
+
+"Is this variant downloaded?" (`WhisperKitEngine.hasModelWeights`) must therefore test those three weight **files**, never the bundle directories: HubApi creates the directories and the small files the moment a transfer starts and moves the weight file in only on completion, so a directory test reports every torn download — a cancel, a quit, a dropped connection — as finished. Downstream that means the app skips its own visible download, `WhisperKit`'s init silently re-fetches gigabytes with no progress surface, and Settings offers the half-model for deletion.
+
 ## Quality gates (M2 default model selection)
 
 - WER ≤ **3 %** on `bench/corpus/librispeech` for the chosen default model.
@@ -52,6 +58,12 @@ public enum EngineKind: String, CaseIterable, Sendable { case whisperkit, lightn
 - Peak RSS ≤ **400 MB** for the engine + model alone.
 
 A model that fails any of these is not the default. `BENCHMARKS.md` is the source of truth.
+
+## Acceptance criteria
+
+- [ ] WER / RTF / cold-start / RSS meet the quality gates above for the default model; `BENCHMARKS.md` carries the numbers.
+- [ ] A variant whose three `weights/weight.bin` files are all present reads as downloaded; one missing any of them — including the torn case where every bundle directory and its small files exist — reads as not downloaded (unit tests: `WhisperKitEngineCacheTests.testHasModelWeights_*`).
+- [ ] Manual: interrupt a model download (quit mid-transfer), relaunch, and confirm Settings does not list the variant under "Downloaded models" and re-offers it for download with visible progress rather than fetching it silently.
 
 ## Open questions
 
