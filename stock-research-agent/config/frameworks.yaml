@@ -1,0 +1,15 @@
+# 各主题的入场/出场框架定义（阶段 2 由 src/framework 读写）。
+# 三维打分：技术 technical / 基本面 fundamental / 情绪 sentiment。
+#
+# 示例（来自 PROJECT_PLAN.md 第 5 节）：
+frameworks:
+  中国军工:
+    core_thesis: 国防订单前置 + 产业链景气上升
+    entry:
+      technical: 龙头(航发动力)突破 200 日线 + 成交量 > 3 亿
+      fundamental: 上游材料库存回升(钛材/高温合金报价走强)
+      sentiment: 北向连续净买入 > 5 亿/日
+    exit:
+      falsify: 订单预告转负 OR 北向转为净卖出
+      technical: 破 20 日线 + 量能萎缩
+      combine_rule: 任意 2 个维度红灯即出

@@ -1,0 +1,20 @@
+# 环境与密钥
+.env
+
+# 本地数据/缓存
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.uv/
+uv.lock
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
