@@ -72,6 +72,7 @@ private struct GeneralPane: View {
     // SPEC-044 — remote transcription backend. The API key itself never
     // touches UserDefaults: it lives in the Keychain, keyed by endpoint host.
     @AppStorage("transcriptionBackend") private var transcriptionBackend: String = "local"
+    @AppStorage("youdaoModel")          private var youdaoModel: String = YoudaoR2T2Engine.defaultModel
     @AppStorage("remoteEndpoint")       private var remoteEndpoint: String = ""
     @AppStorage("remoteModel")          private var remoteModel: String = "whisper-1"
     @AppStorage("remoteAuthMethod")     private var remoteAuthMethod: String = "bearer"
@@ -501,22 +502,38 @@ private struct GeneralPane: View {
             .foregroundStyle(.secondary)
     }
 
+    @ViewBuilder
+    private var youdaoBackendRows: some View {
+        Picker("Youdao / Qwen3 model", selection: $youdaoModel) {
+            Text("Confucius4-R2T2 (netease-youdao/Confucius4-R2T2)").tag("netease-youdao/Confucius4-R2T2")
+            Text("Qwen3-ASR 1.7B (Qwen/Qwen3-ASR-1.7B, Apache-2.0)").tag("Qwen/Qwen3-ASR-1.7B")
+            Text("Qwen3-ASR 0.6B (Qwen/Qwen3-ASR-0.6B, Apache-2.0)").tag("Qwen/Qwen3-ASR-0.6B")
+        }
+        Text("Runs locally via bench/engines/youdao_r2t2_runner.py (`pip install qwen-asr soundfile`). Confucius4-R2T2 weights use the NetEase Youdao Model Use License Agreement.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+    }
+
     var body: some View {
         Form {
             Section {
                 Picker("Transcription", selection: $transcriptionBackend) {
                     Text("On this Mac").tag("local")
+                    Text("Youdao Confucius4-R2T2 (local Python, experimental)").tag("youdao")
                     Text("Remote endpoint (experimental)").tag("remote")
                 }
                 .help("Remote sends each recording to the server you configure below. Local is the default; nothing leaves your Mac unless you switch.")
                 .onChange(of: transcriptionBackend) { _ in
                     (NSApp.delegate as? AppDelegate)?.transcriptionBackendChanged()
                 }
+                if transcriptionBackend == "youdao" {
+                    youdaoBackendRows
+                }
                 if transcriptionBackend == "remote" {
                     remoteBackendRows
                 }
                 speechModelPicker
-                    .disabled(transcriptionBackend == "remote")
+                    .disabled(transcriptionBackend != "local")
                 speechDownloadRow
                 Text("Switches right away (downloads first if the model isn't on your Mac). A switch during dictation applies once it finishes.")
                     .font(.caption)

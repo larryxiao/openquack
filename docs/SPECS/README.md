@@ -58,8 +58,9 @@ column tracks *implementation* state, which is what the roadmap drives against:
 | [SPEC-035](SPEC-035-chinese-script-system-default.md) | Auto-normalise Chinese script + mixed-language streaming detection | shipped | M3 |
 | [SPEC-044](SPEC-044-remote-transcription.md) | Remote transcription endpoint (bring your own) | shipped | M3 |
 | [SPEC-045](SPEC-045-cloudflare-access-auth.md) | Cloudflare Access auth for remote transcription | draft | M3 |
+| [SPEC-046](SPEC-046-youdao-confucius4-r2t2.md) | Youdao Confucius4-R2T2 engine and CJK punctuation normalization | shipped | M3 |
 
-> Next free spec ID: **SPEC-046** (036–043 exist on disk but are not yet listed
+> Next free spec ID: **SPEC-047** (036–043 exist on disk but are not yet listed
 > above). SPEC-033 / SPEC-034 stay reserved for the two
 > open docs PRs (#41 Pages analytics → 033, #42 install-count → 034, pending
 > renumber). IDs are global and monotonic — never reuse 028/029/031/032/035.

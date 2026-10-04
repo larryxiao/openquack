@@ -77,6 +77,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var remoteBackendSelected: Bool {
         UserDefaults.standard.string(forKey: "transcriptionBackend") == "remote"
     }
+    // SPEC-046 — local Youdao Confucius4-R2T2 / Qwen3-ASR backend (opt-in in Settings).
+    private var youdaoBackendSelected: Bool {
+        UserDefaults.standard.string(forKey: "transcriptionBackend") == "youdao"
+    }
+    private var youdaoModelID: String {
+        let raw = UserDefaults.standard.string(forKey: "youdaoModel") ?? YoudaoR2T2Engine.defaultModel
+        return YoudaoR2T2Engine.resolveModelID(raw)
+    }
     /// The configured remote profile, or nil when the backend is local or the
     /// endpoint URL doesn't parse. A selected-but-broken config must surface an
     /// error at transcribe time, never silently fall back to local.
@@ -126,11 +134,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC-036 — summary of the most recent recording for the bug-report dump.
     private var lastRecordingDiag: DiagnosticsReport.LastRecording?
 
-    /// SPEC-044 — backend snapshot taken when the recording starts, so the
-    /// destination the overlay showed is the destination actually used at stop
-    /// (a Settings change mid-recording applies to the *next* dictation).
+    /// SPEC-044 / SPEC-046 — backend snapshot taken when the recording starts,
+    /// so the destination the overlay showed is the destination actually used at
+    /// stop (a Settings change mid-recording applies to the *next* dictation).
     private var recordingRemoteSelected = false
     private var recordingRemoteProfile: RemoteProfile?
+    private var recordingYoudaoSelected = false
+    private var recordingYoudaoModel: String = YoudaoR2T2Engine.defaultModel
 
     private let appState = AppState()
     private let recorder = AudioRecorder()
@@ -310,10 +320,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let hasOnboarded = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         if hasOnboarded {
-            if remoteBackendSelected {
-                // SPEC-044 — don't block dictation on (or download) a local
-                // model the remote path doesn't use; warm lazily if the user
-                // switches back (transcriptionBackendChanged / recovery).
+            if remoteBackendSelected || youdaoBackendSelected {
+                // SPEC-044 / SPEC-046 — don't block dictation on (or download) a
+                // WhisperKit model the active backend doesn't use; warm lazily
+                // if the user switches back.
                 appState.phase = .idle
             } else {
                 // Seasoned user — warm the model in the background.
@@ -743,7 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// idle-but-engineless window a Settings download opens.
     @MainActor
     private func localEngineReady() -> Bool {
-        if remoteBackendSelected || transcriber != nil { return true }
+        if remoteBackendSelected || youdaoBackendSelected || transcriber != nil { return true }
         NSSound.beep()
         appState.phase = .error("Speech model isn't ready yet — finish the download in Settings.")
         return false
@@ -902,14 +912,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // isn't warm yet, framesHandler stays nil and we pay nothing.
             let language = defaultLanguage
             let words = customWords
-            // SPEC-044 — snapshot the backend for this recording's whole
-            // lifetime (indicator + transcription must agree).
+            // SPEC-044 / SPEC-046 — snapshot the backend for this recording's
+            // whole lifetime (indicator + transcription must agree).
             recordingRemoteSelected = remoteBackendSelected
             recordingRemoteProfile = remoteProfile
+            recordingYoudaoSelected = youdaoBackendSelected
+            recordingYoudaoModel = youdaoModelID
             await tearDownFramesPump()
-            // SPEC-044 — no local streaming work when the audio is headed to a
-            // remote endpoint anyway.
-            if let streamer, !recordingRemoteSelected {
+            // SPEC-044 / SPEC-046 — no local WhisperKit streaming work when the
+            // audio is headed to a remote endpoint or Youdao runner.
+            if let streamer, !recordingRemoteSelected, !recordingYoudaoSelected {
                 // Pump pattern: the audio thread `yield`s into an unbounded
                 // AsyncStream; a single Task drains it serially into the
                 // actor. This preserves FIFO order — `Task { await ... }` per
@@ -1075,11 +1087,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 appState.lastCaptureSilent = false   // a non-silent capture clears the warning
             }
 
-            // SPEC-044 — use the backend snapshotted at recording start, not
-            // the live setting: what the overlay disclosed is what runs.
+            // SPEC-044 / SPEC-046 — use the backend snapshotted at recording
+            // start, not the live setting: what the overlay disclosed is what runs.
             let remoteSelected = recordingRemoteSelected
             let remoteProfile = recordingRemoteProfile
-            if !remoteSelected, transcriber == nil {
+            let youdaoSelected = recordingYoudaoSelected
+            let youdaoModel = recordingYoudaoModel
+            if !remoteSelected, !youdaoSelected, transcriber == nil {
                 await MainActor.run {
                     appState.phase = .error("Still getting ready — try again in a moment.")
                 }
@@ -1132,6 +1146,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     let remote = RemoteEngine(profile: profile)
                     result = try await remote.transcribe(audioFile: url, language: defaultLanguage)
+                } else if youdaoSelected {
+                    // SPEC-046 — local Youdao Confucius4-R2T2 / Qwen3-ASR path.
+                    await tearDownFramesPump()
+                    if let streamer { await streamer.cancel() }
+                    pathLabel = "youdao"
+                    let youdao = try await YoudaoR2T2Engine(model: youdaoModel)
+                    result = try await youdao.transcribe(
+                        audioFile: url,
+                        language: defaultLanguage,
+                        customWords: customWords
+                    )
                 } else if audioDuration >= Self.streamingThreshold, let streamer {
                     await tearDownFramesPump()
                     let r = try await streamer.finish()
@@ -1304,10 +1329,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // SPEC-013/014 — record stats and persist history. Best-effort:
                 // failures must not block paste (which already happened above).
                 let detectedLanguage = result.detectedLanguage
-                // SPEC-044 — history rows carry which backend produced them.
+                // SPEC-044 / SPEC-046 — history rows carry which backend produced them.
                 let modelLabel = remoteSelected
                     ? remoteProfile.map { RemoteProfile.historyLabel(model: $0.model, host: $0.baseURL.host) } ?? "remote"
-                    : self.defaultModel
+                    : (youdaoSelected ? youdaoModel : self.defaultModel)
                 let audioDuration = result.audioSeconds
                 let saveTranscriptsFlag = self.saveTranscripts
                 let saveAudioFlag = self.saveAudio
@@ -1333,9 +1358,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // export, so keep only the error's first line — a server's error
                 // body (second line) could echo credentials or transcript.
                 let firstLine = "\(error)".components(separatedBy: "\n")[0]
+                let backendTag = remoteSelected ? "remote" : (youdaoSelected ? "youdao" : "local")
                 Diagnostics.shared.log(
                     .transcription, .error,
-                    "transcribe failed (\(remoteSelected ? "remote" : "local")): \(firstLine)"
+                    "transcribe failed (\(backendTag)): \(firstLine)"
                 )
                 await MainActor.run {
                     appState.phase = .error(DictationFailure.message(for: error))
@@ -1374,9 +1400,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// until the dictation finishes (see `applyPendingSwapIfIdle`).
     @MainActor
     func swapModel() {
-        // The user moved to remote while the swap (or its download) was in
-        // flight: remote needs no local engine, so drop the swap.
-        guard !remoteBackendSelected else { return }
+        // The user moved to remote/youdao while the swap (or its download) was
+        // in flight: neither needs a WhisperKit engine, so drop the swap.
+        guard !remoteBackendSelected, !youdaoBackendSelected else { return }
         let target = defaultModel
         guard transcriber != nil else { startWarm(); return }
         guard transcriber?.modelID != target else { return }
@@ -1385,22 +1411,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startWarm(force: true)
     }
 
-    /// SPEC-044 — Settings backend picker changed. Switching to remote releases
-    /// any launch warm-up gate (no local model needed); switching back to local
-    /// warms the engine that launch skipped.
+    /// SPEC-044 / SPEC-046 — Settings backend picker changed. Switching away
+    /// from local WhisperKit releases any launch warm-up gate; switching back
+    /// to local warms the engine that launch skipped.
     @MainActor
     func transcriptionBackendChanged() {
-        if remoteBackendSelected {
+        if remoteBackendSelected || youdaoBackendSelected {
             // A swap deferred while dictating must not fire (and possibly
-            // download a model) after a remote dictation ends.
+            // download a model) after a remote/youdao dictation ends.
             pendingSwap = false
             warmTask?.cancel()
             warmingModel = nil
             appState.speechDownload = .inactive
             if case .warming = appState.phase { appState.phase = .idle }
-            // Remote transcription never reaches the local engine: release it so
-            // its weights leave memory and its files become deletable. A local
-            // dictation already running keeps its engine (ARC) until it ends.
+            // Non-WhisperKit transcription never reaches the local WhisperKit
+            // engine: release it so its weights leave memory and its files
+            // become deletable. A local dictation already running keeps its
+            // engine (ARC) until it ends.
             if !isDictating { transcriber = nil }
         } else if !WhisperKitEngine.hasModelWeights(for: defaultModel) {
             // The weights may be gone (freed while remote was on) or never
@@ -1425,7 +1452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func speechDownloadCancelled() {
         guard let displaced = displacedWarmModel else { return }
         displacedWarmModel = nil
-        guard !remoteBackendSelected, displaced == defaultModel else { return }
+        guard !remoteBackendSelected, !youdaoBackendSelected, displaced == defaultModel else { return }
         startWarm()
     }
 

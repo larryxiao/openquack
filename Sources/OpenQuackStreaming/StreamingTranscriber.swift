@@ -311,39 +311,9 @@ public actor StreamingTranscriber {
 
     // MARK: - chunk stitching
 
-    /// Whisper occasionally re-emits the boundary word when a chunk starts
-    /// mid-utterance. Per SPEC-012 §Stop semantics step 4 we drop a single
-    /// trailing/leading duplicate at each chunk seam. Comparison normalises
-    /// case and strips trailing punctuation; keeps the longer-cased form.
+    /// Stitch chunk transcripts and remove boundary duplicates (SPEC-012, SPEC-046).
     private func stitchChunks(_ chunks: [String]) -> String {
-        guard let first = chunks.first else { return "" }
-        var out = first
-        for next in chunks.dropFirst() {
-            let nextTrimmed = next.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !nextTrimmed.isEmpty else { continue }
-
-            let lastWord = lastWord(of: out)
-            let nextWords = nextTrimmed.split(whereSeparator: { $0.isWhitespace })
-            let firstWord = nextWords.first.map(String.init) ?? ""
-
-            if !lastWord.isEmpty,
-               wordKey(lastWord) == wordKey(firstWord) {
-                let stripped = nextWords.dropFirst().joined(separator: " ")
-                if !stripped.isEmpty { out += " " + stripped }
-            } else {
-                out += " " + nextTrimmed
-            }
-        }
-        return out
-    }
-
-    private func lastWord(of s: String) -> String {
-        let parts = s.split(whereSeparator: { $0.isWhitespace })
-        return parts.last.map(String.init) ?? ""
-    }
-
-    private func wordKey(_ s: String) -> String {
-        s.lowercased().trimmingCharacters(in: .punctuationCharacters)
+        ChunkStitcher.stitch(chunks)
     }
 
     // MARK: - prompt + resampling
