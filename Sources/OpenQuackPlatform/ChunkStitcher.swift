@@ -40,8 +40,8 @@ public enum ChunkStitcher {
         let nextWords = next.split(whereSeparator: { $0.isWhitespace })
         let nextFirstWord = nextWords.first.map(String.init) ?? ""
 
-        if !prevLastWord.isEmpty,
-           !isCJK( Character(prevLastWord.prefix(1)) ),
+        if let prevFirst = prevLastWord.first,
+           !isCJK(prevFirst),
            wordKey(prevLastWord) == wordKey(nextFirstWord),
            !wordKey(prevLastWord).isEmpty {
             let stripped = nextWords.dropFirst().joined(separator: " ")
