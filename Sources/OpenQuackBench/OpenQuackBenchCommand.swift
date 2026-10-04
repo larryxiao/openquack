@@ -11,7 +11,7 @@ struct OpenQuackBenchCommand: AsyncParsableCommand {
     )
 
     @Option(name: .customLong("engines"),
-            help: "Comma-separated engine names. Available: whisperkit, lightning")
+            help: "Comma-separated engine names. Available: whisperkit, lightning, youdao")
     var engines: String = "whisperkit"
 
     @Option(name: .customLong("models"),

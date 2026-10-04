@@ -6,7 +6,7 @@ import OpenQuackKit
 struct OpenQuackCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "openquack-cli",
-        abstract: "Transcribe audio with WhisperKit (default) or Lightning.",
+        abstract: "Transcribe audio with WhisperKit (default), Lightning, or Youdao R2T2.",
         version: OpenQuackKit.version,
         subcommands: [Transcribe.self, Models.self, Info.self],
         defaultSubcommand: Transcribe.self
@@ -25,11 +25,11 @@ struct Transcribe: AsyncParsableCommand {
     var file: String
 
     @Option(name: [.customShort("e"), .long],
-            help: "Engine: whisperkit (default) or lightning.")
+            help: "Engine: whisperkit (default), lightning, or youdao (r2t2 / qwen3-asr).")
     var engine: String = "whisperkit"
 
     @Option(name: [.customShort("m"), .long],
-            help: "Model identifier (engine-specific). E.g. tiny, small, distil-large-v3.")
+            help: "Model identifier (engine-specific). E.g. tiny, small, confucius4-r2t2.")
     var model: String = "small"
 
     @Option(name: .long,
@@ -50,11 +50,14 @@ struct Transcribe: AsyncParsableCommand {
         }
 
         let kind = try EngineKind.parse(engine)
+        let effectiveModel = (kind == .youdao && model == "small")
+            ? YoudaoR2T2Engine.defaultModel
+            : model
 
         if verbose {
-            err("◇ \(kind.rawValue) / \(model): loading...")
+            err("◇ \(kind.rawValue) / \(effectiveModel): loading...")
         }
-        let (eng, coldStart) = try await kind.makeEngine(model: model)
+        let (eng, coldStart) = try await kind.makeEngine(model: effectiveModel)
         if verbose {
             err("  ✓ loaded in \(fmt(coldStart, 2)) s")
         }

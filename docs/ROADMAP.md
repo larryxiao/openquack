@@ -64,6 +64,7 @@ These have SPECs and are ready to claim, but we're **holding new feature scope**
 | ⚪ | Active-app context: feed foreground app + focused field text into Whisper prompt bias and polish/agent prompt | — | M |
 | ⚪ | Investigate streaming for medium-length (15–30s) audio: bench WER vs. wall-time at lower `targetChunkSeconds` | SPEC-012 ext | S |
 | ⚪ | Live partial transcripts in pill/popover while speaking | — | M |
+| 🟢 | `YoudaoR2T2Engine` (`Confucius4-R2T2` + `Qwen3-ASR`) + CJK punctuation & chunk-stitching normalization | SPEC-046 | M; shipped opt-in local engine (`--engine youdao` + Settings picker), context-aware CJK punctuation in `TextPolisher`, and CJK chunk stitching in `ChunkStitcher`. See [research note](research/confucius4-r2t2.md). |
 | ⚪ | System-audio capture (meeting mode) | — | ScreenCaptureKit |
 | ⚪ | Action confirmation UI for high-risk agent calls | — | privacy gate |
 | ⚪ | Per-agent transcript history pane (opt-in, local-only) | — | — |

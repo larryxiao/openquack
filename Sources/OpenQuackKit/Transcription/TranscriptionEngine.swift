@@ -51,19 +51,27 @@ public protocol TranscriptionEngine: AnyObject {
 public enum EngineKind: String, CaseIterable, Sendable {
     case whisperkit
     case lightning
+    case youdao
 
     public static func parse(_ s: String) throws -> EngineKind {
-        guard let k = EngineKind(rawValue: s.lowercased()) else {
+        let lower = s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let k = EngineKind(rawValue: lower) {
+            return k
+        }
+        switch lower {
+        case "r2t2", "confucius4-r2t2", "qwen3-asr":
+            return .youdao
+        default:
             let known = allCases.map(\.rawValue).joined(separator: ", ")
             throw EngineError.runtimeFailed("Unknown engine: \(s) (known: \(known))")
         }
-        return k
     }
 
     public var suggestedModels: [String] {
         switch self {
         case .whisperkit: return WhisperKitEngine.suggestedModels
         case .lightning:  return LightningEngine.suggestedModels
+        case .youdao:     return YoudaoR2T2Engine.suggestedModels
         }
     }
 
@@ -76,6 +84,7 @@ public enum EngineKind: String, CaseIterable, Sendable {
         switch self {
         case .whisperkit: engine = try await WhisperKitEngine(model: model)
         case .lightning:  engine = try await LightningEngine(model: model)
+        case .youdao:     engine = try await YoudaoR2T2Engine(model: model)
         }
         return (engine, Date().timeIntervalSince(t0))
     }

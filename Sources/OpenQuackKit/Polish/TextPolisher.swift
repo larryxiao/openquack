@@ -17,19 +17,22 @@ public enum TextPolisher {
         public var stripFillers: Bool
         public var collapseWhitespace: Bool
         public var fixSoloI: Bool
+        public var normalizeCJKPunctuation: Bool
 
         public init(
             capitalizeFirst: Bool = true,
             addEndPunctuation: Bool = true,
             stripFillers: Bool = true,
             collapseWhitespace: Bool = true,
-            fixSoloI: Bool = true
+            fixSoloI: Bool = true,
+            normalizeCJKPunctuation: Bool = true
         ) {
             self.capitalizeFirst = capitalizeFirst
             self.addEndPunctuation = addEndPunctuation
             self.stripFillers = stripFillers
             self.collapseWhitespace = collapseWhitespace
             self.fixSoloI = fixSoloI
+            self.normalizeCJKPunctuation = normalizeCJKPunctuation
         }
 
         public static let standard = Settings()
@@ -38,13 +41,15 @@ public enum TextPolisher {
             addEndPunctuation: false,
             stripFillers: false,
             collapseWhitespace: false,
-            fixSoloI: false
+            fixSoloI: false,
+            normalizeCJKPunctuation: false
         )
     }
 
     /// Apply all enabled rules. Order matters — fillers are stripped first
     /// (so the resulting whitespace can be collapsed), then casing fixes,
-    /// then trim, then capitalisation, then end-punctuation.
+    /// then CJK punctuation normalization, then trim, then capitalisation,
+    /// then end-punctuation.
     public static func polish(_ raw: String, settings: Settings = .standard) -> String {
         var text = raw
 
@@ -56,6 +61,9 @@ public enum TextPolisher {
         }
         if settings.collapseWhitespace {
             text = applyCollapseWhitespace(text)
+        }
+        if settings.normalizeCJKPunctuation {
+            text = normalizeCJKPunctuation(in: text)
         }
         text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if settings.capitalizeFirst {
@@ -111,6 +119,115 @@ public enum TextPolisher {
         return out
     }
 
+    // SPEC-046 (ASD-STE100) — Context-aware CJK punctuation normalizer.
+    // Ports `_normalize_punct_by_context` from NetEase Youdao Confucius4-R2T2
+    // (`r2t2/r2t2_asr.py`) and removes horizontal spaces between CJK tokens.
+    private static let halfToFullPunctuation: [Character: Character] = [
+        ",": "，",
+        ".": "。",
+        "!": "！",
+        "?": "？",
+        ";": "；",
+        ":": "：",
+        "(": "（",
+        ")": "）",
+    ]
+
+    private static let fullToHalfPunctuation: [Character: Character] = [
+        "，": ",",
+        "。": ".",
+        "！": "!",
+        "？": "?",
+        "；": ";",
+        "：": ":",
+        "（": "(",
+        "）": ")",
+    ]
+
+    private static let cjkFullWidthPunctuation: Set<Character> = [
+        "，", "。", "！", "？", "；", "：", "、",
+        "（", "）", "《", "》", "「", "」", "『", "』",
+    ]
+
+    /// Normalize punctuation width by preceding context and strip inter-CJK spaces.
+    public static func normalizeCJKPunctuation(in s: String) -> String {
+        guard !s.isEmpty else { return s }
+        let chars = Array(s)
+        var converted = [Character]()
+        converted.reserveCapacity(chars.count)
+
+        var prevNonSpace: Character? = nil
+        for i in 0..<chars.count {
+            let ch = chars[i]
+            if let full = halfToFullPunctuation[ch], let prev = prevNonSpace, isCJK(prev) {
+                converted.append(full)
+                prevNonSpace = full
+            } else if ch == "(", let next = nextNonSpaceCharacter(in: chars, after: i), isCJK(next),
+                      prevNonSpace.map({ isCJK($0) || cjkFullWidthPunctuation.contains($0) }) ?? true {
+                let full: Character = "（"
+                converted.append(full)
+                prevNonSpace = full
+            } else if let half = fullToHalfPunctuation[ch],
+                      let prev = prevNonSpace,
+                      isASCIIWordOrQuote(prev),
+                      !(nextNonSpaceCharacter(in: chars, after: i).map(isCJK) ?? false) {
+                converted.append(half)
+                prevNonSpace = half
+            } else {
+                converted.append(ch)
+                if !ch.isWhitespace {
+                    prevNonSpace = ch
+                }
+            }
+        }
+
+        // Strip horizontal spaces between adjacent CJK characters or CJK punctuation.
+        var result = [Character]()
+        result.reserveCapacity(converted.count)
+        for i in 0..<converted.count {
+            let ch = converted[i]
+            if ch == " " || ch == "\t" {
+                let prev = result.last
+                let next = nextNonHorizontalSpaceCharacter(in: converted, after: i)
+                if let p = prev, let n = next,
+                   (isCJK(p) || cjkFullWidthPunctuation.contains(p))
+                   && (isCJK(n) || cjkFullWidthPunctuation.contains(n)) {
+                    continue
+                }
+            }
+            result.append(ch)
+        }
+        return String(result)
+    }
+
+    private static func nextNonSpaceCharacter(in chars: [Character], after index: Int) -> Character? {
+        var j = index + 1
+        while j < chars.count {
+            if !chars[j].isWhitespace { return chars[j] }
+            j += 1
+        }
+        return nil
+    }
+
+    private static func nextNonHorizontalSpaceCharacter(in chars: [Character], after index: Int) -> Character? {
+        var j = index + 1
+        while j < chars.count {
+            let c = chars[j]
+            if c != " " && c != "\t" { return c }
+            j += 1
+        }
+        return nil
+    }
+
+    private static func isASCIIWordOrQuote(_ c: Character) -> Bool {
+        guard let scalar = c.unicodeScalars.first, c.unicodeScalars.count == 1 else { return false }
+        let v = scalar.value
+        return (0x30...0x39).contains(v)
+            || (0x41...0x5A).contains(v)
+            || (0x61...0x7A).contains(v)
+            || c == "\"" || c == "'"
+    }
+
     private static func applyCapitalizeFirst(_ s: String) -> String {
         guard let first = s.first, first.isLetter, first.isLowercase else { return s }
         return first.uppercased() + s.dropFirst()
@@ -135,8 +252,9 @@ public enum TextPolisher {
     private static func isCJK(_ c: Character) -> Bool {
         for scalar in c.unicodeScalars {
             let v = scalar.value
-            // CJK Unified Ideographs, Hiragana, Katakana, Hangul Syllables.
+            // CJK Unified Ideographs, Extension A, Hiragana, Katakana, Hangul Syllables.
             if (0x4E00...0x9FFF).contains(v)
+                || (0x3400...0x4DBF).contains(v)
                 || (0x3040...0x309F).contains(v)
                 || (0x30A0...0x30FF).contains(v)
                 || (0xAC00...0xD7AF).contains(v)

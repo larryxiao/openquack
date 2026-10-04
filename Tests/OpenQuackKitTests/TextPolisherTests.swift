@@ -75,4 +75,46 @@ final class TextPolisherTests: XCTestCase {
         let raw = "um hello world"
         XCTAssertEqual(TextPolisher.polish(raw, settings: .off), raw)
     }
+
+    // MARK: - SPEC-046 CJK punctuation and spacing
+
+    func testNormalizesHalfWidthCJKPunctuationInContext() {
+        let raw = "今天的天气真好, 我们出去散步吧."
+        XCTAssertEqual(
+            TextPolisher.polish(raw),
+            "今天的天气真好，我们出去散步吧。"
+        )
+    }
+
+    func testNormalizesCJKQuestionAndExclamationMarks() {
+        let raw = "请问现在几点了? 已经八点了!"
+        XCTAssertEqual(
+            TextPolisher.polish(raw),
+            "请问现在几点了？已经八点了！"
+        )
+    }
+
+    func testStripsInterCJKSpaces() {
+        let raw = "今天 天气 真好"
+        XCTAssertEqual(
+            TextPolisher.polish(raw),
+            "今天天气真好。"
+        )
+    }
+
+    func testPreservesEnglishAndDecimalPunctuationInsideCJKSentence() {
+        let raw = "版本 3.14 已经发布, 请升级"
+        XCTAssertEqual(
+            TextPolisher.polish(raw),
+            "版本 3.14 已经发布，请升级。"
+        )
+    }
+
+    func testNormalizesFullWidthPunctuationInPureEnglishContext() {
+        let raw = "Hello，world！"
+        XCTAssertEqual(
+            TextPolisher.polish(raw),
+            "Hello,world!"
+        )
+    }
 }
