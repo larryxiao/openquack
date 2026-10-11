@@ -124,8 +124,16 @@ final class RecordingOverlay {
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.25
             panel.animator().alphaValue = 0
-        }, completionHandler: { [weak panel] in
-            panel?.orderOut(nil)
+        }, completionHandler: { [weak self] in
+            // Tear the panel down (not just orderOut) so the next dictation
+            // rebuilds it on whatever Space is active then. A reused panel stays
+            // bound to the Space it was born on, so it won't follow the user into
+            // another app's fullscreen Space.
+            MainActor.assumeIsolated {
+                self?.panel?.orderOut(nil)
+                self?.panel = nil
+                self?.hostingView = nil
+            }
         })
     }
 }
