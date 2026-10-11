@@ -69,6 +69,12 @@ ML_DIR="$CORPUS_DIR/multilingual"
 
 generate "$ML_DIR" zh_001 Tingting "春天来了，花儿都开了。"
 generate "$ML_DIR" zh_002 Tingting "今天的天气真好，我们出去散步吧。"
+generate "$ML_DIR" zh_003 Tingting "我需要在明天下午三点开会。"
+generate "$ML_DIR" zh_004 Tingting "请帮我发一封邮件给张总。"
+generate "$ML_DIR" zh_005 Tingting "这个季度的销售额增长了百分之十五。"
+generate "$ML_DIR" zh_006 Tingting "苹果公司发布了新款iPhone。"
+generate "$ML_DIR" zh_007 Tingting "今天北京天气晴，最高气温三十度。"
+generate "$ML_DIR" zh_008 Tingting "人工智能正在改变我们的工作方式。"
 
 generate "$ML_DIR" ja_001 Kyoko    "今日はとても良い天気です。"
 generate "$ML_DIR" ja_002 Kyoko    "猫はいつも窓辺で日向ぼっこをしています。"
