@@ -30,7 +30,7 @@ The minimum viable Xcode app target: a menu-bar app that owns the dictation life
 - On launch: register hotkeys, install status item with menu (Pause / Settings / Quit). No window shown.
 - Hotkey toggle:
   ```
-  start recording → overlay.recording → audio.start
+  start recording → start cue plays to the end (if sounds on) → audio.start → overlay.recording
                         ⋮
   stop hotkey   → audio.stop → overlay.transcribing → transcribe → overlay.dispatching → agent.dispatch → result
                                                                                               ↓
@@ -39,12 +39,14 @@ The minimum viable Xcode app target: a menu-bar app that owns the dictation life
                                                                                     overlay.done → fade
   ```
 - Cancel hotkey: at any pre-dispatch stage, discards the buffer and shows `cancelled` overlay state.
+- Start cue: the mic opens only after the start cue ("Tink") finishes, so it is never recorded; with sounds off there is no wait. Pressing the record hotkey again before the mic opens cancels the start cleanly (no recorder or streamer left running, back to idle).
 
 ## Quality gates
 
 - Memory growth ≤ 10 MB across 50 dictation cycles (no leaks).
 - `xcodebuild -project … build` green in CI on `macos-15` runner.
 - App launches and hotkey works headlessly in CI smoke (status-item appears, no crash).
+- Start cue absent from the capture: dictate with sounds on, then play `~/Library/Application Support/OpenQuack/last-recording.wav` — it must not start with the "Tink".
 
 ## Implementation note (2026-04-26)
 
