@@ -123,6 +123,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC-036 — set when the current recording was force-stopped by an audio
     /// device/route change (vs. a user stop / VAD). Reset at each `startRecording`.
     private var recordingInterrupted = false
+    /// SPEC-010 — a hotkey press during `.starting` cancels the pending start.
+    private var startCancelled = false
     /// SPEC-036 — summary of the most recent recording for the bug-report dump.
     private var lastRecordingDiag: DiagnosticsReport.LastRecording?
 
@@ -729,7 +731,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             startRecording()
         case .recording:
             stopAndTranscribe()
-        case .warming, .starting, .transcribing, .polishing:
+        case .starting:
+            startCancelled = true
+        case .warming, .transcribing, .polishing:
             // Ignore — the user gets a hotkey-tap during a transition; we just drop it.
             NSSound.beep()
         }
@@ -765,7 +769,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Same hotkey or the dictation hotkey both stop; recordingMode
             // was set when recording began, so the dispatch path is fixed.
             stopAndTranscribe()
-        case .warming, .starting, .transcribing, .polishing:
+        case .starting:
+            startCancelled = true
+        case .warming, .transcribing, .polishing:
             NSSound.beep()
         }
     }
@@ -889,10 +895,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run { appState.phase = .error(blocker) }
                 return
             }
-            await MainActor.run {
+            let cueEnd = await MainActor.run { () -> ContinuousClock.Instant? in
                 appState.phase = .starting
+                startCancelled = false
                 cancelPolishIdleUnload()
                 warmPolishEngineIfNeeded()
+                return playStartCue()
             }
 
             // SPEC-012: wire the streamer before start() so we don't miss the
@@ -938,6 +946,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 recorder.framesHandler = nil
             }
 
+            // Open the mic only once the start cue has finished, so the cue
+            // never lands in the recording.
+            if let cueEnd { try? await Task.sleep(until: cueEnd, clock: .continuous) }
+            if startCancelled {
+                await tearDownFramesPump()
+                if let streamer { await streamer.cancel() }
+                await MainActor.run {
+                    appState.phase = .idle
+                    schedulePolishIdleUnload()
+                }
+                return
+            }
+
             do {
                 let inputUID = UserDefaults.standard.string(forKey: "inputDeviceUID")
                 _ = try recorder.start(outputURL: lastRecordingURL, inputDeviceUID: inputUID)
@@ -952,7 +973,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     recordingInterrupted = false       // SPEC-036
                     lastVoiceAt = nil
                     startElapsedTimer()
-                    playSound("Tink")
                 }
             } catch {
                 await tearDownFramesPump()
@@ -1615,6 +1635,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func playSound(_ name: String) {
         guard soundsEnabled else { return }
         NSSound(named: name)?.play()
+    }
+
+    /// Plays the record-start cue and returns when it will have finished, or
+    /// nil when sounds are off or it didn't play (no wait in that case).
+    private func playStartCue() -> ContinuousClock.Instant? {
+        guard soundsEnabled, let sound = NSSound(named: "Tink"), sound.play() else { return nil }
+        return ContinuousClock.Instant.now.advanced(by: .seconds(sound.duration))
     }
 
     private func stopElapsedTimer() {
