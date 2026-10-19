@@ -1640,9 +1640,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Plays the record-start cue and returns when it will have finished, or
     /// nil when sounds are off or it didn't play (no wait in that case).
     private func playStartCue() -> ContinuousClock.Instant? {
-        guard soundsEnabled, let sound = NSSound(named: "Tink"), sound.play() else { return nil }
-        return ContinuousClock.Instant.now.advanced(by: .seconds(sound.duration))
+        guard soundsEnabled, let sound = NSSound(named: Self.startCueName), sound.play() else { return nil }
+        return ContinuousClock.Instant.now.advanced(by: .seconds(Self.startCueAudible ?? sound.duration))
     }
+
+    private static let startCueName = "Tink"
+    private static let startCueAudible: TimeInterval? = StartCue.systemSoundURL(named: startCueName)
+        .flatMap(StartCue.audibleDuration(of:))
 
     private func stopElapsedTimer() {
         elapsedTimer?.invalidate()
